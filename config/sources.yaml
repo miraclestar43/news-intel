@@ -1,0 +1,198 @@
+# Source configuration. URLs and cadences live here, never hard-coded in Python.
+# tier: 0=primary/official, 1=high-reliability reporting, 2=specialist, 3=discovery/heat
+# adapter: rss | json_federal_register | json_hn | ical | gdelt | html_index | social_stub
+
+sources:
+  - id: federal_register
+    name: Federal Register API
+    adapter: json_federal_register
+    tier: 0
+    enabled: true
+    url: "https://www.federalregister.gov/api/v1/documents.json"
+    poll_interval_seconds: 900
+    category_hints: [policy, us]
+
+  - id: fed_press_all
+    name: Federal Reserve — all press
+    adapter: rss
+    tier: 0
+    enabled: true
+    url: "https://www.federalreserve.gov/feeds/press_all.xml"
+    poll_interval_seconds: 300
+    category_hints: [macro, policy]
+
+  - id: fed_press_monetary
+    name: Federal Reserve — monetary policy
+    adapter: rss
+    tier: 0
+    enabled: true
+    url: "https://www.federalreserve.gov/feeds/press_monetary.xml"
+    poll_interval_seconds: 300
+    category_hints: [macro, policy]
+
+  - id: bls_latest
+    name: BLS latest numbers
+    adapter: rss
+    tier: 0
+    enabled: true
+    url: "https://www.bls.gov/feed/bls_latest.rss"
+    poll_interval_seconds: 600
+    category_hints: [macro]
+
+  - id: bls_calendar
+    name: BLS release calendar
+    adapter: ical
+    tier: 0
+    enabled: true
+    url: "https://www.bls.gov/schedule/news_release/bls.ics"
+    poll_interval_seconds: 43200
+    category_hints: [macro, calendar]
+
+  - id: bea_calendar
+    name: BEA release schedule (ICS)
+    adapter: ical
+    tier: 0
+    enabled: true
+    url: "https://www.bea.gov/news/schedule/ics/online-calendar-subscription.ics"
+    poll_interval_seconds: 43200
+    category_hints: [macro, calendar]
+
+  - id: sec_press
+    name: SEC press releases
+    adapter: rss
+    tier: 0
+    enabled: true
+    url: "https://www.sec.gov/news/pressreleases.rss"
+    poll_interval_seconds: 900
+    category_hints: [markets, policy]
+    requires_identifying_user_agent: true
+
+  - id: openai_news
+    name: OpenAI News
+    adapter: rss
+    tier: 0
+    enabled: true
+    url: "https://openai.com/news/rss.xml"
+    poll_interval_seconds: 900
+    category_hints: [ai]
+
+  - id: google_ai_blog
+    name: Google AI blog
+    adapter: rss
+    tier: 0
+    enabled: true
+    url: "https://blog.google/technology/ai/rss/"
+    poll_interval_seconds: 900
+    category_hints: [ai]
+
+  - id: deepmind_blog
+    name: Google DeepMind blog
+    adapter: rss
+    tier: 0
+    enabled: true
+    url: "https://deepmind.google/blog/rss.xml"
+    poll_interval_seconds: 900
+    category_hints: [ai]
+
+  - id: nvidia_newsroom
+    name: NVIDIA newsroom
+    adapter: rss
+    tier: 0
+    enabled: true
+    url: "https://nvidianews.nvidia.com/releases.xml"
+    poll_interval_seconds: 600
+    category_hints: [semiconductor, ai]
+
+  - id: nvidia_developer_blog
+    name: NVIDIA developer blog
+    adapter: rss
+    tier: 0
+    enabled: true
+    url: "https://developer.nvidia.com/blog/feed"
+    poll_interval_seconds: 900
+    category_hints: [semiconductor, ai]
+
+  - id: hn_top
+    name: Hacker News (official API)
+    adapter: json_hn
+    tier: 3
+    enabled: true
+    url: "https://hacker-news.firebaseio.com/v0/"
+    poll_interval_seconds: 300
+    category_hints: [tech, discovery]
+
+  - id: techmeme
+    name: Techmeme
+    adapter: rss
+    tier: 3
+    enabled: true
+    url: "https://www.techmeme.com/feed.xml"
+    poll_interval_seconds: 300
+    category_hints: [tech, discovery]
+
+  - id: gdelt_doc
+    name: GDELT DOC API
+    adapter: gdelt
+    tier: 3
+    enabled: true
+    url: "https://api.gdeltproject.org/api/v2/doc/doc"
+    poll_interval_seconds: 900
+    category_hints: [discovery]
+
+  - id: gov_cn_policy
+    name: "gov.cn — State Council policy releases"
+    adapter: html_index
+    tier: 0
+    enabled: true
+    url: "https://www.gov.cn/zhengce/zuixin.htm"
+    poll_interval_seconds: 1800
+    category_hints: [china, policy]
+    selectors:
+      item: "ul.news_box li"
+      title: "a"
+      link: "a"
+      date: "span"
+
+  - id: pboc_policy
+    name: "People's Bank of China — monetary policy"
+    adapter: html_index
+    tier: 0
+    enabled: true
+    url: "http://www.pbc.gov.cn/tiaofasi/144941/144979/index.html"
+    poll_interval_seconds: 1800
+    category_hints: [china, macro]
+    selectors:
+      item: "ul.list li"
+      title: "a"
+      link: "a"
+      date: "span"
+
+  - id: social_trumpdailyposts
+    name: "@TrumpDailyPosts (mirror)"
+    adapter: social_stub
+    tier: 3
+    enabled: false
+    url: ""
+    poll_interval_seconds: 300
+    category_hints: [social, discovery]
+    note: "Mirror account, not an official channel. No compliant free public endpoint validated yet; kept disabled/unavailable rather than scraped."
+
+  - id: social_firstsquawk
+    name: "@FirstSquawk (mirror)"
+    adapter: social_stub
+    tier: 3
+    enabled: false
+    url: ""
+    poll_interval_seconds: 300
+    category_hints: [social, discovery]
+    note: "T3 discovery only; no compliant free endpoint validated."
+
+  - id: social_financialjuice
+    name: "@financialjuice (mirror)"
+    adapter: social_stub
+    tier: 3
+    enabled: false
+    url: ""
+    poll_interval_seconds: 300
+    category_hints: [social, discovery]
+    note: "T3 discovery only; no compliant free endpoint validated."

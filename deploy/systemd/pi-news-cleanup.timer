@@ -1,0 +1,9 @@
+[Unit]
+Description=pi-news-intel: daily retention cleanup, 03:20 local time (Phase 2+ — not yet implemented)
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

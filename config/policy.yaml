@@ -1,0 +1,74 @@
+timezone: America/Los_Angeles
+
+collection_interval_minutes: 5
+daily_schedule: "Mon..Sat 22:00"
+weekly_schedule: "Sun 22:00"
+
+quiet_hours:
+  start: "23:30"
+  end: "06:30"
+
+alerts:
+  s2_daily_budget: 3
+  minimum_spacing_minutes: 30
+  same_event_cooldown_hours: 6
+  burst_merge_minutes: 10
+  candidate_score: 85
+  candidate_significance: 80
+  candidate_market_impact: 65
+  material_update_novelty: 0.35
+
+digests:
+  daily_min_events: 4
+  daily_max_events: 8
+  daily_target_english_words: [350, 450]
+  daily_target_chars: [2800, 3800]
+  weekly_target_english_words: [650, 800]
+  weekly_target_chinese_chars: [150, 250]
+  telegram_hard_limit_chars: 4096
+
+scoring:
+  weights:
+    significance: 0.25
+    user_relevance: 0.20
+    market_impact: 0.15
+    confirmation_quality: 0.15
+    independent_corroboration: 0.10
+    novelty: 0.05
+    popularity: 0.05
+    freshness: 0.05
+  thresholds:
+    alert_candidate: 85
+    daily_top3: 72
+    daily_quick_brief: 58
+    weekly_store: 45
+
+relevance_multipliers:
+  ai_semiconductor_export_controls: 1.30
+  tech_platforms_datacenter: 1.20
+  markets_macro_corporate: 1.15
+  us_china_policy_geopolitics: 1.10
+  other_consequential_world: 1.00
+  routine_politics_general: 0.70
+  explicit_noise: 0.00
+
+dedupe:
+  title_similarity_threshold: 88
+  trigram_jaccard_threshold: 0.72
+  entity_overlap_threshold: 0.50
+  candidate_window_hours: 48
+
+storage:
+  raw_excerpt_max_chars: 4000
+  raw_excerpt_retention_days: 14
+  raw_metadata_retention_days: 30
+  event_retention_days: 180
+  log_retention_days: 14
+  log_max_total_mb: 50
+  backup_retention_days: 7
+
+fetch:
+  default_timeout_seconds: 12
+  max_retries: 2
+  max_redirects: 3
+  max_response_bytes: 5000000

@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "document_number": "2026-16501",
+      "title": "Addition of Certain Entities to the Entity List for AI Chip Export Restrictions",
+      "html_url": "https://www.federalregister.gov/documents/2026/07/31/2026-16501",
+      "publication_date": "2026-07-31",
+      "agencies": [{"name": "Bureau of Industry and Security"}],
+      "abstract": "This rule adds certain entities to the Entity List, imposing export controls on advanced AI chips.",
+      "type": "Rule"
+    },
+    {
+      "document_number": "2026-16490",
+      "title": "Notice of Public Meeting on Routine Agricultural Standards",
+      "html_url": "https://www.federalregister.gov/documents/2026/07/31/2026-16490",
+      "publication_date": "2026-07-31",
+      "agencies": [{"name": "Department of Agriculture"}],
+      "abstract": "Notice of a routine public meeting regarding agricultural labeling standards.",
+      "type": "Notice"
+    }
+  ]
+}

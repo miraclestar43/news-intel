@@ -1,0 +1,19 @@
+{
+  "articles": [
+    {
+      "url": "https://example-wire.test/fed-surprise-rate-hold",
+      "title": "Federal Reserve Holds Rates Steady, Surprising Markets",
+      "seendate": "20260731T180000Z",
+      "domain": "example-wire.test",
+      "language": "English",
+      "tone": -1.2
+    },
+    {
+      "url": "https://example-wire.test/no-title-story",
+      "title": "",
+      "seendate": "20260731T170000Z",
+      "domain": "example-wire.test",
+      "language": "English"
+    }
+  ]
+}

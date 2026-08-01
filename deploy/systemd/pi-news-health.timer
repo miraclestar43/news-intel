@@ -1,0 +1,9 @@
+[Unit]
+Description=pi-news-intel: hourly health snapshot (Phase 2+ — not yet implemented)
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

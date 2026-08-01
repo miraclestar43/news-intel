@@ -1,0 +1,11 @@
+[Unit]
+Description=pi-news-intel: hourly health snapshot, no routine Telegram messages (Phase 2+ — not yet implemented)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/pi-news-intel
+# Placeholder: `pi-news maintenance health-snapshot` does not exist yet.
+# `pi-news status` already covers this interactively today.
+ExecStart=%h/pi-news-intel/.venv/bin/pi-news maintenance health-snapshot
+TimeoutStartSec=60

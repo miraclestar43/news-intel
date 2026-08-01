@@ -1,0 +1,10 @@
+[Unit]
+Description=pi-news-intel: consolidated overnight update, 06:30 America/Los_Angeles (Phase 2 — not yet implemented)
+
+[Timer]
+OnCalendar=*-*-* 06:30:00 America/Los_Angeles
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

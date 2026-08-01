@@ -1,0 +1,10 @@
+[Unit]
+Description=pi-news-intel: weekly brief, Sun 22:00 America/Los_Angeles (Phase 3 — not yet implemented)
+
+[Timer]
+OnCalendar=Sun *-*-* 22:00:00 America/Los_Angeles
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

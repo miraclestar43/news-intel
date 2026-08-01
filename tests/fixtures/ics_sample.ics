@@ -1,0 +1,18 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//BLS//Release Calendar//EN
+BEGIN:VEVENT
+UID:cpi-2026-08-release@bls.gov
+SUMMARY:Consumer Price Index (CPI) — July 2026
+DTSTART:20260812T123000Z
+DESCRIPTION:Monthly CPI release from the Bureau of Labor Statistics.
+URL:https://www.bls.gov/schedule/news_release/cpi.htm
+END:VEVENT
+BEGIN:VEVENT
+UID:payrolls-2026-08-release@bls.gov
+SUMMARY:Employment Situation (Payrolls) — July 2026
+DTSTART:20260807T123000Z
+DESCRIPTION:Monthly employment situation release.
+URL:https://www.bls.gov/schedule/news_release/empsit.htm
+END:VEVENT
+END:VCALENDAR

@@ -1,0 +1,10 @@
+[Unit]
+Description=pi-news-intel: retention cleanup (Phase 2+ — not yet implemented)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/pi-news-intel
+# Placeholder: `pi-news maintenance cleanup` does not exist yet.
+ExecStart=%h/pi-news-intel/.venv/bin/pi-news maintenance cleanup --dry-run
+TimeoutStartSec=180

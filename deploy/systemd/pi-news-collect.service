@@ -1,0 +1,10 @@
+[Unit]
+Description=pi-news-intel: collect from all enabled sources
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/pi-news-intel
+ExecStart=%h/pi-news-intel/.venv/bin/pi-news collect --no-dry-run
+TimeoutStartSec=280

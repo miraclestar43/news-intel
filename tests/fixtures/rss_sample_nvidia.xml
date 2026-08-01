@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>NVIDIA Newsroom</title>
+    <link>https://nvidianews.nvidia.com/</link>
+    <item>
+      <title>NVIDIA Announces New AI Chip Export Rules Compliance Update</title>
+      <link>https://nvidianews.nvidia.com/releases/ai-chip-export-rules-update</link>
+      <guid>https://nvidianews.nvidia.com/releases/ai-chip-export-rules-update</guid>
+      <description>NVIDIA today announced changes to comply with updated export control rules for AI chips.</description>
+      <pubDate>Fri, 31 Jul 2026 14:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>NVIDIA Reports Quarterly Earnings Ahead of Expectations</title>
+      <link>https://nvidianews.nvidia.com/releases/q2-earnings-2026</link>
+      <guid>https://nvidianews.nvidia.com/releases/q2-earnings-2026</guid>
+      <description>NVIDIA reported quarterly revenue ahead of analyst expectations, driven by data center demand.</description>
+      <pubDate>Thu, 30 Jul 2026 20:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

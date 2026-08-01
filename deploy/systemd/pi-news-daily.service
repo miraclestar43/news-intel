@@ -1,0 +1,13 @@
+[Unit]
+Description=pi-news-intel: generate/send the daily brief
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/pi-news-intel
+# NOTE: still --dry-run by default. Switch to --no-dry-run and add
+# --chat-id <id> only after the Telegram bot token/chat id are configured
+# and reviewed per Phase 1 operating rule 10.
+ExecStart=%h/pi-news-intel/.venv/bin/pi-news digest daily --dry-run
+TimeoutStartSec=280

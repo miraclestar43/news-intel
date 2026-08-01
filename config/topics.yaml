@@ -1,0 +1,132 @@
+# Discovery/relevance vocabulary. Tunable without code changes.
+
+groups:
+  ai:
+    weight: 1.30
+    terms_en:
+      - OpenAI
+      - Anthropic
+      - xAI
+      - Google DeepMind
+      - Gemini
+      - Claude
+      - LLM
+      - foundation model
+      - AI agent
+      - inference
+      - training compute
+      - data center
+    terms_zh:
+      - 人工智能
+      - 大模型
+      - 智能体
+    entities: [OpenAI, Anthropic, xAI, DeepMind, Google, Microsoft, Meta, NVIDIA]
+
+  semiconductors:
+    weight: 1.30
+    terms_en:
+      - NVIDIA
+      - AMD
+      - Broadcom
+      - Qualcomm
+      - ARM
+      - Intel
+      - TSMC
+      - Samsung Semiconductor
+      - SK hynix
+      - Micron
+      - ASML
+      - Applied Materials
+      - Lam Research
+      - EDA
+      - foundry
+      - advanced packaging
+      - HBM
+      - EUV
+    terms_zh:
+      - 半导体
+      - 芯片
+      - 晶圆
+      - 封装
+    entities: [NVIDIA, AMD, Broadcom, Qualcomm, ARM, Intel, TSMC, Samsung, SK Hynix, Micron, ASML]
+
+  policy:
+    weight: 1.10
+    terms_en:
+      - export control
+      - entity list
+      - tariff
+      - sanction
+      - CHIPS
+      - Section 301
+      - BIS
+      - AI regulation
+      - antitrust
+    terms_zh:
+      - 出口管制
+      - 关税
+      - 制裁
+      - 实体清单
+
+  macro_markets:
+    weight: 1.15
+    terms_en:
+      - Federal Reserve
+      - FOMC
+      - CPI
+      - PCE
+      - payrolls
+      - unemployment
+      - GDP
+      - Treasury
+      - liquidity
+      - banking stress
+      - trading halt
+    terms_zh:
+      - 央行
+      - 国家统计局
+      - 证监会
+
+  china:
+    weight: 1.10
+    terms_zh:
+      - 人工智能
+      - 半导体
+      - 芯片
+      - 进口出口
+      - 出口管制
+      - 关税
+      - 制裁
+      - 央行
+      - 国家统计局
+      - 工信部
+      - 证监会
+
+  geopolitics:
+    weight: 1.00
+    terms_en:
+      - escalation
+      - ceasefire
+      - invasion
+      - missile
+      - blockade
+      - sanctions
+      - Taiwan Strait
+      - South China Sea
+      - Middle East
+      - Ukraine
+
+noise_exclusions:
+  - celebrity
+  - entertainment
+  - sports
+  - local crime
+  - coupon
+  - sale
+  - shopping
+  - rumor
+  - horoscope
+  - routine analyst target change
+  - product discount
+  - generic AI listicle
+  - SEO content

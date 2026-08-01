@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Techmeme</title>
+    <link>https://www.techmeme.com/</link>
+    <item>
+      <title>NVIDIA updates AI chip compliance following new export control rules</title>
+      <link>https://example-news.test/nvidia-export-compliance-update</link>
+      <guid>https://example-news.test/nvidia-export-compliance-update</guid>
+      <description>Sources say NVIDIA is updating its AI chip shipments to comply with new export control rules announced this week.</description>
+      <pubDate>Fri, 31 Jul 2026 15:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

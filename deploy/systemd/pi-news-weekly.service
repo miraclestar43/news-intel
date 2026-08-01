@@ -1,0 +1,12 @@
+[Unit]
+Description=pi-news-intel: weekly intelligence brief (Phase 3 — not yet implemented)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/pi-news-intel
+# Placeholder: `pi-news digest weekly` does not exist until Phase 3.
+# Do not enable this unit until that command ships and is reviewed.
+ExecStart=%h/pi-news-intel/.venv/bin/pi-news digest weekly --dry-run
+TimeoutStartSec=280

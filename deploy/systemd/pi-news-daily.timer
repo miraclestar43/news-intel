@@ -1,0 +1,10 @@
+[Unit]
+Description=pi-news-intel: daily brief, Mon-Sat 22:00 America/Los_Angeles
+
+[Timer]
+OnCalendar=Mon..Sat *-*-* 22:00:00 America/Los_Angeles
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
