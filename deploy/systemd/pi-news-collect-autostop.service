@@ -1,0 +1,10 @@
+[Unit]
+Description=pi-news-intel: Deployment Gate A shadow-pilot auto-stop (stops/disables pi-news-collect.timer ONLY)
+
+[Service]
+Type=oneshot
+# Scoped narrowly: stops and disables exactly one unit. Never touches
+# Hermes, the polymarket bot, or any other pi-news-intel unit.
+ExecStart=/usr/bin/systemctl --user stop pi-news-collect.timer
+ExecStartPost=/usr/bin/systemctl --user disable pi-news-collect.timer
+ExecStartPost=/usr/bin/systemctl --user stop pi-news-collect-autostop.timer

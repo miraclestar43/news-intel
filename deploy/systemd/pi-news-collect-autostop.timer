@@ -1,0 +1,13 @@
+[Unit]
+Description=pi-news-intel: fires once at the Deployment Gate A shadow-pilot stop boundary
+
+[Timer]
+# Absolute UTC wall-clock boundary (not relative-to-activation), so it
+# survives a reboot/suspend during the 24h window rather than resetting.
+# Gate A pilot: start 2026-08-01 17:17:53 UTC, stop 2026-08-02 17:17:53 UTC.
+OnCalendar=2026-08-02 17:17:53 UTC
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
