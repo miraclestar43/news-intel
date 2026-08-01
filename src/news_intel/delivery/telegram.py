@@ -83,13 +83,23 @@ class TelegramSender:
             raise ChatNotAllowedError(f"chat_id {chat_id} is not in the configured allowlist")
 
         existing = _get_delivery(conn, idempotency_key)
-        if existing is not None and existing["status"] in ("sent", "dry_run"):
-            return SendResult(
-                idempotency_key,
-                True,
-                (existing["telegram_message_id"] or "").split(",") if existing["telegram_message_id"] else [],
-                dry_run,
-            )
+        if existing is not None:
+            # A real send is authoritative regardless of this call's mode: it
+            # already happened, full stop. A prior *dry_run* record, though,
+            # must never suppress a subsequent real (dry_run=False) attempt --
+            # a shadow/preview record is not a delivery and must not be able
+            # to block production sending once real credentials are
+            # configured. Repeated dry-run calls remain idempotent among
+            # themselves (existing["status"] == "dry_run" and this call is
+            # also dry_run).
+            already_final = existing["status"] == "sent" or (existing["status"] == "dry_run" and dry_run)
+            if already_final:
+                return SendResult(
+                    idempotency_key,
+                    True,
+                    (existing["telegram_message_id"] or "").split(",") if existing["telegram_message_id"] else [],
+                    dry_run,
+                )
 
         chunks = label_parts(split_at_sections(text, max_chars))
 
