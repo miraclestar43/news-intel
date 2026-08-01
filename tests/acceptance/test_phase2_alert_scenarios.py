@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from news_intel.adapters.base import CollectedItem
 from news_intel.delivery.alert_formatter import render_alert
-from news_intel.jobs.alerts import process_event_for_alerts
+from news_intel.jobs.alerts import AlertActionResult, finalize_expired_merge_batches, process_event_for_alerts
 from news_intel.models import ConfirmationState, Severity
 from news_intel.pipeline.cluster import find_or_create_event
 from news_intel.pipeline.confirmation import update_confirmation_state
@@ -18,6 +18,28 @@ from news_intel.pipeline.normalize import normalize
 from tests.conftest import insert_source_row
 
 PT = ZoneInfo("America/Los_Angeles")
+
+
+def _deliver(conn, config, row, now):
+    """Test helper for scenarios that aren't specifically about burst-merge
+    timing: process one candidate, then force-resolve its S2 burst-merge
+    window immediately (as if nothing else arrived to merge with it) so the
+    test can assert on final delivery state without waiting out the real
+    10-minute window. Scenarios that test merge timing itself call
+    process_event_for_alerts / finalize_expired_merge_batches directly."""
+    result = process_event_for_alerts(conn, config, row, now)
+    if result.action == "pending_merge":
+        finalize_expired_merge_batches(
+            config, conn, now + timedelta(minutes=config.policy.alerts.burst_merge_minutes + 1)
+        )
+        final_state = conn.execute(
+            "SELECT state FROM alert_queue WHERE event_id = ? ORDER BY id DESC LIMIT 1", (row["id"],)
+        ).fetchone()["state"]
+        result = AlertActionResult(
+            result.event_id, final_state, severity=result.severity,
+            is_statement_only=result.is_statement_only, message_hash=result.message_hash,
+        )
+    return result
 
 
 def _seed_event(
@@ -71,7 +93,7 @@ def test_scenario_1_official_export_control_plus_corroboration_sends_one_s2_aler
     )
     row = conn.execute("SELECT * FROM events WHERE id='E-S1'").fetchone()
 
-    result = process_event_for_alerts(conn, config, row, now)
+    result = _deliver(conn, config, row, now)
 
     assert result.action == "sent"
     assert result.severity == Severity.S2.value
@@ -109,7 +131,7 @@ def test_scenario_3_verified_statement_without_policy_document_is_labeled_statem
     row = conn.execute("SELECT * FROM events WHERE id='E-S3'").fetchone()
     assert ConfirmationState(row["confirmation_state"]) == ConfirmationState.CONFIRMED  # 2 independent T1s
 
-    result = process_event_for_alerts(conn, config, row, now)
+    result = _deliver(conn, config, row, now)
 
     assert result.action == "sent"
     assert result.is_statement_only is True
@@ -186,7 +208,7 @@ def test_scenario_5_duplicate_articles_produce_one_alert(config, conn):
     update_confirmation_state(conn, row["id"], now=now)
     row = conn.execute("SELECT * FROM events WHERE id=?", (row["id"],)).fetchone()
 
-    result = process_event_for_alerts(conn, config, row, now)
+    result = _deliver(conn, config, row, now)
     assert result.action == "sent"
 
     count = conn.execute("SELECT COUNT(*) AS n FROM alert_queue").fetchone()["n"]
@@ -201,7 +223,7 @@ def test_scenario_6_cosmetic_followup_does_not_send_second_alert(config, conn):
         sources=[("bis_gov4", 0, "bis.gov")], now=now,
     )
     row = conn.execute("SELECT * FROM events WHERE id='E-S6'").fetchone()
-    first = process_event_for_alerts(conn, config, row, now)
+    first = _deliver(conn, config, row, now)
     assert first.action == "sent"
 
     # Cosmetic follow-up 1 hour later: no confirmation-state change occurred.
@@ -225,7 +247,7 @@ def test_scenario_7_formal_confirmation_after_statement_allows_material_update(c
         now=now,
     )
     row = conn.execute("SELECT * FROM events WHERE id='E-S7'").fetchone()
-    first = process_event_for_alerts(conn, config, row, now)
+    first = _deliver(conn, config, row, now)
     assert first.action == "sent"
     assert first.is_statement_only is True
 
@@ -249,7 +271,7 @@ def test_scenario_7_formal_confirmation_after_statement_allows_material_update(c
     row = conn.execute("SELECT * FROM events WHERE id='E-S7'").fetchone()
     assert ConfirmationState(row["confirmation_state"]) == ConfirmationState.OFFICIAL
 
-    second = process_event_for_alerts(conn, config, row, later)
+    second = _deliver(conn, config, row, later)
 
     assert second.action == "sent"
     assert second.is_statement_only is False
@@ -271,7 +293,7 @@ def test_scenario_8_fourth_s2_in_one_day_deferred_to_digest(config, conn):
             sources=[(f"bis_gov_s8_{i}", 0, f"bis-{i}.gov")], now=now,
         )
         row = conn.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
-        actions.append(process_event_for_alerts(conn, config, row, now))
+        actions.append(_deliver(conn, config, row, now))
 
     assert [a.action for a in actions[:3]] == ["sent", "sent", "sent"]
     assert actions[3].action == "suppressed_budget"

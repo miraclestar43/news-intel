@@ -208,5 +208,40 @@ def alerts_release_held(
         typer.echo(result.rendered_text)
 
 
+bot_app = typer.Typer(
+    help="Telegram query-command dispatch (one-shot; never starts long-polling)"
+)
+app.add_typer(bot_app, name="bot")
+
+
+@bot_app.command("dispatch")
+def bot_dispatch(
+    update_json: str = typer.Argument(
+        ..., help="Path to a JSON file containing one synthetic Telegram Update payload"
+    ),
+) -> None:
+    """Parses a single synthetic Update payload and prints the dispatched
+    response. This does NOT start python-telegram-bot's long-polling
+    Application -- pi-news-bot.service remains uninstalled/disabled. Useful
+    for manually exercising /now, /why, /sources, /mute, etc. without a real
+    bot token or network access."""
+    import json
+    from pathlib import Path
+
+    from telegram import Update
+
+    from news_intel.delivery.bot import handle_update
+
+    config, conn = _load()
+    try:
+        payload = json.loads(Path(update_json).read_text())
+        update = Update.de_json(payload, bot=None)
+        response = handle_update(conn, config, update)
+    finally:
+        conn.close()
+
+    typer.echo(response or "(no response: chat not allowlisted, or unrecognized command)")
+
+
 if __name__ == "__main__":
     app()

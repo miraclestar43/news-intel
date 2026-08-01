@@ -46,15 +46,6 @@ def count_sent_s2_on_pt_date(conn: sqlite3.Connection, pt_day: date, tz_name: st
     return len(message_keys)
 
 
-def has_confirmation_material_update_since(conn: sqlite3.Connection, event_id: str, since: datetime) -> bool:
-    row = conn.execute(
-        "SELECT COUNT(*) AS n FROM event_updates WHERE event_id = ? AND observed_at > ? "
-        "AND previous_confirmation_state != new_confirmation_state",
-        (event_id, since.isoformat()),
-    ).fetchone()
-    return row["n"] > 0
-
-
 def record_alert(
     conn: sqlite3.Connection,
     *,
@@ -66,10 +57,12 @@ def record_alert(
     eligible_at: datetime | None = None,
     sent_at: datetime | None = None,
     message_hash: str | None = None,
+    material_snapshot_json: str | None = None,
+    material_version_hash: str | None = None,
 ) -> int:
     cur = conn.execute(
         "INSERT INTO alert_queue (event_id, severity, state, reason, eligible_at, created_at, sent_at, "
-        "message_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "message_hash, material_snapshot_json, material_version_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             event_id,
             severity,
@@ -79,6 +72,8 @@ def record_alert(
             now.isoformat(),
             sent_at.isoformat() if sent_at else None,
             message_hash,
+            material_snapshot_json,
+            material_version_hash,
         ),
     )
     return cur.lastrowid
@@ -104,3 +99,41 @@ def release_as_batch(conn: sqlite3.Connection, alert_ids: list[int], *, message_
             "UPDATE alert_queue SET state = 'sent', sent_at = ?, message_hash = ? WHERE id = ?",
             (sent_at.isoformat(), message_hash, alert_id),
         )
+
+
+# --- S2 burst-merge (10-minute coalescing window) --------------------------
+
+
+def find_open_merge_batch(conn: sqlite3.Connection, now: datetime) -> sqlite3.Row | None:
+    """An S2 burst-merge batch that a new candidate can still join: it has
+    at least one 'pending_merge' member whose window (eligible_at) has not
+    yet closed."""
+    return conn.execute(
+        "SELECT * FROM alert_queue WHERE state = 'pending_merge' AND eligible_at > ? "
+        "ORDER BY created_at DESC LIMIT 1",
+        (now.isoformat(),),
+    ).fetchone()
+
+
+def pending_merge_batches_due(conn: sqlite3.Connection, now: datetime) -> list[str]:
+    """Distinct message_hash values for pending_merge batches whose window
+    has elapsed and are ready to finalize into one delivery."""
+    rows = conn.execute(
+        "SELECT DISTINCT message_hash FROM alert_queue WHERE state = 'pending_merge' AND eligible_at <= ?",
+        (now.isoformat(),),
+    ).fetchall()
+    return [r["message_hash"] for r in rows]
+
+
+def batch_members(conn: sqlite3.Connection, message_hash: str) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM alert_queue WHERE message_hash = ? AND state = 'pending_merge' ORDER BY created_at",
+        (message_hash,),
+    ).fetchall()
+
+
+def finalize_merge_batch(conn: sqlite3.Connection, message_hash: str, *, sent_at: datetime) -> None:
+    conn.execute(
+        "UPDATE alert_queue SET state = 'sent', sent_at = ? WHERE message_hash = ? AND state = 'pending_merge'",
+        (sent_at.isoformat(), message_hash),
+    )

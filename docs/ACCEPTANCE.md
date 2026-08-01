@@ -47,17 +47,44 @@ all in `tests/unit/test_alert_policy_and_commands.py`.
 
 70 tests passing total, `ruff check .` clean.
 
-### Known Phase 2 simplifications (documented, not silently skipped)
+### Phase 2 completion (burst merge, material facts, bot wiring)
 
-- The 10-minute "burst merge" of unrelated S2 candidates into one combined
-  message is not implemented; only the 30-minute minimum-spacing hold is
-  enforced. A near-simultaneous second S2 is held, not merged.
-- Material-update detection only considers confirmation-state transitions
-  (official/confirmed/reported changes already logged by
-  `pipeline/confirmation.py`), not the full material_facts diff (amount,
-  effective date, reversal, etc.) described in section 9 — that requires
-  LLM-proposed structured facts, deferred to when MiMo enrichment is wired
-  into the alert path.
-- Telegram query commands are implemented and unit-tested as pure functions
-  but are not yet wired into a running `python-telegram-bot` long-polling
-  Application; `pi-news-bot.service` stays an unimplemented placeholder.
+All three items flagged as outstanding after the initial Phase 2 pass are
+now implemented:
+
+1. **S2 burst merge** (`jobs/alerts.py`): every S2 candidate opens or joins
+   a `pending_merge` batch with a fixed 10-minute window from the first
+   candidate's arrival; the batch finalizes (lazily, via
+   `finalize_expired_merge_batches`) into one consolidated "Breaking Brief"
+   that preserves every event id and its sources, and counts as one message
+   toward the daily S2 budget (`alert_queue_repo.count_sent_s2_on_pt_date`
+   groups by `message_hash`). S3 always bypasses it; quiet-hours logic is
+   untouched (checked before the merge branch); candidates outside the
+   window fall through to the existing 30-minute spacing rule. Tests:
+   `tests/unit/test_burst_merge.py` (4 required scenarios).
+
+2. **Structured material-fact snapshot + diff** (`pipeline/material_facts.py`):
+   a `MaterialFactSnapshot` (action/actor/target_entities/amount/
+   effective_date/confirmation_status/reversed/trigger_severity), extracted
+   with wording-stable rules (known-vocabulary entities only, trigger id
+   instead of raw headline text) so paraphrasing never registers as
+   material. `diff_snapshots` flags confirmation, effective-date, amount,
+   new-target, actor, reversal, and S2→S3 escalation changes;
+   `validate_llm_snapshot` always overwrites `confirmation_status` with the
+   code-computed value and returns `None` (safe default: no repeated alert)
+   on any validation failure. Snapshots are stored per sent alert
+   (`alert_queue.material_snapshot_json`, migration `003`) so repeats are
+   diffed against what was actually delivered, not just current state.
+   Tests: `tests/unit/test_material_facts.py` (6 required cases).
+
+3. **Telegram query commands wired to a disabled entrypoint**
+   (`delivery/bot.py`, `pi-news bot dispatch`): dispatch parses real
+   `telegram.Update` payloads (`Update.de_json`, no network, no token
+   needed) and enforces `TELEGRAM_ALLOWED_CHAT_IDS` before running any
+   command or returning any data -- an unapproved chat gets no response and
+   never reaches a handler. `pi-news-bot.service` (long-polling) remains
+   uninstalled/disabled; the CLI command is a one-shot dispatcher only.
+   Tests: `tests/unit/test_bot_dispatch.py` (allowed vs. unapproved chat,
+   all 9 required commands, state-mutation isolation).
+
+90 tests passing total, `ruff check .` clean.

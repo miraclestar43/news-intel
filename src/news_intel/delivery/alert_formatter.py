@@ -48,3 +48,15 @@ def render_alert(
         f"Event: {event_id}",
     ]
     return "\n".join(lines)
+
+
+def render_breaking_brief(blocks: list[str]) -> str:
+    """Combines multiple S2 alerts that coalesced within the 10-minute
+    burst-merge window (design doc section 3.2) into one message. Each
+    block must already identify its own Event ID and sources -- this
+    function only adds the shared header, it never drops or renumbers an
+    event."""
+    if len(blocks) == 1:
+        return blocks[0]
+    header = "🚨 MAJOR — Breaking Brief (multiple developments)"
+    return "\n\n".join([header, *blocks])

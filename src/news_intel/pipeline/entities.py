@@ -41,6 +41,19 @@ def known_entities(topics_groups: dict) -> set[str]:
     return known
 
 
+def extract_known_entities(text: str, known: set[str]) -> list[str]:
+    """Known-vocabulary matches only, with no capitalized-phrase fallback.
+
+    Used where extraction must be stable across cosmetic paraphrasing (e.g.
+    material-fact snapshots for alert-repeat decisions) -- the capitalized-
+    phrase heuristic in extract_entities() is wording-sensitive by design
+    (good for clustering recall) and would misfire as a "new affected
+    entity" every time a headline is merely reworded.
+    """
+    lowered = text.lower()
+    return sorted(ent for ent in known if ent.lower() in lowered)
+
+
 def extract_entities(text: str, known: set[str]) -> list[str]:
     found: set[str] = set()
     lowered = text.lower()
