@@ -109,6 +109,18 @@ def process_event_for_alerts(
     # before evaluating this candidate, so budget/spacing reflect them.
     finalize_expired_merge_batches(config, conn, now)
 
+    # Replay/restart safety: if this event already has an open (not yet
+    # finalized) pending_merge row -- e.g. a re-triggered collect+alert-check
+    # cycle re-evaluating the same event inside its own 10-minute window --
+    # report that existing state rather than recording a second row, which
+    # would double-count the event when its batch finalizes.
+    already_pending = aq.open_pending_merge_for_event(conn, event_id)
+    if already_pending is not None:
+        return AlertActionResult(
+            event_id, "pending_merge", severity=already_pending["severity"],
+            message_hash=already_pending["message_hash"],
+        )
+
     eligibility = evaluate_eligibility(conn, event_row, config)
     if not eligibility.eligible:
         return AlertActionResult(event_id, "not_eligible", reason=eligibility.reason)

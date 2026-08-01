@@ -115,6 +115,19 @@ def find_open_merge_batch(conn: sqlite3.Connection, now: datetime) -> sqlite3.Ro
     ).fetchone()
 
 
+def open_pending_merge_for_event(conn: sqlite3.Connection, event_id: str) -> sqlite3.Row | None:
+    """This event's own still-open pending_merge row, if any. A replayed or
+    re-triggered invocation (e.g. a re-run collect+alert-check cycle within
+    the same 10-minute window) must recognize this and skip re-recording,
+    not add a second row that would double-count the event in its own
+    eventual batch."""
+    return conn.execute(
+        "SELECT * FROM alert_queue WHERE event_id = ? AND state = 'pending_merge' "
+        "ORDER BY created_at DESC LIMIT 1",
+        (event_id,),
+    ).fetchone()
+
+
 def pending_merge_batches_due(conn: sqlite3.Connection, now: datetime) -> list[str]:
     """Distinct message_hash values for pending_merge batches whose window
     has elapsed and are ready to finalize into one delivery."""
