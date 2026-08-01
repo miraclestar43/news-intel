@@ -42,6 +42,7 @@ class DailySummary:
     sent_dry_run: bool
     sent: bool
     skipped_lock: bool = False
+    skipped_sunday: bool = False
 
 
 def _select_events(conn: sqlite3.Connection, config: AppConfig, now: datetime):
@@ -70,6 +71,12 @@ def run_daily(
 ) -> DailySummary:
     now = now or datetime.now(UTC)
 
+    pt_weekday = now.astimezone(ZoneInfo(config.policy.timezone)).weekday()
+    if pt_weekday == 6:  # Sunday: the weekly brief replaces the daily send entirely
+        return DailySummary(
+            "", 0, 0, 0, False, "", "", True, False, skipped_sunday=True
+        )
+
     if not db.acquire_job_lock(conn, "daily"):
         return DailySummary("", 0, 0, 0, False, "", "", True, False, skipped_lock=True)
 
@@ -79,7 +86,7 @@ def run_daily(
         top3 = [event_as_digest_dict(conn, r) for r in top3_rows]
         quick = [event_as_digest_dict(conn, r) for r in quick_rows]
         calendar_items = [
-            {"title": row["title"], "scheduled_at": row["scheduled_at"]} for row in upcoming(conn)
+            {"title": row["title"], "scheduled_at": row["scheduled_at"]} for row in upcoming(conn, now=now)
         ]
 
         pt_now = now.astimezone(ZoneInfo(config.policy.timezone))

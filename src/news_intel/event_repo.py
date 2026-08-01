@@ -33,6 +33,25 @@ def qualified_events_since(
     ).fetchall()
 
 
+def events_in_window(
+    conn: sqlite3.Connection, *, window_start: datetime, window_end: datetime, min_score: float = 0.0
+) -> list[sqlite3.Row]:
+    """Bounded [window_start, window_end) pull for the weekly brief (Phase
+    3) -- both the current and prior 7-day windows, and unlike
+    qualified_events_since, deliberately includes low-scoring/disputed
+    events too (min_score defaults to 0) so noise/unresolved tracking has
+    something to look at."""
+    return conn.execute(
+        """
+        SELECT * FROM events
+        WHERE final_score >= ?
+          AND first_seen_at >= ? AND first_seen_at < ?
+        ORDER BY final_score DESC
+        """,
+        (min_score, window_start.isoformat(), window_end.isoformat()),
+    ).fetchall()
+
+
 def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
     rows = conn.execute(
         """
@@ -58,6 +77,18 @@ def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
         }
         for r in rows
     ]
+
+
+def combined_text_for_event(conn: sqlite3.Connection, event_id: str) -> str:
+    rows = conn.execute(
+        """
+        SELECT r.title AS title, r.summary_excerpt AS excerpt
+        FROM event_sources es JOIN raw_items r ON r.id = es.raw_item_id
+        WHERE es.event_id = ?
+        """,
+        (event_id,),
+    ).fetchall()
+    return " ".join(f"{r['title']} {r['excerpt'] or ''}" for r in rows)
 
 
 def event_as_digest_dict(conn: sqlite3.Connection, event_row: sqlite3.Row) -> dict:
@@ -106,6 +137,39 @@ def record_digest(
             (digest_id, event_id, rank),
         )
     return digest_id
+
+
+def create_digest(
+    conn: sqlite3.Connection,
+    *,
+    kind: str,
+    window_start: datetime,
+    window_end: datetime,
+    rendered_text: str,
+    model_used: str,
+    fallback_used: bool,
+) -> int:
+    """Generic digest-row creation for digests whose event references don't
+    fit the daily job's fixed top3/quick_brief sections (e.g. weekly's
+    multiple named sections) -- pair with add_digest_events()."""
+    now = datetime.now(UTC).isoformat()
+    cur = conn.execute(
+        """
+        INSERT INTO digests (kind, window_start, window_end, generation_state, rendered_text,
+            model_used, fallback_used, created_at)
+        VALUES (?, ?, ?, 'generated', ?, ?, ?, ?)
+        """,
+        (kind, window_start.isoformat(), window_end.isoformat(), rendered_text, model_used, int(fallback_used), now),
+    )
+    return cur.lastrowid
+
+
+def add_digest_events(conn: sqlite3.Connection, digest_id: int, event_ids: list[str], section: str) -> None:
+    for rank, event_id in enumerate(event_ids, start=1):
+        conn.execute(
+            "INSERT OR IGNORE INTO digest_events (digest_id, event_id, rank, section) VALUES (?, ?, ?, ?)",
+            (digest_id, event_id, rank, section),
+        )
 
 
 def last_digest_window_end(conn: sqlite3.Connection, kind: str) -> datetime | None:

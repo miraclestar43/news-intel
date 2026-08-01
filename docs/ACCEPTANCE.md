@@ -88,3 +88,50 @@ now implemented:
    all 9 required commands, state-mutation isolation).
 
 90 tests passing total, `ruff check .` clean.
+
+## Phase 3 acceptance evidence (weekly intelligence brief)
+
+Trend clustering (`pipeline/trends.py`) groups related *events* (not raw
+articles) within a 7-day window by category + known-entity overlap;
+strength is built only from importance, confirmation quality, source-family
+diversity, persistence, and material-update count -- raw article/raw_item
+counts never enter the formula. `jobs/weekly.py` derives window bounds from
+calendar arithmetic (the ISO Mon-Sun week containing `now`), so repeated
+invocations within the same week always compute identical bounds -- the
+basis for reliable digest-row idempotency independent of exact `now`
+jitter. `jobs/daily.py` skips entirely on Sunday (zero digest rows, zero
+job-lock/job-run bookkeeping) so the weekly brief is a true replacement,
+not an addition.
+
+| # | Required test | Test |
+|---|---|---|
+| 1 | Weekly synthesizes trends, not a daily concatenation | `test_weekly_job.py::test_weekly_synthesizes_trends_not_a_daily_concatenation` |
+| 2 | Prior-week comparison uses two distinct PT windows | `test_trends.py::test_prior_week_window_is_a_distinct_non_overlapping_pt_window` |
+| 3 | 10 syndicated articles don't beat fewer high-quality independent events | `test_trends.py::test_ten_syndicated_articles_do_not_beat_fewer_diverse_high_quality_events` |
+| 4 | Noise, unresolved, confirmation changes, reversals represented | `test_weekly_job.py::test_noise_unresolved_and_disputed_are_represented` |
+| 5 | Next-week items come from stored calendar records | `test_weekly_job.py::test_next_week_items_come_from_stored_calendar_records` |
+| 6 | Every factual/calendar claim maps to a stored id/URL | `test_weekly_job.py::test_every_referenced_event_and_calendar_id_is_stored` |
+| 7 | Repeated Sunday calls: one weekly delivery, zero daily duplicates | `test_weekly_job.py::test_sunday_scheduler_repeated_calls_create_one_weekly_and_zero_daily_duplicates` |
+| 8 | DST and ISO-week boundaries deterministic | `test_trends.py::test_week_window_deterministic_across_dst_spring_forward` |
+| 9 | LLM outage still produces a useful fallback weekly brief | `test_weekly_job.py::test_llm_outage_still_produces_useful_fallback_weekly_brief` |
+| 10 | Delivery remains dry-run | `test_weekly_job.py::test_delivery_remains_dry_run_by_default` |
+
+102 tests passing total, `ruff check .` clean. Verified live: `pi-news
+digest weekly --dry-run` runs cleanly against the real DB; Hermes and the
+polymarket bot remain active and untouched; no `pi-news` systemd units
+present.
+
+### Known Phase 3 limitations
+
+- Trend clustering uses the same known-vocabulary + capitalized-phrase
+  entity heuristic as event-level clustering (Phase 1) -- adequate for
+  grouping but not a substitute for genuine topic modeling.
+- The deterministic fallback's "Chinese synthesis" is a templated sentence
+  referencing counts, not narrative translation -- true 150-250 character
+  synthesis prose requires the LLM path (`compose_weekly.md`), which is
+  fully wired but untested against a live MiMo endpoint (none configured
+  yet, per Phase 1's documented limitation).
+- Weekly Telegram delivery, when a chat id is eventually configured, sends
+  each of the (at most two) parts as its own idempotent delivery; this is
+  implemented and dry-run-tested but not yet exercised against a real bot
+  token.

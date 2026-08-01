@@ -7,6 +7,7 @@ from news_intel.jobs import job_runs
 from news_intel.jobs.alerts import release_held_alerts, run_alert_check
 from news_intel.jobs.collect import run_collect
 from news_intel.jobs.daily import run_daily
+from news_intel.jobs.weekly import run_weekly
 from news_intel.logging_setup import configure_logging, get_logger
 from news_intel.settings import (
     DEFAULT_ENV_FILE,
@@ -158,6 +159,33 @@ def digest_daily(
     typer.echo(f"idempotency_key={summary.idempotency_key} sent={summary.sent} sent_dry_run={summary.sent_dry_run}")
     typer.echo("\n--- rendered brief ---\n")
     typer.echo(summary.rendered_text)
+
+
+@digest_app.command("weekly")
+def digest_weekly(
+    dry_run: bool = typer.Option(True, help="Preview only; do not persist the digest or send Telegram."),
+    chat_id: int = typer.Option(None, help="Telegram chat id to send to (must be in the allowlist)."),
+) -> None:
+    """Generate (and optionally send) the Sunday weekly brief."""
+    config, conn = _load()
+    try:
+        if dry_run:
+            with db.rollback_only(conn):
+                summary = run_weekly(config, conn, chat_id=chat_id, dry_run=True)
+        else:
+            summary = run_weekly(config, conn, chat_id=chat_id, dry_run=False)
+    finally:
+        conn.close()
+
+    typer.echo(f"week={summary.week_label} model_used={summary.model_used} fallback_used={summary.fallback_used}")
+    typer.echo(
+        f"trends={summary.trend_count} chars={summary.character_count} "
+        f"skipped_duplicate={summary.skipped_duplicate}"
+    )
+    typer.echo(f"idempotency_key={summary.idempotency_key} sent={summary.sent} sent_dry_run={summary.sent_dry_run}")
+    for i, part in enumerate(summary.rendered_parts, start=1):
+        typer.echo(f"\n--- rendered part {i}/{len(summary.rendered_parts)} ---\n")
+        typer.echo(part)
 
 
 alerts_app = typer.Typer(help="Breaking-alert eligibility, queueing, and held-alert release")
