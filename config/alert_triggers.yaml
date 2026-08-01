@@ -1,0 +1,98 @@
+# Deterministic alert triggers (design doc section 7.3, gate condition 4).
+# A matched trigger is necessary but not sufficient for an alert: the score
+# gate (final_score/significance/market_impact) and confirmation gate still
+# apply in pipeline/alerts.py. Nothing here can itself send a message.
+#
+# severity_ceiling: the highest severity this trigger can justify (S2 or S3).
+#   S3 is reserved for the design doc's "intentionally rare" examples:
+#   systemic financial instability, emergency central-bank action, a broad
+#   market shutdown, or an emergency government action with immediate
+#   national/global consequences.
+# market_impact_exempt: satisfies gate condition 3 ("market_impact >= 65 OR
+#   a critical policy/security/geopolitical trigger is present") even when
+#   market_impact itself is below the 65 floor.
+# is_statement: this trigger describes a person making a statement, not an
+#   institution taking an action -- it can only alert under the
+#   verified-statement exception (section 7.3) and must be labeled
+#   "Statement — policy not confirmed" unless a T0 document is also attached.
+
+triggers:
+  - id: export_control_or_sanction
+    severity_ceiling: S2
+    market_impact_exempt: true
+    terms_en:
+      - export control
+      - entity list
+      - export restriction
+      - sanction
+      - tariff
+      - Section 301
+      - BIS
+    terms_zh:
+      - 出口管制
+      - 实体清单
+      - 制裁
+      - 关税
+
+  - id: major_corporate_disclosure
+    severity_ceiling: S2
+    terms_en:
+      - earnings warning
+      - transformative acquisition
+      - unexpectedly resigned
+      - security breach
+      - operational failure
+      - material weakness
+
+  - id: macro_surprise
+    severity_ceiling: S2
+    market_impact_exempt: true
+    terms_en:
+      - surprising markets
+      - unexpected rate
+      - far outside consensus
+      - emergency rate
+      - surprise decision
+
+  - id: systemic_market_event
+    severity_ceiling: S3
+    market_impact_exempt: true
+    terms_en:
+      - systemic financial instability
+      - broad market shutdown
+      - market-wide circuit breaker
+      - bank run
+      - financial contagion
+
+  - id: military_or_geopolitical_escalation
+    severity_ceiling: S2
+    market_impact_exempt: true
+    terms_en:
+      - invasion
+      - missile strike
+      - blockade
+      - war escalation
+      - ceasefire collapse
+
+  - id: emergency_government_action
+    severity_ceiling: S3
+    market_impact_exempt: true
+    terms_en:
+      - national emergency
+      - emergency executive order
+      - martial law
+      - emergency central bank action
+
+  - id: verified_official_statement
+    severity_ceiling: S2
+    market_impact_exempt: true
+    is_statement: true
+    terms_en:
+      - " said "
+      - " posted "
+      - " stated "
+      - " claimed "
+      - " wrote on "
+      - " tweeted "
+      - "in a post"
+      - "in a statement"

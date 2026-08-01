@@ -13,6 +13,7 @@ Two outlets reproducing the same wire copy count as one source family, so
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime
 
 from news_intel.models import ConfirmationState
 
@@ -54,7 +55,10 @@ def compute_confirmation_state(
     return ConfirmationState.UNVERIFIED
 
 
-def update_confirmation_state(conn: sqlite3.Connection, event_id: str) -> ConfirmationState:
+def update_confirmation_state(
+    conn: sqlite3.Connection, event_id: str, *, now: datetime | None = None
+) -> ConfirmationState:
+    now = now or datetime.now(UTC)
     row = conn.execute(
         "SELECT confirmation_state FROM events WHERE id = ?", (event_id,)
     ).fetchone()
@@ -67,7 +71,7 @@ def update_confirmation_state(conn: sqlite3.Connection, event_id: str) -> Confir
         conn.execute(
             "INSERT INTO event_updates (event_id, observed_at, novelty_score, changed_facts_json, "
             "previous_confirmation_state, new_confirmation_state) "
-            "VALUES (?, datetime('now'), 0, '[]', ?, ?)",
-            (event_id, current.value, new_state.value),
+            "VALUES (?, ?, 0, '[]', ?, ?)",
+            (event_id, now.isoformat(), current.value, new_state.value),
         )
     return new_state

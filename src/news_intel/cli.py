@@ -4,6 +4,7 @@ import typer
 
 from news_intel import db
 from news_intel.jobs import job_runs
+from news_intel.jobs.alerts import release_held_alerts, run_alert_check
 from news_intel.jobs.collect import run_collect
 from news_intel.jobs.daily import run_daily
 from news_intel.logging_setup import configure_logging, get_logger
@@ -157,6 +158,54 @@ def digest_daily(
     typer.echo(f"idempotency_key={summary.idempotency_key} sent={summary.sent} sent_dry_run={summary.sent_dry_run}")
     typer.echo("\n--- rendered brief ---\n")
     typer.echo(summary.rendered_text)
+
+
+alerts_app = typer.Typer(help="Breaking-alert eligibility, queueing, and held-alert release")
+app.add_typer(alerts_app, name="alerts")
+
+
+@alerts_app.command("check")
+def alerts_check(
+    dry_run: bool = typer.Option(True, help="Preview only; roll back all DB writes at the end."),
+) -> None:
+    """Evaluate every developing event against the alert gate; real Telegram
+    sending is never triggered from this command in Phase 2."""
+    config, conn = _load()
+    try:
+        if dry_run:
+            with db.rollback_only(conn):
+                results = run_alert_check(config, conn)
+        else:
+            results = run_alert_check(config, conn)
+    finally:
+        conn.close()
+
+    typer.echo(f"dry_run={dry_run} evaluated={len(results)}")
+    for r in results:
+        if r.action != "not_eligible":
+            typer.echo(f"  {r.event_id} action={r.action} severity={r.severity} reason={r.reason}")
+
+
+@alerts_app.command("release-held")
+def alerts_release_held(
+    dry_run: bool = typer.Option(True, help="Preview only; roll back all DB writes at the end."),
+) -> None:
+    """06:30 America/Los_Angeles consolidated release of held S2 alerts.
+    Real Telegram sending is never triggered from this command in Phase 2."""
+    config, conn = _load()
+    try:
+        if dry_run:
+            with db.rollback_only(conn):
+                result = release_held_alerts(config, conn)
+        else:
+            result = release_held_alerts(config, conn)
+    finally:
+        conn.close()
+
+    typer.echo(f"dry_run={dry_run} released={result.released_event_ids} dropped={result.dropped_event_ids}")
+    if result.rendered_text:
+        typer.echo("\n--- rendered overnight update ---\n")
+        typer.echo(result.rendered_text)
 
 
 if __name__ == "__main__":

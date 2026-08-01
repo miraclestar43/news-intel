@@ -201,6 +201,26 @@ class TopicsConfig(BaseModel):
     noise_exclusions: list[str] = Field(default_factory=list)
 
 
+class AlertTriggerEntry(BaseModel):
+    id: str
+    severity_ceiling: str
+    market_impact_exempt: bool = False
+    is_statement: bool = False
+    terms_en: list[str] = Field(default_factory=list)
+    terms_zh: list[str] = Field(default_factory=list)
+
+    @field_validator("severity_ceiling")
+    @classmethod
+    def _valid_ceiling(cls, v: str) -> str:
+        if v not in ("S2", "S3"):
+            raise ValueError(f"severity_ceiling must be S2 or S3, got {v!r}")
+        return v
+
+
+class AlertTriggersConfig(BaseModel):
+    triggers: list[AlertTriggerEntry]
+
+
 def _load_yaml(path: Path) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"missing required config file: {path}")
@@ -212,6 +232,7 @@ class AppConfig(BaseModel):
     policy: PolicyConfig
     sources: SourcesConfig
     topics: TopicsConfig
+    alert_triggers: AlertTriggersConfig
     secrets: Secrets
     config_dir: Path
     data_dir: Path
@@ -228,12 +249,14 @@ def load_config(config_dir: Path | None = None, data_dir: Path | None = None) ->
     policy = PolicyConfig.model_validate(_load_yaml(config_dir / "policy.yaml"))
     sources = SourcesConfig.model_validate(_load_yaml(config_dir / "sources.yaml"))
     topics = TopicsConfig.model_validate(_load_yaml(config_dir / "topics.yaml"))
+    alert_triggers = AlertTriggersConfig.model_validate(_load_yaml(config_dir / "alert_triggers.yaml"))
     secrets = Secrets()
 
     return AppConfig(
         policy=policy,
         sources=sources,
         topics=topics,
+        alert_triggers=alert_triggers,
         secrets=secrets,
         config_dir=config_dir,
         data_dir=data_dir,

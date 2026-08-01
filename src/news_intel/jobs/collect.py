@@ -93,7 +93,7 @@ def run_collect(config: AppConfig, conn, *, now: datetime | None = None) -> Coll
                 else:
                     summary.updated_events += 1
 
-                update_confirmation_state(conn, event_id)
+                update_confirmation_state(conn, event_id, now=now)
                 scores = score_event(conn, event_id, config, is_new_event=is_new, now=now)
                 persist_score(conn, event_id, scores, weights, thresholds)
 
