@@ -93,6 +93,7 @@ class DigestsPolicy(BaseModel):
     weekly_target_english_words: tuple[int, int] = (650, 800)
     weekly_target_chinese_chars: tuple[int, int] = (150, 250)
     telegram_hard_limit_chars: int = 4096
+    max_events_per_origin_family: int = 2
 
 
 class ScoringWeights(BaseModel):

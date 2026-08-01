@@ -105,13 +105,15 @@ def test_gdelt_adapter_filters_missing_title():
 
 
 def test_html_index_adapter_parses_chinese_gov_source():
+    """Selector verified against the real live page on 2026-08-01 (see
+    config/sources.yaml comment); fixture mirrors that markup."""
     from tests.conftest import make_source_context
 
     ctx = make_source_context(
         id="gov_cn_policy",
         adapter="html_index",
-        url="https://www.gov.cn/zhengce/zuixin.htm",
-        selectors={"item": "ul.news_box li", "title": "a", "link": "a"},
+        url="https://www.gov.cn/zhengce/index.htm",
+        selectors={"item": "div.item03 ul li", "title": "a", "link": "a"},
     )
     html = (FIXTURES / "html_index_gov_cn.html").read_text(encoding="utf-8")
     outcome = HtmlIndexAdapter().parse(html, ctx, cursor=None)
@@ -123,6 +125,10 @@ def test_html_index_adapter_parses_chinese_gov_source():
 
 
 def test_html_index_adapter_parses_pboc_source():
+    """Adapter-parsing correctness only. The pboc_policy source entry itself
+    is `enabled: false` in config/sources.yaml because pbc.gov.cn/robots.txt
+    disallows all crawlers except Baiduspider -- this test does not imply the
+    source is active."""
     from tests.conftest import make_source_context
 
     ctx = make_source_context(

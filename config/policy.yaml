@@ -26,6 +26,7 @@ digests:
   weekly_target_english_words: [650, 800]
   weekly_target_chinese_chars: [150, 250]
   telegram_hard_limit_chars: 4096
+  max_events_per_origin_family: 2
 
 scoring:
   weights:

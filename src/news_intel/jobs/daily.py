@@ -25,6 +25,7 @@ from news_intel.llm.errors import LLMUnavailableError
 from news_intel.llm.fallback import fallback_daily_digest
 from news_intel.llm.provider import get_provider
 from news_intel.models import DailyDigestInput
+from news_intel.pipeline.select import select_diverse_events
 from news_intel.scheduled_repo import upcoming
 from news_intel.settings import AppConfig
 
@@ -45,13 +46,17 @@ class DailySummary:
 
 def _select_events(conn: sqlite3.Connection, config: AppConfig, now: datetime):
     thresholds = config.policy.scoring.thresholds
+    digests_policy = config.policy.digests
     window_start = last_digest_window_end(conn, "daily") or (now - timedelta(hours=24))
     qualified = qualified_events_since(conn, window_start=window_start, min_score=thresholds.daily_quick_brief)
 
-    top3 = [r for r in qualified if r["final_score"] >= thresholds.daily_top3][:3]
-    top3_ids = {r["id"] for r in top3}
-    remaining_budget = max(0, config.policy.digests.daily_max_events - len(top3))
-    quick = [r for r in qualified if r["id"] not in top3_ids][:remaining_budget]
+    top3, quick = select_diverse_events(
+        qualified,
+        max_per_family=digests_policy.max_events_per_origin_family,
+        min_events=digests_policy.daily_min_events,
+        max_events=digests_policy.daily_max_events,
+        top3_threshold=thresholds.daily_top3,
+    )
     return window_start, top3, quick
 
 

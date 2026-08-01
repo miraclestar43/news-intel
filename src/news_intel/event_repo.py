@@ -10,12 +10,24 @@ from datetime import UTC, datetime
 def qualified_events_since(
     conn: sqlite3.Connection, *, window_start: datetime, min_score: float
 ) -> list[sqlite3.Row]:
+    """`primary_origin_family` is the origin_family of the event's primary
+    source (falling back to any attached source) — the unit that Phase 1
+    hardening's per-digest diversity cap operates on, since two events can
+    share a company name but come from genuinely different publishers."""
     return conn.execute(
         """
-        SELECT * FROM events
-        WHERE final_score >= ?
-          AND (last_updated_at >= ? OR first_seen_at >= ?)
-        ORDER BY final_score DESC
+        SELECT e.*,
+            (
+                SELECT r.origin_family FROM event_sources es
+                JOIN raw_items r ON r.id = es.raw_item_id
+                WHERE es.event_id = e.id
+                ORDER BY es.is_primary DESC, r.id
+                LIMIT 1
+            ) AS primary_origin_family
+        FROM events e
+        WHERE e.final_score >= ?
+          AND (e.last_updated_at >= ? OR e.first_seen_at >= ?)
+        ORDER BY e.final_score DESC
         """,
         (min_score, window_start.isoformat(), window_start.isoformat()),
     ).fetchall()

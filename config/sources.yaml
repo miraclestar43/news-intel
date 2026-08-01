@@ -144,11 +144,16 @@ sources:
     adapter: html_index
     tier: 0
     enabled: true
-    url: "https://www.gov.cn/zhengce/zuixin.htm"
+    # Verified live 2026-08-01: the doc-era zhengce/zuixin.htm URL now 404s
+    # after its meta-refresh redirect. This is the current "最新政策"
+    # (Latest Policy) listing on the zhengce index page. robots.txt allows
+    # this path (only /2016zhengce/ and similar year-prefixed paths are
+    # disallowed).
+    url: "https://www.gov.cn/zhengce/index.htm"
     poll_interval_seconds: 1800
     category_hints: [china, policy]
     selectors:
-      item: "ul.news_box li"
+      item: "div.item03 ul li"
       title: "a"
       link: "a"
       date: "span"
@@ -157,7 +162,7 @@ sources:
     name: "People's Bank of China — monetary policy"
     adapter: html_index
     tier: 0
-    enabled: true
+    enabled: false
     url: "http://www.pbc.gov.cn/tiaofasi/144941/144979/index.html"
     poll_interval_seconds: 1800
     category_hints: [china, macro]
@@ -166,6 +171,13 @@ sources:
       title: "a"
       link: "a"
       date: "span"
+    note: >-
+      Disabled 2026-08-01: pbc.gov.cn/robots.txt disallows all crawlers
+      except Baiduspider (User-agent: * / Disallow: /). Fetching this page
+      programmatically would violate the site's stated access policy, so it
+      is left disabled rather than scraped. Re-enable only if PBOC later
+      publishes a compliant feed/API, or an explicitly permitted path is
+      identified in robots.txt.
 
   - id: social_trumpdailyposts
     name: "@TrumpDailyPosts (mirror)"
