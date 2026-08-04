@@ -22,9 +22,9 @@ def _seed(conn, *, event_id, title, excerpt, category, score, tier, origin_famil
     ts = (SUNDAY_PT - timedelta(days=day_offset)).astimezone(UTC)
     conn.execute(
         "INSERT INTO events (id, primary_title, category, status, first_seen_at, last_updated_at, "
-        "confirmation_state, final_score, significance, market_impact, confirmation_quality) "
-        "VALUES (?, ?, ?, 'developing', ?, ?, 'unverified', ?, ?, ?, 50)",
-        (event_id, title, category, ts.isoformat(), ts.isoformat(), score, score, score),
+        "published_anchor_at, confirmation_state, final_score, significance, market_impact, "
+        "confirmation_quality) VALUES (?, ?, ?, 'developing', ?, ?, ?, 'unverified', ?, ?, ?, 50)",
+        (event_id, title, category, ts.isoformat(), ts.isoformat(), ts.isoformat(), score, score, score),
     )
     insert_source_row(conn, f"src_{event_id}", tier)
     cur = conn.execute(
@@ -195,6 +195,24 @@ def test_llm_outage_still_produces_useful_fallback_weekly_brief(config, conn):
     assert "WHAT MATERIALLY CHANGED" in rendered
     assert "NEXT WEEK" in rendered
     assert summary.trend_count >= 1
+
+
+def test_weekly_composer_receives_a_bounded_set_of_selected_items(config, conn):
+    """Gate A remediation Phase 4: even when far more eligible standalone
+    developments/trends exist than the configured cap, the composer (and
+    the persisted digest_events tagging) must only receive the bounded,
+    highest-quality set -- Gate A handed the composer 915 low-value
+    clusters for one week."""
+    config.policy.digests.weekly_max_selected_items = 5
+    for i in range(15):
+        _seed(
+            conn, event_id=f"E-BOUND-{i:02d}", title=f"Distinct standalone development number {i}",
+            excerpt=f"A self-contained story with no relation to the others, number {i}.",
+            category="Markets & Economy", score=70 - i, tier=1, origin_family=f"wire-{i}.test", day_offset=1,
+        )
+
+    summary = run_weekly(config, conn, dry_run=True, now=SUNDAY_PT.astimezone(UTC))
+    assert summary.trend_count <= 5
 
 
 def test_delivery_remains_dry_run_by_default(config, conn):

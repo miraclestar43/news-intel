@@ -27,7 +27,7 @@ from news_intel.llm.fallback import fallback_weekly_digest
 from news_intel.llm.provider import get_provider
 from news_intel.models import WeeklyDigestInput
 from news_intel.pipeline.entities import known_entities
-from news_intel.pipeline.trends import TrendCluster, build_trend_clusters
+from news_intel.pipeline.trends import TrendCluster, build_trend_clusters, select_top_clusters
 from news_intel.pipeline.weekly import (
     classify_statement_vs_policy,
     compare_with_prior_week,
@@ -96,6 +96,8 @@ def _trend_dict(conn: sqlite3.Connection, cluster: TrendCluster, status: str) ->
         "titles": _titles_for_events(conn, cluster.event_ids),
         "strength": cluster.strength,
         "status": status,
+        "is_trend": cluster.is_trend,
+        "shared_anchor": cluster.shared_anchor,
     }
 
 
@@ -139,9 +141,24 @@ def run_weekly(
         current_events = events_in_window(conn, window_start=window_start, window_end=window_end)
         prior_events = events_in_window(conn, window_start=prior_start, window_end=prior_end)
 
-        current_clusters = build_trend_clusters(conn, current_events, known)
-        prior_clusters = build_trend_clusters(conn, prior_events, known)
+        trend_policy = config.topics.trend_identity
+        min_event_score = config.policy.scoring.thresholds.weekly_store
+        # Comparison (new/continuing/resolved) runs against the *full*
+        # eligible cluster set so a genuinely continuing trend is never
+        # missed just because it later gets trimmed from the brief itself.
+        current_clusters = build_trend_clusters(
+            conn, current_events, known, policy=trend_policy, min_event_score=min_event_score
+        )
+        prior_clusters = build_trend_clusters(
+            conn, prior_events, known, policy=trend_policy, min_event_score=min_event_score
+        )
         comparison = compare_with_prior_week(current_clusters, prior_clusters)
+        # Gate A remediation Phase 4: only a bounded, config-driven set of
+        # the highest-quality clusters actually goes to the composer --
+        # Gate A produced 915 low-value clusters for one week alone.
+        selected_clusters = select_top_clusters(
+            current_clusters, max_items=config.policy.digests.weekly_max_selected_items
+        )
 
         thresholds = config.policy.scoring.thresholds
         noise, signal = identify_noise_vs_signal(
@@ -165,7 +182,7 @@ def run_weekly(
                 return "continuing"
             return "unchanged"
 
-        trend_dicts = [_trend_dict(conn, cluster, _status_for(cluster)) for cluster in current_clusters]
+        trend_dicts = [_trend_dict(conn, cluster, _status_for(cluster)) for cluster in selected_clusters]
 
         prior_summary = {
             "signal_titles": _titles_for_rows(signal),
@@ -227,16 +244,16 @@ def run_weekly(
             conn, kind="weekly", window_start=window_start, window_end=window_end,
             rendered_text=rendered_text, model_used=model_used, fallback_used=fallback_used,
         )
-        for cluster in current_clusters:
+        for cluster in selected_clusters:
             section = cluster.category if cluster.category in _SECTION_CATEGORIES else "other"
             add_digest_events(conn, digest_id, cluster.event_ids, section)
 
         job_runs.finish(
-            conn, run_id, "success", {"trend_count": len(current_clusters), "fallback_used": fallback_used}
+            conn, run_id, "success", {"trend_count": len(selected_clusters), "fallback_used": fallback_used}
         )
 
         return WeeklySummary(
-            rendered_parts=parts, character_count=len(rendered_text), trend_count=len(current_clusters),
+            rendered_parts=parts, character_count=len(rendered_text), trend_count=len(selected_clusters),
             fallback_used=fallback_used, model_used=model_used, idempotency_key=idempotency_key,
             sent_dry_run=sent_dry_run, sent=sent, week_label=week_label,
         )

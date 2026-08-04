@@ -22,14 +22,20 @@ class TrendComparison:
 
 
 def compare_with_prior_week(current: list[TrendCluster], prior: list[TrendCluster]) -> TrendComparison:
+    """Continuity between weeks is judged on the same specific (non-generic)
+    shared_anchor used to build the trend in the first place -- Gate A
+    remediation Phase 4 -- never on the broader key_entities list, which
+    can include generic terms that would otherwise link two genuinely
+    unrelated week-over-week trends."""
     comparison = TrendComparison()
     matched_prior_ids: set[str] = set()
 
     for cluster in current:
+        anchor = set(cluster.comparison_anchor)
         match = next(
             (
                 p for p in prior
-                if p.category == cluster.category and (set(p.key_entities) & set(cluster.key_entities))
+                if p.category == cluster.category and anchor and (set(p.comparison_anchor) & anchor)
             ),
             None,
         )
