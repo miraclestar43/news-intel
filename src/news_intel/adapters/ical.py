@@ -7,7 +7,7 @@ import httpx
 from icalendar import Calendar
 
 from news_intel.adapters.base import CollectedItem, FetchOutcome, SourceHealthState, register
-from news_intel.net import UnsafeURLError, safe_get_with_retry
+from news_intel.net import UnsafeURLError, retry_after_seconds, safe_get_with_retry
 
 
 @register("ical")
@@ -21,7 +21,8 @@ class IcalAdapter:
             return FetchOutcome([], cursor, SourceHealthState.UNAVAILABLE, str(exc))
         except httpx.HTTPStatusError as exc:
             return FetchOutcome(
-                [], cursor, SourceHealthState.DEGRADED, f"http {exc.response.status_code}"
+                [], cursor, SourceHealthState.DEGRADED, f"http {exc.response.status_code}",
+                retry_after_seconds=retry_after_seconds(exc) if exc.response.status_code == 429 else None,
             )
         except httpx.TransportError as exc:
             return FetchOutcome([], cursor, SourceHealthState.DEGRADED, f"transport error: {exc}")

@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 from news_intel.adapters.base import CollectedItem
 from news_intel.pipeline.cluster import find_or_create_event
-from news_intel.pipeline.dedupe import insert_raw_item
+from news_intel.pipeline.dedupe import UpsertResult, upsert_raw_item
 from news_intel.pipeline.entities import known_entities
 from news_intel.pipeline.normalize import normalize
 from tests.conftest import insert_source_row
@@ -29,12 +29,12 @@ def _make_and_store(conn, config, *, source_id, tier, title, excerpt, url, now):
         metadata={},
     )
     normalized = normalize(item, excerpt_max_chars=config.policy.storage.raw_excerpt_max_chars, now=now)
-    raw_id = insert_raw_item(conn, normalized)
+    upsert = upsert_raw_item(conn, normalized)
     known = known_entities(config.topics.groups)
     event_id, is_new = find_or_create_event(
-        conn, normalized, raw_id, config.policy.dedupe, known, now=now
+        conn, normalized, upsert.raw_item_id, config.policy.dedupe, known, now=now
     )
-    return raw_id, event_id, is_new
+    return upsert.raw_item_id, event_id, is_new
 
 
 def test_two_titles_about_one_event_cluster(config, conn):
@@ -116,9 +116,11 @@ def test_rerunning_collection_is_idempotent(config, conn):
     )
     normalized = normalize(item, excerpt_max_chars=config.policy.storage.raw_excerpt_max_chars, now=now)
 
-    id1 = insert_raw_item(conn, normalized)
-    id2 = insert_raw_item(conn, normalized)
-    assert id1 == id2
+    first = upsert_raw_item(conn, normalized)
+    second = upsert_raw_item(conn, normalized)
+    assert first.raw_item_id == second.raw_item_id
+    assert first.result == UpsertResult.NEW
+    assert second.result == UpsertResult.UNCHANGED  # identical replay is a no-op, not a second insert
 
     count = conn.execute("SELECT COUNT(*) AS n FROM raw_items").fetchone()["n"]
     assert count == 1

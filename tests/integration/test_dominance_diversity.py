@@ -17,8 +17,9 @@ from tests.conftest import insert_source_row
 def _seed_explicit_event(conn, *, event_id, title, category, final_score, source_id, tier, origin_family, now):
     conn.execute(
         "INSERT INTO events (id, primary_title, category, first_seen_at, last_updated_at, "
-        "confirmation_state, final_score, severity) VALUES (?, ?, ?, ?, ?, 'official', ?, 'S1')",
-        (event_id, title, category, now.isoformat(), now.isoformat(), final_score),
+        "published_anchor_at, confirmation_state, final_score, severity) "
+        "VALUES (?, ?, ?, ?, ?, ?, 'official', ?, 'S1')",
+        (event_id, title, category, now.isoformat(), now.isoformat(), now.isoformat(), final_score),
     )
     insert_source_row(conn, source_id, tier)
     conn.execute("UPDATE sources SET url = 'https://example.test' WHERE id = ?", (source_id,))

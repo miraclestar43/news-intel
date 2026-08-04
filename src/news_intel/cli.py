@@ -127,10 +127,16 @@ def collect(dry_run: bool = typer.Option(True, help="Preview only; roll back all
 
     typer.echo(f"dry_run={dry_run}")
     for s in summary.sources:
-        typer.echo(f"  {s.source_id:<24} {s.health_state:<12} items={s.item_count} {s.detail or ''}")
+        typer.echo(
+            f"  {s.source_id:<24} {s.action:<15} {s.health_state:<12} items={s.item_count} {s.detail or ''}"
+        )
     typer.echo(
-        f"new_raw_items={summary.new_raw_items} new_events={summary.new_events} "
-        f"updated_events={summary.updated_events}"
+        f"fetched_items={summary.fetched_items} new_raw_items={summary.new_raw_items} "
+        f"changed_raw_items={summary.changed_raw_items} unchanged_raw_items={summary.unchanged_raw_items}"
+    )
+    typer.echo(
+        f"new_events={summary.new_events} updated_events={summary.updated_events} "
+        f"processed_items={summary.processed_items}"
     )
 
 

@@ -67,9 +67,9 @@ def _seed_events(config, conn, now):
         insert_source_row(conn, source_id, tier)
         event_id = f"E-20260731-{i:04d}"
         conn.execute(
-            "INSERT INTO events (id, primary_title, first_seen_at, last_updated_at, confirmation_state) "
-            "VALUES (?, ?, ?, ?, 'unverified')",
-            (event_id, title, now.isoformat(), now.isoformat()),
+            "INSERT INTO events (id, primary_title, first_seen_at, last_updated_at, "
+            "published_anchor_at, confirmation_state) VALUES (?, ?, ?, ?, ?, 'unverified')",
+            (event_id, title, now.isoformat(), now.isoformat(), now.isoformat()),
         )
         cur = conn.execute(
             "INSERT INTO raw_items (source_id, external_id, canonical_url, url_hash, title, "

@@ -103,6 +103,19 @@ def safe_get(
             return FetchResult(resp.status_code, body.decode(resp.encoding or "utf-8", errors="replace"), resp.headers)
 
 
+def retry_after_seconds(exc: httpx.HTTPStatusError) -> float | None:
+    """Extracts a numeric delta-seconds Retry-After value (the common case
+    for rate-limit responses like GDELT's 429s). An HTTP-date form is not
+    handled -- callers fall back to deterministic exponential backoff."""
+    value = exc.response.headers.get("Retry-After")
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
 def _is_transient(exc: BaseException) -> bool:
     if isinstance(exc, httpx.TransportError):
         return True

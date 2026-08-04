@@ -13,7 +13,13 @@ def qualified_events_since(
     """`primary_origin_family` is the origin_family of the event's primary
     source (falling back to any attached source) — the unit that Phase 1
     hardening's per-digest diversity cap operates on, since two events can
-    share a company name but come from genuinely different publishers."""
+    share a company name but come from genuinely different publishers.
+
+    Window membership uses eligibility time (COALESCE(content_changed_at,
+    published_anchor_at) -- Gate A remediation Phase 2), never ingestion
+    time: an old article ingested today must not qualify just because
+    first_seen_at/last_updated_at are recent, and archive-only events (NULL
+    eligibility time) never qualify at all."""
     return conn.execute(
         """
         SELECT e.*,
@@ -26,10 +32,10 @@ def qualified_events_since(
             ) AS primary_origin_family
         FROM events e
         WHERE e.final_score >= ?
-          AND (e.last_updated_at >= ? OR e.first_seen_at >= ?)
+          AND COALESCE(e.content_changed_at, e.published_anchor_at) >= ?
         ORDER BY e.final_score DESC
         """,
-        (min_score, window_start.isoformat(), window_start.isoformat()),
+        (min_score, window_start.astimezone(UTC).isoformat()),
     ).fetchall()
 
 
@@ -40,15 +46,17 @@ def events_in_window(
     3) -- both the current and prior 7-day windows, and unlike
     qualified_events_since, deliberately includes low-scoring/disputed
     events too (min_score defaults to 0) so noise/unresolved tracking has
-    something to look at."""
+    something to look at. Uses eligibility time, not ingestion time (see
+    qualified_events_since docstring / pipeline/time_semantics.py)."""
     return conn.execute(
         """
         SELECT * FROM events
         WHERE final_score >= ?
-          AND first_seen_at >= ? AND first_seen_at < ?
+          AND COALESCE(content_changed_at, published_anchor_at) >= ?
+          AND COALESCE(content_changed_at, published_anchor_at) < ?
         ORDER BY final_score DESC
         """,
-        (min_score, window_start.isoformat(), window_end.isoformat()),
+        (min_score, window_start.astimezone(UTC).isoformat(), window_end.astimezone(UTC).isoformat()),
     ).fetchall()
 
 

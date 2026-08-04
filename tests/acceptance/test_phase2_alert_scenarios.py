@@ -191,12 +191,12 @@ def test_scenario_5_duplicate_articles_produce_one_alert(config, conn):
     insert_source_row(conn, "bis_gov3", 0)
     insert_source_row(conn, "wire_dup", 1)
 
-    from news_intel.pipeline.dedupe import insert_raw_item
+    from news_intel.pipeline.dedupe import upsert_raw_item
 
     for item in (item_a, item_b):
         normalized = normalize(item, excerpt_max_chars=config.policy.storage.raw_excerpt_max_chars, now=now)
-        raw_id = insert_raw_item(conn, normalized)
-        event_id, _ = find_or_create_event(conn, normalized, raw_id, config.policy.dedupe, known, now=now)
+        upsert = upsert_raw_item(conn, normalized)
+        event_id, _ = find_or_create_event(conn, normalized, upsert.raw_item_id, config.policy.dedupe, known, now=now)
 
     events = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
     assert events == 1  # the two articles clustered into one event

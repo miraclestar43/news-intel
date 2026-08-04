@@ -11,8 +11,10 @@ from datetime import UTC, datetime
 
 from news_intel.pipeline.entities import extract_entities
 from news_intel.pipeline.normalize import NormalizedItem, normalize_title
+from news_intel.pipeline.relevance import is_legal_notice_boilerplate
 from news_intel.pipeline.similarity import entity_overlap_ratio, title_similarity_score, trigram_jaccard
-from news_intel.settings import DedupePolicy
+from news_intel.pipeline.time_semantics import resolve_anchor
+from news_intel.settings import DedupePolicy, LegalNoticeBoilerplatePolicy, TimeSemanticsPolicy
 
 
 def _next_event_id(conn: sqlite3.Connection, day: datetime) -> str:
@@ -26,11 +28,11 @@ def _next_event_id(conn: sqlite3.Connection, day: datetime) -> str:
     return f"{prefix}{seq:04d}"
 
 
-def _candidate_events(conn: sqlite3.Connection, window_hours: int) -> list[sqlite3.Row]:
+def _candidate_events(conn: sqlite3.Connection, window_hours: int, *, now: datetime) -> list[sqlite3.Row]:
     return conn.execute(
         "SELECT * FROM events WHERE status = 'developing' "
-        "AND julianday('now') - julianday(last_updated_at) <= ? ",
-        (window_hours / 24.0,),
+        "AND julianday(?) - julianday(last_updated_at) <= ? ",
+        (now.isoformat(), window_hours / 24.0),
     ).fetchall()
 
 
@@ -42,23 +44,41 @@ def find_or_create_event(
     known_entities: set[str],
     *,
     now: datetime | None = None,
+    time_policy: TimeSemanticsPolicy | None = None,
+    legal_notice_policy: LegalNoticeBoilerplatePolicy | None = None,
 ) -> tuple[str, bool]:
     """Returns (event_id, is_new_event)."""
     now = now or datetime.now(UTC)
-    item_entities = extract_entities(f"{item.title} {item.summary_excerpt or ''}", known_entities)
+    time_policy = time_policy or TimeSemanticsPolicy()
+    legal_notice_policy = legal_notice_policy or LegalNoticeBoilerplatePolicy()
+    item_text = f"{item.title} {item.summary_excerpt or ''}"
+    item_entities = extract_entities(item_text, known_entities)
+    # Gate A remediation Phase 3.4: templated law-firm shareholder-alert
+    # boilerplate must never cluster purely on shared boilerplate phrasing
+    # -- different tickers/defendants would otherwise merge because their
+    # titles/trigrams are near-identical and their capitalized-phrase
+    # fallback "entities" (e.g. "Law Firm", "Class Action") overlap. For
+    # boilerplate text, require a shared *known-vocabulary* entity instead
+    # of gross title/trigram similarity.
+    item_is_boilerplate = is_legal_notice_boilerplate(item_text, legal_notice_policy)
+    item_known_entities = {e for e in item_entities if e in known_entities}
 
     best_match: sqlite3.Row | None = None
-    for candidate in _candidate_events(conn, dedupe_policy.candidate_window_hours):
+    for candidate in _candidate_events(conn, dedupe_policy.candidate_window_hours, now=now):
         cand_entities = json.loads(candidate["entities_json"] or "[]")
-        cand_normalized_title = normalize_title(candidate["primary_title"])
-        title_sim = title_similarity_score(item.normalized_title, cand_normalized_title)
-        trigram = trigram_jaccard(item.normalized_title, cand_normalized_title)
-        overlap = entity_overlap_ratio(item_entities, cand_entities)
 
-        is_match = title_sim >= dedupe_policy.title_similarity_threshold or (
-            trigram >= dedupe_policy.trigram_jaccard_threshold
-            and overlap >= dedupe_policy.entity_overlap_threshold
-        )
+        if item_is_boilerplate:
+            cand_known_entities = {e for e in cand_entities if e in known_entities}
+            is_match = bool(item_known_entities & cand_known_entities)
+        else:
+            cand_normalized_title = normalize_title(candidate["primary_title"])
+            title_sim = title_similarity_score(item.normalized_title, cand_normalized_title)
+            trigram = trigram_jaccard(item.normalized_title, cand_normalized_title)
+            overlap = entity_overlap_ratio(item_entities, cand_entities)
+            is_match = title_sim >= dedupe_policy.title_similarity_threshold or (
+                trigram >= dedupe_policy.trigram_jaccard_threshold
+                and overlap >= dedupe_policy.entity_overlap_threshold
+            )
         if is_match:
             best_match = candidate
             break
@@ -66,27 +86,35 @@ def find_or_create_event(
     if best_match is not None:
         event_id = best_match["id"]
         merged_entities = sorted(set(item_entities) | set(json.loads(best_match["entities_json"] or "[]")))
+        # Only NEW/CONTENT_CHANGED raw items ever reach find_or_create_event
+        # (Phase 1.1 gates UNCHANGED out before this point), so reaching the
+        # merge branch always means genuinely new/changed content -- bump
+        # content_changed_at so this counts as a fresh material update for
+        # digest/trend eligibility, without touching the event's original
+        # published_anchor_at.
         conn.execute(
-            "UPDATE events SET last_updated_at = ?, entities_json = ? WHERE id = ?",
-            (now.isoformat(), json.dumps(merged_entities, ensure_ascii=False), event_id),
+            "UPDATE events SET last_updated_at = ?, entities_json = ?, content_changed_at = ? WHERE id = ?",
+            (now.isoformat(), json.dumps(merged_entities, ensure_ascii=False), now.isoformat(), event_id),
         )
         _attach_source(conn, event_id, raw_item_id, is_primary=False)
         return event_id, False
 
+    anchor = resolve_anchor(item.published_at, now=now, policy=time_policy)
     event_id = _next_event_id(conn, now)
     conn.execute(
         """
         INSERT INTO events (
             id, primary_title, status, confirmation_state,
-            first_seen_at, last_updated_at, published_anchor_at, entities_json
-        ) VALUES (?, ?, 'developing', 'unverified', ?, ?, ?, ?)
+            first_seen_at, last_updated_at, published_anchor_at, archive_only, entities_json
+        ) VALUES (?, ?, 'developing', 'unverified', ?, ?, ?, ?, ?)
         """,
         (
             event_id,
             item.title,
             now.isoformat(),
             now.isoformat(),
-            item.published_at.isoformat() if item.published_at else now.isoformat(),
+            anchor.published_anchor_at.isoformat() if anchor.published_anchor_at else None,
+            int(anchor.archive_only),
             json.dumps(item_entities, ensure_ascii=False),
         ),
     )

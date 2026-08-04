@@ -35,6 +35,7 @@ class FetchOutcome:
     new_cursor: str | None
     health_state: SourceHealthState
     health_detail: str | None = None
+    retry_after_seconds: float | None = None
 
 
 class SourceAdapter(Protocol):

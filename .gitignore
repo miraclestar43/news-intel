@@ -12,3 +12,5 @@ logs/
 .env
 /data/
 *.bak
+evidence/*.db
+evidence/*.log

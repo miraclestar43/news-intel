@@ -94,6 +94,7 @@ class DigestsPolicy(BaseModel):
     weekly_target_chinese_chars: tuple[int, int] = (150, 250)
     telegram_hard_limit_chars: int = 4096
     max_events_per_origin_family: int = 2
+    weekly_max_selected_items: int = 12
 
 
 class ScoringWeights(BaseModel):
@@ -143,6 +144,18 @@ class FetchPolicy(BaseModel):
     max_response_bytes: int = 5_000_000
 
 
+class TimeSemanticsPolicy(BaseModel):
+    """Gate A remediation Phase 2: config-driven bootstrap/event-time policy
+    (no source-specific Python). An item with no source-published time, or
+    one implausibly far in the future (clock skew / malformed feed data),
+    is never given a fabricated "now" anchor -- it is marked archive-only
+    and excluded from digest/trend eligibility until a later genuine update
+    gives it a valid time."""
+
+    future_skew_tolerance_minutes: int = 60
+    archive_only_when_undated: bool = True
+
+
 class PolicyConfig(BaseModel):
     timezone: str = "America/Los_Angeles"
     collection_interval_minutes: int = 5
@@ -156,6 +169,7 @@ class PolicyConfig(BaseModel):
     dedupe: DedupePolicy
     storage: StoragePolicy
     fetch: FetchPolicy
+    time_semantics: TimeSemanticsPolicy = Field(default_factory=TimeSemanticsPolicy)
 
     @field_validator("timezone")
     @classmethod
@@ -196,9 +210,42 @@ class SourcesConfig(BaseModel):
         return v
 
 
+class TradePolicyContext(BaseModel):
+    """Gate A remediation Phase 3.3: bare "tariff" must not by itself imply
+    AI/semiconductor or high relevance -- it needs contextual evidence, and
+    administrative/utility tariff filings must be excluded outright."""
+
+    anchor_terms_en: list[str] = Field(default_factory=list)
+    anchor_terms_zh: list[str] = Field(default_factory=list)
+    context_terms_en: list[str] = Field(default_factory=list)
+    ai_semiconductor_context_terms_en: list[str] = Field(default_factory=list)
+    negative_context_en: list[str] = Field(default_factory=list)
+
+
+class LegalNoticeBoilerplatePolicy(BaseModel):
+    """Gate A remediation Phase 3.4: templated law-firm shareholder-alert
+    boilerplate is noise unless a separate material corporate event
+    independently qualifies."""
+
+    phrases: list[str] = Field(default_factory=list)
+    material_override_phrases: list[str] = Field(default_factory=list)
+
+
+class TrendIdentityPolicy(BaseModel):
+    """Gate A remediation Phase 4: a multi-event trend requires a specific,
+    non-generic shared anchor -- these broad terms can never justify a
+    multi-event grouping on their own, no matter how often they co-occur."""
+
+    generic_anchor_terms: list[str] = Field(default_factory=list)
+    topic_trigram_floor: float = 0.12
+
+
 class TopicsConfig(BaseModel):
     groups: dict[str, dict]
     noise_exclusions: list[str] = Field(default_factory=list)
+    trade_policy_context: TradePolicyContext = Field(default_factory=TradePolicyContext)
+    legal_notice_boilerplate: LegalNoticeBoilerplatePolicy = Field(default_factory=LegalNoticeBoilerplatePolicy)
+    trend_identity: TrendIdentityPolicy = Field(default_factory=TrendIdentityPolicy)
 
 
 class AlertTriggerEntry(BaseModel):

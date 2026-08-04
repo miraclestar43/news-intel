@@ -27,6 +27,7 @@ digests:
   weekly_target_chinese_chars: [150, 250]
   telegram_hard_limit_chars: 4096
   max_events_per_origin_family: 2
+  weekly_max_selected_items: 12
 
 scoring:
   weights:
@@ -49,7 +50,7 @@ relevance_multipliers:
   tech_platforms_datacenter: 1.20
   markets_macro_corporate: 1.15
   us_china_policy_geopolitics: 1.10
-  other_consequential_world: 1.00
+  unclassified: 0.0
   routine_politics_general: 0.70
   explicit_noise: 0.00
 
@@ -73,3 +74,7 @@ fetch:
   max_retries: 2
   max_redirects: 3
   max_response_bytes: 5000000
+
+time_semantics:
+  future_skew_tolerance_minutes: 60
+  archive_only_when_undated: true

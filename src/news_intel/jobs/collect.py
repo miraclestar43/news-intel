@@ -1,7 +1,16 @@
 """Stage 1 orchestration: one short-lived job triggered every 5 minutes by
-systemd. One source's failure never aborts collection from the others —
-each adapter call is individually wrapped so an unhandled adapter exception
-degrades that source instead of killing the run."""
+systemd. The 5-minute timer is only a scheduler tick -- each source is only
+actually fetched when its own configured poll_interval_seconds (plus any
+backoff) says it is due (Gate A remediation Phase 1.2). One source's
+failure never aborts collection from the others — each adapter call is
+individually wrapped so an unhandled adapter exception degrades that source
+instead of killing the run.
+
+Only genuinely NEW or CONTENT_CHANGED raw items are fed into
+normalization/clustering/confirmation/scoring (Gate A remediation Phase
+1.1) -- an UNCHANGED item (same identity, same content_hash, e.g. a feed
+that just refreshed its own timestamp) is counted but never reprocessed.
+"""
 
 from __future__ import annotations
 
@@ -14,19 +23,20 @@ from news_intel.adapters.context import build_context
 from news_intel.jobs import job_runs
 from news_intel.pipeline.cluster import find_or_create_event
 from news_intel.pipeline.confirmation import update_confirmation_state
-from news_intel.pipeline.dedupe import insert_raw_item
+from news_intel.pipeline.dedupe import UpsertResult, upsert_raw_item
 from news_intel.pipeline.entities import known_entities
 from news_intel.pipeline.normalize import normalize
 from news_intel.pipeline.scoring import persist_score, score_event
 from news_intel.scheduled_repo import record_scheduled_events
 from news_intel.settings import AppConfig
-from news_intel.sources_repo import get_cursor, mark_disabled, record_outcome, sync_sources
+from news_intel.sources_repo import get_cursor, mark_disabled, record_outcome, source_due, sync_sources
 
 
 @dataclass
 class SourceRunResult:
     source_id: str
-    health_state: str
+    action: str  # disabled | skipped_not_due | attempted
+    health_state: str  # healthy | degraded | unavailable | disabled | n/a (skipped_not_due)
     item_count: int
     detail: str | None = None
 
@@ -35,9 +45,19 @@ class SourceRunResult:
 class CollectSummary:
     skipped_lock: bool = False
     sources: list[SourceRunResult] = field(default_factory=list)
+    fetched_items: int = 0
     new_raw_items: int = 0
+    changed_raw_items: int = 0
+    unchanged_raw_items: int = 0
     new_events: int = 0
     updated_events: int = 0
+
+    @property
+    def processed_items(self) -> int:
+        """Items that actually went through normalization/clustering/
+        confirmation/scoring -- must equal new_raw_items + changed_raw_items,
+        never fetched_items."""
+        return self.new_raw_items + self.changed_raw_items
 
 
 def run_collect(config: AppConfig, conn, *, now: datetime | None = None) -> CollectSummary:
@@ -58,7 +78,11 @@ def run_collect(config: AppConfig, conn, *, now: datetime | None = None) -> Coll
         for entry in config.sources.sources:
             if not entry.enabled:
                 mark_disabled(conn, entry.id)
-                summary.sources.append(SourceRunResult(entry.id, SourceHealthState.DISABLED.value, 0))
+                summary.sources.append(SourceRunResult(entry.id, "disabled", "disabled", 0))
+                continue
+
+            if not source_due(conn, entry.id, now=now):
+                summary.sources.append(SourceRunResult(entry.id, "skipped_not_due", "n/a", 0))
                 continue
 
             ctx = build_context(entry, config)
@@ -69,24 +93,40 @@ def run_collect(config: AppConfig, conn, *, now: datetime | None = None) -> Coll
             except Exception as exc:  # noqa: BLE001 - one bad source must not abort the run
                 outcome = FetchOutcome([], cursor, SourceHealthState.DEGRADED, f"unhandled error: {exc}")
 
-            record_outcome(conn, entry.id, outcome)
+            record_outcome(conn, entry.id, outcome, now=now)
             summary.sources.append(
-                SourceRunResult(entry.id, outcome.health_state.value, len(outcome.items), outcome.health_detail)
+                SourceRunResult(
+                    entry.id, "attempted", outcome.health_state.value, len(outcome.items), outcome.health_detail
+                )
             )
 
             if "calendar" in entry.category_hints:
-                record_scheduled_events(conn, entry.id, outcome.items)
+                record_scheduled_events(conn, entry.id, outcome.items, now=now)
                 continue
 
             for item in outcome.items:
+                summary.fetched_items += 1
                 normalized = normalize(
                     item, excerpt_max_chars=config.policy.storage.raw_excerpt_max_chars, now=now
                 )
-                raw_id = insert_raw_item(conn, normalized)
-                summary.new_raw_items += 1
+                upsert = upsert_raw_item(conn, normalized)
+
+                if upsert.result == UpsertResult.NEW:
+                    summary.new_raw_items += 1
+                elif upsert.result == UpsertResult.CONTENT_CHANGED:
+                    summary.changed_raw_items += 1
+                    # At most one event_sources link per raw_item: drop any
+                    # stale link before reclustering against the new content,
+                    # so a content change can never leave a duplicate link.
+                    conn.execute("DELETE FROM event_sources WHERE raw_item_id = ?", (upsert.raw_item_id,))
+                else:
+                    summary.unchanged_raw_items += 1
+                    continue  # never reprocessed
 
                 event_id, is_new = find_or_create_event(
-                    conn, normalized, raw_id, config.policy.dedupe, known, now=now
+                    conn, normalized, upsert.raw_item_id, config.policy.dedupe, known,
+                    now=now, time_policy=config.policy.time_semantics,
+                    legal_notice_policy=config.topics.legal_notice_boilerplate,
                 )
                 if is_new:
                     summary.new_events += 1
@@ -103,7 +143,10 @@ def run_collect(config: AppConfig, conn, *, now: datetime | None = None) -> Coll
             "success",
             {
                 "sources_run": len(summary.sources),
+                "fetched_items": summary.fetched_items,
                 "new_raw_items": summary.new_raw_items,
+                "changed_raw_items": summary.changed_raw_items,
+                "unchanged_raw_items": summary.unchanged_raw_items,
                 "new_events": summary.new_events,
                 "updated_events": summary.updated_events,
             },
