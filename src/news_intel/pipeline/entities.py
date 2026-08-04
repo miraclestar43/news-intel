@@ -11,8 +11,23 @@ that for clustering decisions.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 _CAP_SEQ_RE = re.compile(r"\b([A-Z][a-zA-Z0-9&.]*(?:\s+[A-Z][a-zA-Z0-9&.]*){0,3})\b")
+
+
+@lru_cache(maxsize=4096)
+def _entity_pattern(entity_lower: str) -> re.Pattern:
+    # Word-boundary matching (Gate A remediation Phase 3/5 regression fix):
+    # a bare substring check let "Intel" match inside "intelligence" and
+    # "ARM" match inside "Army", corrupting both classification (fixed in
+    # pipeline/relevance.py) and, via this module, trend/cluster anchor
+    # entities too.
+    return re.compile(rf"\b{re.escape(entity_lower)}\b")
+
+
+def _entity_matches(entity: str, lowered: str) -> bool:
+    return bool(_entity_pattern(entity.lower()).search(lowered))
 
 # Words that are commonly capitalized (sentence starts, generic terms) and
 # should not be treated as entities on their own.
@@ -51,14 +66,14 @@ def extract_known_entities(text: str, known: set[str]) -> list[str]:
     entity" every time a headline is merely reworded.
     """
     lowered = text.lower()
-    return sorted(ent for ent in known if ent.lower() in lowered)
+    return sorted(ent for ent in known if _entity_matches(ent, lowered))
 
 
 def extract_entities(text: str, known: set[str]) -> list[str]:
     found: set[str] = set()
     lowered = text.lower()
     for ent in known:
-        if ent.lower() in lowered:
+        if _entity_matches(ent, lowered):
             found.add(ent)
 
     for match in _CAP_SEQ_RE.finditer(text):
