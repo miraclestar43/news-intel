@@ -18,9 +18,9 @@ _CATEGORY_LABELS = {
     "tech_platforms_datacenter": "Technology",
     "markets_macro_corporate": "Markets & Economy",
     "us_china_policy_geopolitics": "US / China / World",
-    "other_consequential_world": "World",
     "routine_politics_general": "Politics",
     "explicit_noise": "noise",
+    "unclassified": "Unclassified",
 }
 
 _CONFIRMATION_QUALITY = {
@@ -77,7 +77,7 @@ def score_event(
     relevance = classify_relevance(combined_text, config.topics, config.policy.relevance_multipliers)
     conn.execute(
         "UPDATE events SET category = ? WHERE id = ?",
-        (_CATEGORY_LABELS.get(relevance.bucket, "World"), event_id),
+        (_CATEGORY_LABELS.get(relevance.bucket, "Unclassified"), event_id),
     )
 
     confirmation_state = ConfirmationState(event["confirmation_state"])

@@ -5,12 +5,18 @@ groups:
     weight: 1.30
     terms_en:
       - OpenAI
+      - ChatGPT
+      - GPT
+      - GPT-4
+      - GPT-5
       - Anthropic
       - xAI
       - Google DeepMind
       - Gemini
       - Claude
       - LLM
+      - large language model
+      - generative AI
       - foundation model
       - AI agent
       - inference
@@ -20,7 +26,7 @@ groups:
       - 人工智能
       - 大模型
       - 智能体
-    entities: [OpenAI, Anthropic, xAI, DeepMind, Google, Microsoft, Meta, NVIDIA]
+    entities: [OpenAI, ChatGPT, Anthropic, xAI, DeepMind, Google, Microsoft, Meta, NVIDIA]
 
   semiconductors:
     weight: 1.30
@@ -55,7 +61,6 @@ groups:
     terms_en:
       - export control
       - entity list
-      - tariff
       - sanction
       - CHIPS
       - Section 301
@@ -130,3 +135,92 @@ noise_exclusions:
   - product discount
   - generic AI listicle
   - SEO content
+
+# Gate A remediation Phase 3.3: bare "tariff" must not by itself route a
+# story into the AI/semiconductor bucket (or any elevated relevance) --
+# it requires contextual evidence of an actual trade-policy action, and
+# administrative/utility tariff filings are excluded outright regardless
+# of context.
+trade_policy_context:
+  anchor_terms_en: [tariff, tariffs]
+  anchor_terms_zh: [关税]
+  context_terms_en:
+    - import
+    - export
+    - customs
+    - duties
+    - duty
+    - section 301
+    - section 232
+    - trade war
+    - retaliatory
+    - sanction
+  ai_semiconductor_context_terms_en:
+    - semiconductor
+    - semiconductors
+    - chip
+    - chips
+    - AI
+  negative_context_en:
+    - electronic tariff filing
+    - tariff filing
+    - utility tariff
+    - rate tariff
+    - tariff schedule
+    - FCC tariff
+    - FERC tariff
+    - retail tariff
+    - insurance tariff
+    - shipping tariff plan
+
+# Gate A remediation Phase 4: none of these can be the *sole* shared
+# anchor between two distinct events for them to count as one continuing
+# multi-event trend -- otherwise nearly every AI story in a week would
+# transitively chain into one meaningless mega-cluster.
+trend_identity:
+  generic_anchor_terms:
+    - AI
+    - Market
+    - Markets
+    - Government
+    - Report
+    - Research
+    - United States
+    - US
+    - World
+    - News
+    - Company
+    - Companies
+    - Technology
+    - Politics
+    - Data
+  topic_trigram_floor: 0.12
+
+# Gate A remediation Phase 3.4: repetitive law-firm shareholder-alert
+# boilerplate ("if you purchased shares of X, contact our firm before the
+# deadline") is noise -- it must not independently qualify for the digest,
+# and different tickers/defendants sharing this template must never
+# cluster as the same event. A separately-detected material corporate
+# event (earnings restatement, SEC enforcement action, merger terms, etc.)
+# still qualifies normally.
+legal_notice_boilerplate:
+  phrases:
+    - shareholder rights firm
+    - shareholder rights law firm
+    - class action lawsuit
+    - securities fraud class action
+    - lead plaintiff deadline
+    - encourages investors
+    - purchased shares of
+    - law firm investigates
+    - law firm reminds investors
+    - if you purchased or acquired shares
+  material_override_phrases:
+    - sec charges
+    - restated financial results
+    - material weakness
+    - merger agreement
+    - acquisition completed
+    - guilty plea
+    - settlement of $
+    - indicted
