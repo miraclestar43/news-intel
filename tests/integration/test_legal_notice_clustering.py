@@ -31,6 +31,30 @@ def _store(conn, config, *, source_id, title, excerpt, url, now):
     return event_id, is_new
 
 
+def test_investor_alert_template_different_tickers_stay_separate(config, conn):
+    """Regression fixture found via Phase 5 replay against the real Gate A
+    snapshot: eight different-ticker "TICKER INVESTOR ALERT: Bronstein,
+    Gewirtz and Grossman, LLC Announces..." notices merged into one event
+    because "investor alert" wasn't in the boilerplate phrase list, so they
+    fell through to plain title-similarity clustering (near-identical
+    templates differing only by the ticker prefix)."""
+    now = datetime(2026, 7, 31, 15, 0, tzinfo=UTC)
+
+    first_id, _ = _store(
+        conn, config, source_id="pr_wire",
+        title="PODD INVESTOR ALERT: Bronstein, Gewirtz and Grossman, LLC Announces...",
+        excerpt=None, url="https://pr-inside.test/podd", now=now,
+    )
+    second_id, is_new = _store(
+        conn, config, source_id="pr_wire",
+        title="GTM INVESTOR ALERT: Bronstein, Gewirtz and Grossman, LLC Announces...",
+        excerpt=None, url="https://pr-inside.test/gtm", now=now,
+    )
+
+    assert is_new is True
+    assert first_id != second_id
+
+
 def test_different_ticker_legal_notices_do_not_cluster_despite_boilerplate_similarity(config, conn):
     now = datetime(2026, 7, 31, 15, 0, tzinfo=UTC)
 

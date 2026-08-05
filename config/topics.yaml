@@ -215,6 +215,9 @@ legal_notice_boilerplate:
     - law firm investigates
     - law firm reminds investors
     - if you purchased or acquired shares
+    - investor alert
+    - shareholder alert
+    - class action alert
   material_override_phrases:
     - sec charges
     - restated financial results
