@@ -226,6 +226,106 @@ def test_gate_a_retry1_organization_name_alone_does_not_anchor_unrelated_launche
     assert all(not c.is_trend for c in clusters)
 
 
+def test_gate_a_retry1_generic_platform_terms_do_not_anchor_unrelated_posts(config, conn):
+    """Regression fixture reproducing further Retry 1 re-verification
+    findings on real production data: "GPU" and "NVIDIA CUDA" alone
+    anchored pairs of completely unrelated posts (a distributed-SQL
+    workload post vs. a medical-physics simulation post; a kernel-fusion
+    optimization post vs. a cryptography post) using the *real* config."""
+    known = known_entities(config.topics.groups)
+    policy = config.topics.trend_identity
+    min_score = config.policy.scoring.thresholds.weekly_store
+
+    a = _seed(
+        conn, event_id="E-A", score=85, category="AI & Semiconductors", entities=["GPU", "NVIDIA"],
+        title="Running Low-Latency Analytical Workloads with GPU-Accelerated Presto on NVIDIA GB200",
+    )
+    b = _seed(
+        conn, event_id="E-B", score=82, category="AI & Semiconductors", entities=["GPU", "NVIDIA"],
+        title="NVIDIA Open Sources First GPU-Accelerated Medical Physics Simulation Framework",
+    )
+    clusters = build_trend_clusters(conn, [a, b], known, policy=policy, min_event_score=min_score)
+    assert len(clusters) == 2
+    assert all(not c.is_trend for c in clusters)
+
+
+def test_gate_a_retry1_federal_reserve_board_alone_does_not_anchor_distinct_actions(config, conn):
+    """14 genuinely distinct Fed regulatory actions (bank approvals,
+    unrelated enforcement actions against different banks) were merged
+    into one "trend" on "Federal Reserve Board" alone."""
+    known = known_entities(config.topics.groups)
+    policy = config.topics.trend_identity
+    min_score = config.policy.scoring.thresholds.weekly_store
+
+    a = _seed(
+        conn, event_id="E-A", score=85, category="Markets & Economy", entities=["Federal Reserve Board"],
+        title="Federal Reserve Board announces approval of the application by Banco Santander, S.A.",
+    )
+    b = _seed(
+        conn, event_id="E-B", score=82, category="Markets & Economy", entities=["Federal Reserve Board"],
+        title="Federal Reserve Board issues enforcement action with Iuka Bancshares, Inc.",
+    )
+    clusters = build_trend_clusters(conn, [a, b], known, policy=policy, min_event_score=min_score)
+    assert len(clusters) == 2
+    assert all(not c.is_trend for c in clusters)
+
+
+def test_gate_a_retry1_bare_gpt_does_not_bridge_unrelated_posts_but_same_version_still_clusters(config, conn):
+    """Bare "GPT" (no explicit version on one/either side) must not bridge
+    unrelated posts, but two posts that both explicitly claim the *same*
+    GPT version must still form a trend even though "GPT" itself is now a
+    blacklisted generic anchor term -- via the independent matching-
+    version path in trends.py's _compatible()."""
+    known = known_entities(config.topics.groups)
+    policy = config.topics.trend_identity
+    min_score = config.policy.scoring.thresholds.weekly_store
+
+    unrelated_a = _seed(
+        conn, event_id="E-UA", score=85, category="AI & Semiconductors", entities=["OpenAI"],
+        title="WebGPT: Improving the factual accuracy of language models through web browsing",
+    )
+    unrelated_b = _seed(
+        conn, event_id="E-UB", score=82, category="AI & Semiconductors", entities=["OpenAI"],
+        title="Preserving languages for the future",
+    )
+    same_version_a = _seed(
+        conn, event_id="E-SA", score=80, category="AI & Semiconductors", entities=["OpenAI"],
+        title="GPT-5.6: Frontier intelligence that scales with your ambition",
+    )
+    same_version_b = _seed(
+        conn, event_id="E-SB", score=78, category="AI & Semiconductors", entities=["OpenAI"],
+        title="How GPT-5.6 fuses frontier intelligence with frontier efficiency",
+    )
+    clusters = build_trend_clusters(
+        conn, [unrelated_a, unrelated_b, same_version_a, same_version_b],
+        known, policy=policy, min_event_score=min_score,
+    )
+    trends = [c for c in clusters if c.is_trend]
+    assert len(trends) == 1
+    assert set(trends[0].event_ids) == {"E-SA", "E-SB"}
+
+
+def test_gate_a_retry1_system_card_template_does_not_bridge_different_models(config, conn):
+    """"System Card" is OpenAI's recurring document-type label for any
+    model -- GPT-4o and GPT-5 system cards must not merge just because
+    they share that template phrase."""
+    known = known_entities(config.topics.groups)
+    policy = config.topics.trend_identity
+    min_score = config.policy.scoring.thresholds.weekly_store
+
+    a = _seed(
+        conn, event_id="E-A", score=85, category="AI & Semiconductors", entities=["OpenAI"],
+        title="Addendum to GPT-4o System Card: 4o image generation",
+    )
+    b = _seed(
+        conn, event_id="E-B", score=82, category="AI & Semiconductors", entities=["OpenAI"],
+        title="Addendum to GPT-5 System Card: Sensitive conversations",
+    )
+    clusters = build_trend_clusters(conn, [a, b], known, policy=policy, min_event_score=min_score)
+    assert len(clusters) == 2
+    assert all(not c.is_trend for c in clusters)
+
+
 def test_diagnostic_shared_anchor_and_event_ids_present_for_every_trend(conn):
     a = _seed(
         conn, event_id="E-A", score=85, category="Markets & Economy", entities=["Federal Reserve"],

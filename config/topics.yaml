@@ -221,6 +221,38 @@ trend_identity:
     - SK Hynix
     - Micron
     - ASML
+    # Retry 1 further re-verification: generic technology-platform terms
+    # (as opposed to a specific product/release name) are equally
+    # insufficient as a sole anchor. Real production data showed "GPU"
+    # alone anchoring two completely unrelated posts (a distributed-SQL
+    # workload post and an unrelated medical-physics simulation post), and
+    # "NVIDIA CUDA"/"NVIDIA GPUs" (generic hardware/platform mentions, not
+    # a specific product like "NVIDIA Nemotron" or "NVIDIA Alpamayo")
+    # doing the same. "Federal Reserve Board" alone anchored 14 genuinely
+    # distinct regulatory actions (bank approvals, unrelated enforcement
+    # actions against different banks, rulemaking comment periods, the
+    # annual stress test, FOMC projections) that share nothing but being
+    # issued by the same body.
+    - GPU
+    - GPUs
+    - CUDA
+    - NVIDIA GPUs
+    - NVIDIA CUDA
+    - Federal Reserve Board
+    - Federal Reserve
+    - Reserve Board
+    - API
+    # Bare "GPT" (as opposed to a specific "GPT-5.6" version claim, which
+    # is handled independently and does not rely on this list -- see
+    # trends.py's _compatible) appears across dozens of otherwise-
+    # unrelated OpenAI posts and is not by itself proof of a shared
+    # development.
+    - GPT
+    # "System Card" is OpenAI's recurring document-type label for *any*
+    # model (GPT-4o, GPT-5, GPT-5.2, ...) -- same pattern as "Investor
+    # Alert" for law firms: a templated document type, not a shared
+    # development.
+    - System Card
   topic_trigram_floor: 0.12
 
 # Gate A remediation Phase 3.4: repetitive law-firm shareholder-alert

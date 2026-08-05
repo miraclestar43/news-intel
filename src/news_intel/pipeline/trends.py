@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -144,8 +145,21 @@ def _compatible(candidate: _Candidate, member: _Candidate, policy: TrendIdentity
     launches into one "trend"."""
     if has_conflicting_product_version(candidate.identity, member.identity):
         return False
-    shared = candidate.specific_entities & member.specific_entities
-    if not shared:
+    shared_entities = candidate.specific_entities & member.specific_entities
+    # Independent of entity extraction: two events that both make an
+    # explicit, *matching* version claim for the same family (e.g. both
+    # say "GPT-5.6") are proof enough of a shared anchor on their own --
+    # this is what lets a genuinely bare (and therefore blacklisted, see
+    # config's generic_anchor_terms) brand stem like "GPT" still support a
+    # legitimate same-version trend without also letting the bare stem
+    # alone (no matching version) bridge unrelated posts.
+    all_families = set(candidate.identity.versions) | set(member.identity.versions)
+    shared_version = any(
+        candidate.identity.versions.get(fam) and member.identity.versions.get(fam)
+        and candidate.identity.versions[fam] & member.identity.versions[fam]
+        for fam in all_families
+    )
+    if not shared_entities and not shared_version:
         return False
     return trigram_jaccard(candidate.normalized_title, member.normalized_title) >= policy.topic_trigram_floor
 
@@ -165,16 +179,25 @@ def build_trend_clusters(
     didn't group with anything) -- callers that only want trends should
     filter on is_trend."""
     policy = policy or TrendIdentityPolicy()
-    generic = {t.lower() for t in policy.generic_anchor_terms}
+    generic_patterns = [re.compile(rf"\b{re.escape(t.lower())}\b") for t in policy.generic_anchor_terms]
 
     groups: list[dict] = []  # {category, members: [_Candidate, ...]}
+
+    def _is_generic(entity: str) -> bool:
+        # Substring (word-boundary) match, not exact equality: the
+        # capitalized-phrase fallback extractor can pick up a blacklisted
+        # term as part of a longer, noisier phrase (e.g. "Inc. Federal
+        # Reserve Board" from adjacent punctuation in the source title),
+        # which an exact-match check would silently miss.
+        lowered = entity.lower()
+        return any(p.search(lowered) for p in generic_patterns)
 
     for row in events:
         if not _is_eligible(row, min_event_score):
             continue
 
         entities = _event_entities(row, known_entities)
-        specific = {e for e in entities if e.lower() not in generic}
+        specific = {e for e in entities if not _is_generic(e)}
         candidate = _Candidate(
             row=row, entities=entities, specific_entities=specific,
             normalized_title=normalize_title(row["primary_title"]),

@@ -45,10 +45,37 @@ from dataclasses import dataclass, field
 # GPT model.
 _VERSION_RE = re.compile(r"\b([A-Z][A-Za-z]*)-(\d+(?:\.\d+)*)\b")
 
+# Same idea, but for a multi-word product name followed by a *space*-
+# separated version instead of a hyphen, e.g. "Gemini Robotics 1.5" /
+# "Gemini Robotics 2" / "Gemini Robotics-ER 1.6". Word separators within
+# the family (space or hyphen) are treated uniformly so "Robotics-ER" and
+# "Robotics ER" always extract the same family key regardless of which
+# punctuation a given headline used -- an earlier version that special-
+# cased a short qualifier before the digits let those two spellings
+# extract different families and silently miss a genuine version
+# conflict. Retry 1 re-verification found "Gemini Robotics 1.5" / "-ER
+# 1.6" / "2" merged into one weekly trend on the bare "Gemini Robotics"
+# entity -- _VERSION_RE alone only catches hyphen-adjacent-to-digit
+# versions, not this equally common space-separated style. Requires 2+
+# capitalized words in the family so it can't overlap with _VERSION_RE's
+# single-word+hyphen cases.
+_SPACED_VERSION_RE = re.compile(
+    r"\b([A-Z][A-Za-z]*(?:[\s-][A-Z][A-Za-z]*)+)[\s-](\d+(?:\.\d+)*)\b"
+)
+
 # A bare plural of an acronym-like family, e.g. "GPTs" -> stem "GPT". This
 # captures the generic-feature sense ("GPTs" = the custom-GPTs product)
 # that must not be conflated with a specific numbered release.
 _BARE_PLURAL_RE = re.compile(r"\b([A-Z]{2,})s\b")
+
+# Common headline-lead verbs that a multi-word family capture can pick up
+# as a spurious leading word (e.g. "Introducing GPT" from "Introducing
+# GPT-5.5") -- stripped before using the family as a comparison key so it
+# doesn't create a redundant/noisy family alongside the real "GPT" one.
+_HEADLINE_LEAD_WORDS = {
+    "INTRODUCING", "ANNOUNCING", "BUILDING", "CREATING", "ADVANCING",
+    "PREVIEWING", "USING", "RUNNING", "SCALING", "UPDATING",
+}
 
 # A named feature immediately following the GPT/ChatGPT brand stem, e.g.
 # "ChatGPT Health" -> "HEALTH", "GPT-Live" -> "LIVE", "ChatGPT search" ->
@@ -80,6 +107,18 @@ def extract_product_versions(text: str) -> dict[str, set[str]]:
     for match in _VERSION_RE.finditer(text):
         family, version = match.group(1).upper(), match.group(2)
         families.setdefault(family, set()).add(version)
+    for match in _SPACED_VERSION_RE.finditer(text):
+        # Normalize internal separators (space vs hyphen) so "Robotics-ER"
+        # and "Robotics ER" always produce the same family key regardless
+        # of which punctuation a given headline happened to use.
+        words = re.split(r"[\s-]+", match.group(1).upper())
+        words = [w for w in words if w]
+        if words and words[0] in _HEADLINE_LEAD_WORDS:
+            words = words[1:]
+        if not words:
+            continue
+        family = " ".join(words)
+        families.setdefault(family, set()).add(match.group(2))
     return families
 
 
