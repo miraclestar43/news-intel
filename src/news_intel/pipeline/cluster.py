@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 
 from news_intel.pipeline.entities import extract_entities
 from news_intel.pipeline.normalize import NormalizedItem, normalize_title
+from news_intel.pipeline.product_identity import extract_product_identity, has_conflicting_product_version
 from news_intel.pipeline.relevance import is_legal_notice_boilerplate
 from news_intel.pipeline.similarity import entity_overlap_ratio, title_similarity_score, trigram_jaccard
 from news_intel.pipeline.time_semantics import resolve_anchor
@@ -62,6 +63,11 @@ def find_or_create_event(
     # of gross title/trigram similarity.
     item_is_boilerplate = is_legal_notice_boilerplate(item_text, legal_notice_policy)
     item_known_entities = {e for e in item_entities if e in known_entities}
+    # Retry 1 Blocker 2: a high fuzzy-title score must never override an
+    # explicit, conflicting product/version identifier -- "Introducing
+    # GPT-5.5" and "Introducing GPT-5.4" are near-identical templated
+    # announcements of two different real releases, not one event.
+    item_identity = extract_product_identity(item_text)
 
     best_match: sqlite3.Row | None = None
     for candidate in _candidate_events(conn, dedupe_policy.candidate_window_hours, now=now):
@@ -70,6 +76,8 @@ def find_or_create_event(
         if item_is_boilerplate:
             cand_known_entities = {e for e in cand_entities if e in known_entities}
             is_match = bool(item_known_entities & cand_known_entities)
+        elif has_conflicting_product_version(item_identity, extract_product_identity(candidate["primary_title"])):
+            is_match = False
         else:
             cand_normalized_title = normalize_title(candidate["primary_title"])
             title_sim = title_similarity_score(item.normalized_title, cand_normalized_title)

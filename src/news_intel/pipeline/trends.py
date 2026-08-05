@@ -47,6 +47,11 @@ from datetime import datetime
 
 from news_intel.pipeline.entities import extract_known_entities
 from news_intel.pipeline.normalize import normalize_title
+from news_intel.pipeline.product_identity import (
+    ProductIdentity,
+    extract_product_identity,
+    has_conflicting_product_version,
+)
 from news_intel.pipeline.similarity import trigram_jaccard
 from news_intel.settings import TrendIdentityPolicy
 
@@ -76,6 +81,7 @@ class _Candidate:
     entities: set[str]
     specific_entities: set[str]
     normalized_title: str
+    identity: ProductIdentity
 
 
 def _cluster_id(event_ids: list[str]) -> str:
@@ -131,7 +137,13 @@ def _compatible(candidate: _Candidate, member: _Candidate, policy: TrendIdentity
     member only if they share a specific (non-generic) anchor entity *and*
     clear a topical-similarity floor -- sharing a company name alone is not
     enough to call two events "the same continuing development" (e.g. one
-    company's export-control story and its unrelated earnings release)."""
+    company's export-control story and its unrelated earnings release).
+    Retry 1 Blocker 2: an explicit, conflicting product/version identifier
+    (GPT-5.5 vs GPT-5.3) always wins regardless of shared entities/trigram
+    -- an organization name alone must never group unrelated product
+    launches into one "trend"."""
+    if has_conflicting_product_version(candidate.identity, member.identity):
+        return False
     shared = candidate.specific_entities & member.specific_entities
     if not shared:
         return False
@@ -166,6 +178,7 @@ def build_trend_clusters(
         candidate = _Candidate(
             row=row, entities=entities, specific_entities=specific,
             normalized_title=normalize_title(row["primary_title"]),
+            identity=extract_product_identity(row["primary_title"]),
         )
         category = row["category"] or "uncategorized"
 

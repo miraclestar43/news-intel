@@ -177,6 +177,28 @@ def test_select_top_clusters_bounds_to_configured_max():
     assert [c.id for c in selected] == [f"TR-{i}" for i in range(5)]  # highest-strength first
 
 
+def test_gate_a_retry1_conflicting_gpt_versions_do_not_form_one_weekly_trend(conn):
+    """Regression fixture reproducing the exact Retry 1 finding: a weekly
+    trend that grouped "Introducing GPT-5.5" with a differently-versioned
+    Codex model under a shared "OpenAI" anchor. A slash-separated list of
+    different products/versions is not a shared anchor -- an explicit
+    version conflict must keep them out of the same trend even though they
+    share a specific (non-generic) entity and would otherwise clear the
+    topical-trigram floor."""
+    a = _seed(
+        conn, event_id="E-A", score=85, category="AI & Semiconductors", entities=["OpenAI"],
+        title="Introducing GPT-5.5",
+    )
+    b = _seed(
+        conn, event_id="E-B", score=82, category="AI & Semiconductors", entities=["OpenAI"],
+        title="Introducing GPT-5.3-Codex-Spark",
+    )
+    clusters = build_trend_clusters(conn, [a, b], known_entities=set(), policy=_POLICY)
+
+    assert len(clusters) == 2
+    assert all(not c.is_trend for c in clusters)
+
+
 def test_diagnostic_shared_anchor_and_event_ids_present_for_every_trend(conn):
     a = _seed(
         conn, event_id="E-A", score=85, category="Markets & Economy", entities=["Federal Reserve"],
