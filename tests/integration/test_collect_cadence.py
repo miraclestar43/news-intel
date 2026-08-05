@@ -186,6 +186,39 @@ def test_restart_preserves_next_due_state(config, monkeypatch):
     conn2.close()
 
 
+def test_one_hour_window_with_realistic_jitter_never_alternately_skips(config, conn, monkeypatch):
+    """Retry 1 Blocker 1: over a simulated one-hour window (12 real 5-minute
+    scheduler ticks, each with small realistic jitter -- some a few hundred
+    ms early, some seconds late, mirroring what was actually observed in
+    production), a 5/10/15/30-minute source must be attempted at every
+    scheduled opportunity. Only the very first tick (which bootstraps the
+    lattice) is allowed to be a one-off special case -- there must be no
+    repeated alternating skip pattern afterward."""
+    config.sources.sources.clear()
+    config.sources.sources.extend(
+        [_entry("s5", 5), _entry("s10", 10), _entry("s15", 15), _entry("s30", 30)]
+    )
+    calls: dict[str, list] = {sid: [] for sid in ("s5", "s10", "s15", "s30")}
+    adapters = {
+        sid: _HealthScriptedAdapter(sid, calls[sid], SourceHealthState.HEALTHY) for sid in calls
+    }
+
+    start = datetime(2026, 7, 31, 12, 0, tzinfo=UTC)
+    jitters_ms = [0, 120, -430, 900, -50, 1999, -1500, 300, -900, 1000, -1999, 750]
+    ticks = [start + timedelta(minutes=5 * i, milliseconds=jitters_ms[i]) for i in range(12)]
+    _attempt_counts(conn, config, monkeypatch, adapters, ticks)
+
+    # s5's interval equals the tick period: every one of the 12 opportunities
+    # must be attempted (this is exactly the case that regressed to 175/284
+    # in Retry 1).
+    assert len(calls["s5"]) == 12
+    # 10/15/30-minute sources: due at ticks 0,2,4,6,8,10 / 0,3,6,9 / 0,6 --
+    # every applicable scheduled opportunity, no alternating misses.
+    assert len(calls["s10"]) == 6
+    assert len(calls["s15"]) == 4
+    assert len(calls["s30"]) == 2
+
+
 def test_duplicate_scheduler_invocation_is_skipped_via_job_lock(config, conn):
     """Simulates an overlapping/duplicate systemd timer firing while a prior
     run is still (per its lock row) in flight -- run_collect must refuse to

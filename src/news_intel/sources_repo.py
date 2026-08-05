@@ -89,10 +89,11 @@ def record_outcome(
 ) -> None:
     now_iso = now.isoformat()
     row = conn.execute(
-        "SELECT consecutive_failures, poll_interval_seconds FROM sources WHERE id = ?", (source_id,)
+        "SELECT consecutive_failures, poll_interval_seconds, next_due_at FROM sources WHERE id = ?", (source_id,)
     ).fetchone()
     poll_interval_seconds = row["poll_interval_seconds"] if row else 300
     prior_failures = row["consecutive_failures"] if row else 0
+    previous_due_at = datetime.fromisoformat(row["next_due_at"]) if row and row["next_due_at"] else None
     is_healthy = outcome.health_state == SourceHealthState.HEALTHY
     new_failures = 0 if is_healthy else prior_failures + 1
 
@@ -102,6 +103,7 @@ def record_outcome(
         is_healthy=is_healthy,
         consecutive_failures=new_failures,
         retry_after_seconds=outcome.retry_after_seconds,
+        previous_due_at=previous_due_at,
     )
 
     if is_healthy:
