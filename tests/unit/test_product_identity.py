@@ -81,3 +81,54 @@ def test_bare_plural_of_an_unrelated_family_does_not_conflict():
     versioned = extract_product_identity("Introducing GPT-5")
     bare = extract_product_identity("Introducing new APIs")  # "API" family, unrelated to GPT
     assert has_conflicting_product_version(versioned, bare) is False
+
+
+# --- named feature suffix (Retry 1 Blocker 2 re-verification finding) ---
+
+
+def test_named_feature_suffix_extracted_from_chatgpt_title():
+    identity = extract_product_identity("Introducing ChatGPT Health")
+    assert identity.brand_feature_suffixes == {"HEALTH"}
+
+
+def test_named_feature_suffix_extracted_case_insensitively():
+    identity = extract_product_identity("Introducing ChatGPT search")
+    assert identity.brand_feature_suffixes == {"SEARCH"}
+
+
+def test_named_feature_suffix_extracted_from_hyphenated_gpt_title():
+    identity = extract_product_identity("Introducing GPT-Live")
+    assert identity.brand_feature_suffixes == {"LIVE"}
+
+
+def test_disjoint_feature_suffixes_of_the_same_brand_conflict():
+    """"ChatGPT Health" and "ChatGPT Pulse" alone score 0.59 trigram
+    overlap purely from the shared "Introducing ChatGPT" template -- an
+    explicit, different named feature must still win."""
+    health = extract_product_identity("Introducing ChatGPT Health")
+    pulse = extract_product_identity("Introducing ChatGPT Pulse")
+    assert has_conflicting_product_version(health, pulse) is True
+
+
+def test_a_version_claim_conflicts_with_a_named_feature_suffix():
+    """"GPT-5.3-Codex-Spark" (a specific numbered release) and "ChatGPT
+    Pro" (a named feature, no version) make different, specific claims --
+    neither the version-conflict rule nor the bare-plural rule alone
+    catches this mixed case, so it needs its own check."""
+    versioned = extract_product_identity("Introducing GPT-5.3-Codex-Spark")
+    named = extract_product_identity("Introducing ChatGPT Pro")
+    assert versioned.brand_feature_suffixes == frozenset()  # no suffix match on a numbered release
+    assert has_conflicting_product_version(versioned, named) is True
+    assert has_conflicting_product_version(named, versioned) is True
+
+
+def test_same_named_feature_suffix_is_not_a_conflict():
+    a = extract_product_identity("Introducing ChatGPT Health")
+    b = extract_product_identity("OpenAI rolls out ChatGPT Health to all users")
+    assert has_conflicting_product_version(a, b) is False
+
+
+def test_no_suffix_claim_on_either_side_is_not_a_conflict():
+    a = extract_product_identity("How ChatGPT adoption has expanded")
+    b = extract_product_identity("What people build with ChatGPT")
+    assert has_conflicting_product_version(a, b) is False

@@ -194,6 +194,33 @@ trend_identity:
     - Technology
     - Politics
     - Data
+    # Retry 1 Blocker 2 (re-verification finding): an organization name
+    # alone must not group unrelated product launches into one "trend" --
+    # real production data showed "OpenAI" alone anchoring a 17-member
+    # blob mixing office openings, model launches, and corporate
+    # restructuring. A company name can still combine with a genuinely
+    # shared specific product/version identifier (handled separately by
+    # pipeline/product_identity.py); it just can no longer be the *sole*
+    # basis for linking two distinct events.
+    - OpenAI
+    - ChatGPT
+    - Anthropic
+    - xAI
+    - DeepMind
+    - Google
+    - Microsoft
+    - Meta
+    - NVIDIA
+    - AMD
+    - Broadcom
+    - Qualcomm
+    - ARM
+    - Intel
+    - TSMC
+    - Samsung
+    - SK Hynix
+    - Micron
+    - ASML
   topic_trigram_floor: 0.12
 
 # Gate A remediation Phase 3.4: repetitive law-firm shareholder-alert

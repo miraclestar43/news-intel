@@ -82,6 +82,18 @@ def extract_entities(text: str, known: set[str]) -> list[str]:
             continue
         if candidate.split()[0] in _STOPWORDS:
             continue
+        words = candidate.split()
+        if len(words) == 1 and not (words[0].isupper() or any(c.isdigit() or c == "-" for c in words[0])):
+            # A single Title-Case word (capital + lowercase rest, e.g.
+            # "Fine", "Building", "Announcing", "Our") is essentially
+            # always ordinary sentence-initial capitalization, not a
+            # genuine proper noun -- treating it as an entity let sentence-
+            # starter words anchor unrelated weekly trends together purely
+            # by coincidence. A single ALL-CAPS token (an acronym, e.g.
+            # "TSMC") or one containing a digit/hyphen (a product code) is
+            # still accepted; genuine known company/product names are
+            # already covered by the known-vocabulary match above.
+            continue
         found.add(candidate)
 
     return sorted(found)

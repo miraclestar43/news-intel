@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
+from news_intel.pipeline.entities import known_entities
 from news_intel.pipeline.trends import TrendCluster, build_trend_clusters, select_top_clusters
 from news_intel.settings import TrendIdentityPolicy
 from tests.conftest import insert_source_row
@@ -194,6 +195,32 @@ def test_gate_a_retry1_conflicting_gpt_versions_do_not_form_one_weekly_trend(con
         title="Introducing GPT-5.3-Codex-Spark",
     )
     clusters = build_trend_clusters(conn, [a, b], known_entities=set(), policy=_POLICY)
+
+    assert len(clusters) == 2
+    assert all(not c.is_trend for c in clusters)
+
+
+def test_gate_a_retry1_organization_name_alone_does_not_anchor_unrelated_launches(config, conn):
+    """Regression fixture reproducing a deeper Retry 1 re-verification
+    finding: replaying real production data showed "OpenAI" alone
+    anchoring a 17-member trend mixing office openings, model launches,
+    and corporate restructuring. Using the *real* config (where OpenAI,
+    NVIDIA, etc. are in trend_identity.generic_anchor_terms), two
+    completely unrelated OpenAI announcements sharing only the
+    organization name must not form one trend."""
+    a = _seed(
+        conn, event_id="E-A", score=85, category="AI & Semiconductors", entities=["OpenAI"],
+        title="Evolving OpenAI's structure",
+    )
+    b = _seed(
+        conn, event_id="E-B", score=82, category="AI & Semiconductors", entities=["OpenAI"],
+        title="Introducing OpenAI for Australia",
+    )
+    known = known_entities(config.topics.groups)
+    clusters = build_trend_clusters(
+        conn, [a, b], known, policy=config.topics.trend_identity,
+        min_event_score=config.policy.scoring.thresholds.weekly_store,
+    )
 
     assert len(clusters) == 2
     assert all(not c.is_trend for c in clusters)
