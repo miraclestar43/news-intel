@@ -7,6 +7,7 @@ import typer
 
 from news_intel import db
 from news_intel.jobs import job_runs
+from news_intel.jobs.alert_shadow import run_alert_shadow_check
 from news_intel.jobs.alerts import release_held_alerts, run_alert_check
 from news_intel.jobs.collect import run_collect
 from news_intel.jobs.daily import run_daily
@@ -244,6 +245,21 @@ def alerts_release_held(
     if result.rendered_text:
         typer.echo("\n--- rendered overnight update ---\n")
         typer.echo(result.rendered_text)
+
+
+@alerts_app.command("shadow-check")
+def alerts_shadow_check() -> None:
+    """Breaking-alert shadow canary: runs the real alert decision engine
+    (jobs/alerts.py, unmodified) and persists every candidate/decision/
+    hypothetical rendered message to alert_shadow_log. Never calls Telegram
+    and never writes to the deliveries table -- see jobs/alert_shadow.py."""
+    config, conn = _load()
+    try:
+        summary = run_alert_shadow_check(config, conn)
+    finally:
+        conn.close()
+
+    typer.echo(f"evaluated={summary['evaluated']} shadow_rows_logged={summary['shadow_rows_logged']}")
 
 
 bot_app = typer.Typer(
