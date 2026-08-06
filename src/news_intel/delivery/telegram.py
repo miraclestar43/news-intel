@@ -34,6 +34,29 @@ def _get_delivery(conn: sqlite3.Connection, idempotency_key: str) -> sqlite3.Row
     ).fetchone()
 
 
+def mark_attempting(conn: sqlite3.Connection, idempotency_key: str, chat_id: int, kind: str) -> bool:
+    """Durably pre-marks an idempotency key as attempted *before* any network
+    call, so a send that raises (rather than returning a normal failure)
+    still leaves a row behind -- without this, TelegramSender.send() only
+    ever records "sent" or "dry_run" (see _record_delivery below), since a
+    raised exception from bot.send_message() propagates before that call is
+    reached. Callers that must never retry a failed/ambiguous real send
+    (e.g. the daily canary) call this first: returns False if the key was
+    already attempted (in any status) and the caller must not proceed;
+    returns True and inserts a 'attempting' row otherwise. Uses autocommit
+    (db.connect sets isolation_level=None), so the mark is durable even if
+    the process crashes mid-send."""
+    if _get_delivery(conn, idempotency_key) is not None:
+        return False
+    now = datetime.now(UTC).isoformat()
+    conn.execute(
+        "INSERT INTO deliveries (idempotency_key, chat_id_hash, kind, telegram_message_id, "
+        "attempts, status, created_at, updated_at) VALUES (?, ?, ?, NULL, 0, 'attempting', ?, ?)",
+        (idempotency_key, chat_id_hash(chat_id), kind, now, now),
+    )
+    return True
+
+
 def _record_delivery(
     conn: sqlite3.Connection,
     idempotency_key: str,

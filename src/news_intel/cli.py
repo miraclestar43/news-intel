@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
+
 import typer
 
 from news_intel import db
@@ -7,6 +10,7 @@ from news_intel.jobs import job_runs
 from news_intel.jobs.alerts import release_held_alerts, run_alert_check
 from news_intel.jobs.collect import run_collect
 from news_intel.jobs.daily import run_daily
+from news_intel.jobs.daily_canary import run_daily_canary
 from news_intel.jobs.weekly import run_weekly
 from news_intel.logging_setup import configure_logging, get_logger
 from news_intel.settings import (
@@ -275,6 +279,49 @@ def bot_dispatch(
         conn.close()
 
     typer.echo(response or "(no response: chat not allowlisted, or unrecognized command)")
+
+
+canary_app = typer.Typer(help="Bounded three-delivery daily canary (see jobs/daily_canary.py)")
+app.add_typer(canary_app, name="canary")
+
+
+@canary_app.command("daily")
+def canary_daily(
+    start_date: str = typer.Option(
+        ..., envvar="CANARY_START_DATE",
+        help="First intended Pacific delivery date, YYYY-MM-DD. Today's Pacific date minus this "
+        "date (+1) is the canary_index; invocations outside [1, 3] are skipped as a safety net.",
+    ),
+) -> None:
+    """Real Telegram send is never gated behind --dry-run here: this command
+    exists only to run the already-scoped, already-authorized bounded
+    canary, which performs its own fail-closed checks (allowlist, event
+    eligibility, source-URL mapping, message size, per-date idempotency)
+    before ever contacting Telegram -- see run_daily_canary's docstring."""
+    config, conn = _load()
+    try:
+        now = datetime.now(UTC)
+        pt_today = now.astimezone(ZoneInfo(config.policy.timezone)).date()
+        start = date.fromisoformat(start_date)
+        canary_index = (pt_today - start).days + 1
+        if not (1 <= canary_index <= 3):
+            typer.echo(
+                f"canary: pt_date={pt_today} (start={start}) yields canary_index={canary_index}, "
+                "outside the bounded [1, 3] window -- skipping, no Telegram contact."
+            )
+            return
+        summary = run_daily_canary(config, conn, canary_index=canary_index, now=now)
+    finally:
+        conn.close()
+
+    typer.echo(
+        f"canary_index={summary.canary_index}/3 pt_date={summary.pt_date} "
+        f"fail_closed={summary.fail_closed} sent={summary.sent} "
+        f"events={summary.event_count} chars={summary.character_count}"
+    )
+    if summary.fail_closed:
+        typer.echo(f"fail_reason={summary.fail_reason}")
+    typer.echo(f"idempotency_key={summary.idempotency_key} message_ids={summary.message_ids}")
 
 
 if __name__ == "__main__":
