@@ -19,7 +19,16 @@ def qualified_events_since(
     published_anchor_at) -- Gate A remediation Phase 2), never ingestion
     time: an old article ingested today must not qualify just because
     first_seen_at/last_updated_at are recent, and archive-only events (NULL
-    eligibility time) never qualify at all."""
+    eligibility time) never qualify at all.
+
+    2026-08-06 incident: an event can end up with zero event_sources rows
+    (jobs/collect.py's CONTENT_CHANGED path reclustered every one of its
+    raw items onto other events -- see migration 008's orphaned_at column),
+    yet keep a high, frozen, now-unbacked score and stay eligible by every
+    other filter here. The EXISTS clause below is the authoritative,
+    self-correcting check for that (a live read of event_sources, not the
+    denormalized orphaned_at flag, so it can never drift out of sync) --
+    daily candidate selection must only ever consider source-backed events."""
     return conn.execute(
         """
         SELECT e.*,
@@ -33,6 +42,7 @@ def qualified_events_since(
         FROM events e
         WHERE e.final_score >= ?
           AND COALESCE(e.content_changed_at, e.published_anchor_at) >= ?
+          AND EXISTS (SELECT 1 FROM event_sources es2 WHERE es2.event_id = e.id)
         ORDER BY e.final_score DESC
         """,
         (min_score, window_start.astimezone(UTC).isoformat()),

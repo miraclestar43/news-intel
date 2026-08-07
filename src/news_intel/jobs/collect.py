@@ -111,31 +111,60 @@ def run_collect(config: AppConfig, conn, *, now: datetime | None = None) -> Coll
                 )
                 upsert = upsert_raw_item(conn, normalized)
 
+                prior_event_ids: list[str] = []
                 if upsert.result == UpsertResult.NEW:
                     summary.new_raw_items += 1
                 elif upsert.result == UpsertResult.CONTENT_CHANGED:
                     summary.changed_raw_items += 1
-                    # At most one event_sources link per raw_item: drop any
-                    # stale link before reclustering against the new content,
-                    # so a content change can never leave a duplicate link.
-                    conn.execute("DELETE FROM event_sources WHERE raw_item_id = ?", (upsert.raw_item_id,))
+                    prior_event_ids = [
+                        r["event_id"] for r in conn.execute(
+                            "SELECT event_id FROM event_sources WHERE raw_item_id = ?", (upsert.raw_item_id,)
+                        ).fetchall()
+                    ]
                 else:
                     summary.unchanged_raw_items += 1
                     continue  # never reprocessed
 
-                event_id, is_new = find_or_create_event(
-                    conn, normalized, upsert.raw_item_id, config.policy.dedupe, known,
-                    now=now, time_policy=config.policy.time_semantics,
-                    legal_notice_policy=config.topics.legal_notice_boilerplate,
-                )
-                if is_new:
-                    summary.new_events += 1
-                else:
-                    summary.updated_events += 1
+                with db.transaction(conn):
+                    if prior_event_ids:
+                        # At most one event_sources link per raw_item: drop any
+                        # stale link before reclustering against the new content,
+                        # so a content change can never leave a duplicate link.
+                        conn.execute("DELETE FROM event_sources WHERE raw_item_id = ?", (upsert.raw_item_id,))
 
-                update_confirmation_state(conn, event_id, now=now)
-                scores = score_event(conn, event_id, config, is_new_event=is_new, now=now)
-                persist_score(conn, event_id, scores, weights, thresholds)
+                    event_id, is_new = find_or_create_event(
+                        conn, normalized, upsert.raw_item_id, config.policy.dedupe, known,
+                        now=now, time_policy=config.policy.time_semantics,
+                        legal_notice_policy=config.topics.legal_notice_boilerplate,
+                    )
+                    if is_new:
+                        summary.new_events += 1
+                    else:
+                        summary.updated_events += 1
+
+                    update_confirmation_state(conn, event_id, now=now)
+                    scores = score_event(conn, event_id, config, is_new_event=is_new, now=now)
+                    persist_score(conn, event_id, scores, weights, thresholds)
+
+                    # 2026-08-06 incident (migration 008): reclustering a
+                    # CONTENT_CHANGED item can legitimately land it on a
+                    # *different* event than the one it was previously
+                    # linked to. If that leaves the previous event with zero
+                    # remaining sources, it must never again be treated as
+                    # current/eligible/scored -- detected and marked
+                    # atomically with the delete+recluster above, in the
+                    # same transaction, not as a separate later pass.
+                    for prior_event_id in prior_event_ids:
+                        if prior_event_id == event_id:
+                            continue
+                        remaining = conn.execute(
+                            "SELECT COUNT(*) AS n FROM event_sources WHERE event_id = ?", (prior_event_id,)
+                        ).fetchone()["n"]
+                        if remaining == 0:
+                            conn.execute(
+                                "UPDATE events SET orphaned_at = ? WHERE id = ? AND orphaned_at IS NULL",
+                                (now.isoformat(), prior_event_id),
+                            )
 
         job_runs.finish(
             conn,

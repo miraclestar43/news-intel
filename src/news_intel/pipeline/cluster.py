@@ -136,3 +136,11 @@ def _attach_source(conn: sqlite3.Connection, event_id: str, raw_item_id: int, *,
         "VALUES (?, ?, ?, ?)",
         (event_id, raw_item_id, int(is_primary), "[]"),
     )
+    # Self-heals the 2026-08-06 incident's orphaned_at marker (see migration
+    # 008): if this event was previously left with zero sources and is now
+    # gaining one again, it is no longer orphaned. A cheap unconditional
+    # UPDATE (no-op if already NULL) rather than a SELECT-then-maybe-UPDATE,
+    # since _attach_source is the only other event_sources writer besides
+    # collect.py's orphan-detection path and is called on every clustering
+    # decision, not just recovery.
+    conn.execute("UPDATE events SET orphaned_at = NULL WHERE id = ? AND orphaned_at IS NOT NULL", (event_id,))
