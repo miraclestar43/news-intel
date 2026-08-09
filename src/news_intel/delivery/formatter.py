@@ -3,6 +3,8 @@ into the Telegram daily-brief template (design doc section 4.2)."""
 
 from __future__ import annotations
 
+_TOP_HEADINGS = {1: "TOP STORY", 2: "TOP 2", 3: "TOP 3"}
+
 
 def render_daily(date_label: str, structured: dict) -> str:
     lines = [f"Daily Intelligence Brief — {date_label}"]
@@ -10,7 +12,7 @@ def render_daily(date_label: str, structured: dict) -> str:
     top3 = structured.get("top3", [])[:3]
     if top3:
         lines.append("")
-        lines.append("TOP 3")
+        lines.append(_TOP_HEADINGS.get(len(top3), "TOP 3"))
     for i, ev in enumerate(top3, start=1):
         lines.append("")
         lines.append(f"{i}. {ev.get('english_headline', '')} / {ev.get('chinese_headline', '')}")

@@ -144,7 +144,7 @@ def test_daily_brief_falls_back_when_llm_unavailable(config, conn, monkeypatch):
     summary = run_daily(config, conn, dry_run=True, now=now)
 
     assert summary.fallback_used is True
-    assert "AI summarization is temporarily unavailable" in summary.rendered_text
+    assert "This brief uses rule-ranked source summaries." in summary.rendered_text
     assert summary.top3_count + summary.quick_brief_count >= 4
 
 

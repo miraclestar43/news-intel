@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 from news_intel import db
 from news_intel.delivery.formatter import render_daily
-from news_intel.delivery.telegram import ChatNotAllowedError, TelegramSender
+from news_intel.delivery.telegram import ChatNotAllowedError, TelegramSender, mark_attempting
 from news_intel.event_repo import (
     event_as_digest_dict,
     last_digest_window_end,
@@ -29,6 +29,12 @@ from news_intel.pipeline.select import select_diverse_events
 from news_intel.scheduled_repo import upcoming
 from news_intel.settings import AppConfig
 
+# Production hardening (2026-08-09, promoted from the bounded daily canary):
+# any event reaching the rendered digest must have a real category and a
+# mapped source URL -- defense in depth on top of qualified_events_since's
+# own EXISTS(event_sources) filter, mirroring jobs/daily_canary.py.
+_EXCLUDED_CATEGORIES = {"noise", "Unclassified", "uncategorized", None}
+
 
 @dataclass
 class DailySummary:
@@ -43,6 +49,8 @@ class DailySummary:
     sent: bool
     skipped_lock: bool = False
     skipped_sunday: bool = False
+    fail_closed: bool = False
+    fail_reason: str | None = None
 
 
 def _select_events(conn: sqlite3.Connection, config: AppConfig, now: datetime):
@@ -93,10 +101,46 @@ def run_daily(
         date_label = pt_now.strftime("%b %-d")
         date_iso = pt_now.strftime("%Y-%m-%d")
 
+        chat_suffix = ""
+        if chat_id is not None:
+            from news_intel.delivery.telegram import chat_id_hash
+
+            chat_suffix = chat_id_hash(chat_id)
+        idempotency_key = f"daily:{date_iso}:{chat_suffix or 'no-chat'}"
+
+        # Production hardening: whenever a chat_id is supplied (delivery is
+        # actually being contemplated -- dry-run or real), fail closed on an
+        # unsafe destination/selection before ever composing/sending,
+        # exactly mirroring jobs/daily_canary.py's checks.
+        if chat_id is not None:
+            allowed = config.secrets.allowed_chat_id_list
+            if len(allowed) != 1:
+                reason = f"expected exactly one allowlisted Telegram chat, found {len(allowed)}"
+                job_runs.finish(conn, run_id, "failed", {"fail_closed_reason": reason})
+                return DailySummary(
+                    "", 0, 0, 0, False, "", idempotency_key, True, False,
+                    fail_closed=True, fail_reason=reason,
+                )
+            for item in top3 + quick:
+                if item["category"] in _EXCLUDED_CATEGORIES:
+                    reason = f"selected event {item['event_id']} has excluded category {item['category']!r}"
+                    job_runs.finish(conn, run_id, "failed", {"fail_closed_reason": reason})
+                    return DailySummary(
+                        "", 0, 0, 0, False, "", idempotency_key, True, False,
+                        fail_closed=True, fail_reason=reason,
+                    )
+                if not any(s.get("url") for s in item["sources"]):
+                    reason = f"selected event {item['event_id']} has no mapped source URL"
+                    job_runs.finish(conn, run_id, "failed", {"fail_closed_reason": reason})
+                    return DailySummary(
+                        "", 0, 0, 0, False, "", idempotency_key, True, False,
+                        fail_closed=True, fail_reason=reason,
+                    )
+
         provider = get_provider(config)
         model_used = "none (deterministic fallback)"
         fallback_used = False
-        rendered_text: str
+        body: str
 
         try:
             digest_input = DailyDigestInput(
@@ -110,7 +154,7 @@ def run_daily(
                 ev.setdefault("sources", [s["publisher"] for s in source_dict["sources"]])
             for ev, source_dict in zip(output.structured.get("quick_briefs", []), quick, strict=False):
                 ev.setdefault("sources", [s["publisher"] for s in source_dict["sources"]])
-            rendered_text = render_daily(date_label, output.structured)
+            body = render_daily(date_label, output.structured)
             model_used = getattr(provider, "model", "llm")
         except LLMUnavailableError:
             fallback_input = DailyDigestInput(
@@ -120,19 +164,39 @@ def run_daily(
                 calendar_candidates=calendar_items,
             )
             fallback_output = fallback_daily_digest(fallback_input, date_label)
-            rendered_text = fallback_output.rendered_text
+            body = fallback_output.rendered_text
             fallback_used = True
 
-        chat_suffix = ""
+        # Production heading: only stamped when delivery is being
+        # contemplated (chat_id given) -- a pure content-only preview
+        # (chat_id=None) stays unprefixed.
+        rendered_text = f"[DAILY]\n{body}" if chat_id is not None else body
+
+        if chat_id is not None:
+            max_chars = config.policy.digests.telegram_hard_limit_chars
+            if len(rendered_text) > max_chars:
+                reason = f"rendered digest is {len(rendered_text)} chars, exceeds {max_chars}"
+                job_runs.finish(conn, run_id, "failed", {"fail_closed_reason": reason})
+                return DailySummary(
+                    "", 0, 0, 0, False, "", idempotency_key, True, False,
+                    fail_closed=True, fail_reason=reason,
+                )
+
         sent = False
         sent_dry_run = True
         if chat_id is not None:
-            from news_intel.delivery.telegram import chat_id_hash
+            # Real (non-dry-run) sends are durably pre-marked before any
+            # network call, so a send that raises still leaves a row behind
+            # -- this Pacific date/destination is then never retried, even
+            # by a later invocation. See delivery.telegram.mark_attempting.
+            if not dry_run and not mark_attempting(conn, idempotency_key, chat_id, "daily"):
+                reason = f"Pacific date {date_iso} has already been attempted for this destination -- not retrying"
+                job_runs.finish(conn, run_id, "failed", {"fail_closed_reason": reason})
+                return DailySummary(
+                    rendered_text, len(rendered_text), len(top3), len(quick), fallback_used, model_used,
+                    idempotency_key, True, False, fail_closed=True, fail_reason=reason,
+                )
 
-            chat_suffix = chat_id_hash(chat_id)
-        idempotency_key = f"daily:{date_iso}:{chat_suffix or 'no-chat'}"
-
-        if chat_id is not None:
             sender = TelegramSender(config.secrets.telegram_bot_token, config.secrets.allowed_chat_id_list)
             try:
                 result = asyncio.run(

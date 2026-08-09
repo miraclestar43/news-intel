@@ -340,5 +340,47 @@ def canary_daily(
     typer.echo(f"idempotency_key={summary.idempotency_key} message_ids={summary.message_ids}")
 
 
+production_app = typer.Typer(help="Normal long-term production delivery (promoted from the daily canary)")
+app.add_typer(production_app, name="production")
+
+
+@production_app.command("daily")
+def production_daily(
+    start_date: str = typer.Option(
+        ..., envvar="PRODUCTION_START_DATE",
+        help="First Pacific date eligible for a real production send, YYYY-MM-DD. Any invocation on an "
+        "earlier Pacific date is skipped as a safety net -- no Telegram contact.",
+    ),
+) -> None:
+    """The production daily entrypoint: always a real (non-dry-run) send.
+    Fail-closed checks (allowlist cardinality, event category/URL mapping,
+    message length, per-Pacific-date idempotency) all happen inside
+    run_daily() before any Telegram contact -- see jobs/daily.py."""
+    config, conn = _load()
+    try:
+        now = datetime.now(UTC)
+        pt_today = now.astimezone(ZoneInfo(config.policy.timezone)).date()
+        start = date.fromisoformat(start_date)
+        if pt_today < start:
+            typer.echo(
+                f"production: pt_date={pt_today} is before start_date={start} -- skipping, no Telegram contact."
+            )
+            return
+
+        allowed = config.secrets.allowed_chat_id_list
+        chat_id = allowed[0] if len(allowed) == 1 else -1
+        summary = run_daily(config, conn, chat_id=chat_id, dry_run=False, now=now)
+    finally:
+        conn.close()
+
+    typer.echo(
+        f"fail_closed={summary.fail_closed} sent={summary.sent} "
+        f"top3={summary.top3_count} quick_briefs={summary.quick_brief_count} chars={summary.character_count}"
+    )
+    if summary.fail_closed:
+        typer.echo(f"fail_reason={summary.fail_reason}")
+    typer.echo(f"idempotency_key={summary.idempotency_key}")
+
+
 if __name__ == "__main__":
     app()

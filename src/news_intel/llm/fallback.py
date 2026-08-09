@@ -6,12 +6,35 @@ degrades to rule-ranked source titles/summaries rather than blocking the job
 
 from __future__ import annotations
 
+import re
+
 from news_intel.models import DailyDigestInput, DigestOutput, EventEnrichment, EventInput, WeeklyDigestInput
 
-FALLBACK_NOTICE = (
-    "AI summarization is temporarily unavailable; this brief uses the rule-ranked "
-    "source summaries."
-)
+FALLBACK_NOTICE = "This brief uses rule-ranked source summaries."
+
+# Production presentation fix (2026-08-09): a fixed "TOP 3" heading over a
+# possibly-shorter selection misrepresented coverage (canary 3/3 showed
+# "TOP 3" over a single story). Heading now reflects the actual count.
+_TOP_HEADINGS = {1: "TOP STORY", 2: "TOP 2", 3: "TOP 3"}
+
+# Production presentation fix (2026-08-09): a hard `excerpt[:280]` cutoff
+# could (and, in canary 3/3, did -- the Firebird/NVIDIA item) end mid-
+# sentence. _complete_sentence_summary only ever returns a prefix that ends
+# on a real sentence boundary, or None if none exists within budget -- the
+# caller then omits the summary line and keeps title/category/source only.
+_SUMMARY_MAX_CHARS = 280
+_SENTENCE_END_RE = re.compile(r"[.!?](?=\s|$)")
+
+
+def _complete_sentence_summary(excerpt: str | None, max_chars: int = _SUMMARY_MAX_CHARS) -> str | None:
+    if not excerpt:
+        return None
+    window = excerpt[:max_chars]
+    matches = list(_SENTENCE_END_RE.finditer(window))
+    if not matches:
+        return None
+    result = window[: matches[-1].end()].strip()
+    return result or None
 
 
 def fallback_enrich(event: EventInput) -> EventEnrichment:
@@ -36,14 +59,16 @@ def fallback_enrich(event: EventInput) -> EventEnrichment:
 
 def fallback_daily_digest(inputs: DailyDigestInput, date_label: str) -> DigestOutput:
     lines = [f"Daily Intelligence Brief — {date_label}", "", FALLBACK_NOTICE]
-    if inputs.top3_candidates:
+    top3 = inputs.top3_candidates[:3]
+    if top3:
         lines.append("")
-        lines.append("TOP 3")
-    for i, ev in enumerate(inputs.top3_candidates[:3], start=1):
+        lines.append(_TOP_HEADINGS.get(len(top3), "TOP 3"))
+    for i, ev in enumerate(top3, start=1):
         lines.append(f"\n{i}. {ev.get('title', '(untitled)')}")
         lines.append(f"Category: {ev.get('category', 'uncategorized')}")
-        if ev.get("excerpt"):
-            lines.append(ev["excerpt"][:280])
+        summary = _complete_sentence_summary(ev.get("excerpt"))
+        if summary:
+            lines.append(summary)
         sources = ", ".join(s.get("publisher", "") for s in ev.get("sources", []))
         if sources:
             lines.append(f"Sources: {sources}")
