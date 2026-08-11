@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from news_intel import db
+from news_intel.delivery.daily_production_formatter import render_production_daily
 from news_intel.delivery.formatter import render_daily
 from news_intel.delivery.telegram import ChatNotAllowedError, TelegramSender, mark_attempting
 from news_intel.event_repo import (
@@ -22,10 +23,9 @@ from news_intel.event_repo import (
 )
 from news_intel.jobs import job_runs
 from news_intel.llm.errors import LLMUnavailableError
-from news_intel.llm.fallback import fallback_daily_digest
 from news_intel.llm.provider import get_provider
 from news_intel.models import DailyDigestInput
-from news_intel.pipeline.select import select_diverse_events
+from news_intel.pipeline.daily_selection import SelectionResult, select_daily_stories
 from news_intel.scheduled_repo import upcoming
 from news_intel.settings import AppConfig
 
@@ -53,20 +53,27 @@ class DailySummary:
     fail_reason: str | None = None
 
 
-def _select_events(conn: sqlite3.Connection, config: AppConfig, now: datetime):
+def _select_events(conn: sqlite3.Connection, config: AppConfig, now: datetime) -> tuple[datetime, SelectionResult]:
+    """Selection order (2026-08-11 content-quality repair): (1) qualification
+    (qualified_events_since -- score/eligibility/source-EXISTS, unchanged
+    threshold) and source validation (category/URL, filtered here rather
+    than only checked after the fact); (2)-(4) story-family dedup, cross-
+    category coverage, and capped score-based fill all happen inside
+    select_daily_stories(). Never lowers the qualification threshold and
+    never pads a category with an unqualified candidate."""
     thresholds = config.policy.scoring.thresholds
-    digests_policy = config.policy.digests
     window_start = last_digest_window_end(conn, "daily") or (now - timedelta(hours=24))
-    qualified = qualified_events_since(conn, window_start=window_start, min_score=thresholds.daily_quick_brief)
+    qualified_rows = qualified_events_since(conn, window_start=window_start, min_score=thresholds.daily_quick_brief)
 
-    top3, quick = select_diverse_events(
-        qualified,
-        max_per_family=digests_policy.max_events_per_origin_family,
-        min_events=digests_policy.daily_min_events,
-        max_events=digests_policy.daily_max_events,
-        top3_threshold=thresholds.daily_top3,
-    )
-    return window_start, top3, quick
+    candidates = [event_as_digest_dict(conn, r) for r in qualified_rows]
+    candidates = [
+        c for c in candidates
+        if c["category"] not in _EXCLUDED_CATEGORIES and any(s.get("url") for s in c["sources"])
+    ]
+
+    generic_terms = set(config.topics.trend_identity.generic_anchor_terms)
+    result = select_daily_stories(candidates, generic_terms=generic_terms, timezone=config.policy.timezone)
+    return window_start, result
 
 
 def run_daily(
@@ -90,11 +97,12 @@ def run_daily(
 
     run_id = job_runs.start(conn, "daily")
     try:
-        window_start, top3_rows, quick_rows = _select_events(conn, config, now)
-        top3 = [event_as_digest_dict(conn, r) for r in top3_rows]
-        quick = [event_as_digest_dict(conn, r) for r in quick_rows]
+        window_start, selection = _select_events(conn, config, now)
+        top3 = [s.primary for s in selection.top_stories]
+        quick = [s.primary for s in selection.more_to_know]
         calendar_items = [
-            {"title": row["title"], "scheduled_at": row["scheduled_at"]} for row in upcoming(conn, now=now)
+            {"title": row["title"], "scheduled_at": row["scheduled_at"], "url": row["url"]}
+            for row in upcoming(conn, now=now)
         ]
 
         pt_now = now.astimezone(ZoneInfo(config.policy.timezone))
@@ -157,14 +165,7 @@ def run_daily(
             body = render_daily(date_label, output.structured)
             model_used = getattr(provider, "model", "llm")
         except LLMUnavailableError:
-            fallback_input = DailyDigestInput(
-                date_label=date_label,
-                top3_candidates=top3,
-                quick_brief_candidates=quick,
-                calendar_candidates=calendar_items,
-            )
-            fallback_output = fallback_daily_digest(fallback_input, date_label)
-            body = fallback_output.rendered_text
+            body = render_production_daily(selection, date_label, calendar_items)
             fallback_used = True
 
         # Production heading: only stamped when delivery is being
@@ -208,6 +209,11 @@ def run_daily(
                         idempotency_key=idempotency_key,
                         max_chars=config.policy.digests.telegram_hard_limit_chars,
                         dry_run=dry_run,
+                        # Only render_production_daily's output is HTML-escaped
+                        # with well-formed <a> tags; the dormant LLM-composed
+                        # path (render_daily) is plain text and must not be
+                        # sent as HTML without its own escaping.
+                        parse_mode="HTML" if fallback_used else None,
                     )
                 )
                 sent = not result.dry_run

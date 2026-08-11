@@ -101,6 +101,7 @@ class TelegramSender:
         idempotency_key: str,
         max_chars: int,
         dry_run: bool = True,
+        parse_mode: str | None = None,
     ) -> SendResult:
         if chat_id not in self.allowed_chat_ids:
             raise ChatNotAllowedError(f"chat_id {chat_id} is not in the configured allowlist")
@@ -136,7 +137,7 @@ class TelegramSender:
         bot = Bot(token=self.bot_token)
         message_ids: list[str] = []
         for chunk in chunks:
-            msg = await bot.send_message(chat_id=chat_id, text=chunk)
+            msg = await bot.send_message(chat_id=chat_id, text=chunk, parse_mode=parse_mode)
             message_ids.append(str(msg.message_id))
         _record_delivery(conn, idempotency_key, chat_id_hash(chat_id), kind, "sent", message_ids)
         return SendResult(idempotency_key, False, message_ids, False)

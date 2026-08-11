@@ -28,7 +28,7 @@ def _seed_explicit_event(conn, *, event_id, title, category, final_score, source
         "normalized_title, summary_excerpt, language, fetched_at, content_hash, origin_family) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, 'en', ?, ?, ?)",
         (
-            source_id, event_id, f"https://x.test/{event_id}", event_id, title, title.lower(),
+            source_id, event_id, f"https://{origin_family}/{event_id}", event_id, title, title.lower(),
             f"Details about {title}.", now.isoformat(), event_id, origin_family,
         ),
     )
@@ -107,15 +107,22 @@ def test_dominant_source_does_not_crowd_out_digest(config, conn):
     # The dominant family supplied 6 qualified candidates but must not exceed
     # the configured per-family cap in the final digest...
     assert family_counts.get("prolific.test", 0) <= config.policy.digests.max_events_per_origin_family
-    # ...while genuinely independent families that were *not* individually
-    # higher-scoring than several deferred prolific stories still made it in.
+    # ...while genuinely independent, non-AI families that were *not*
+    # individually higher-scoring than several deferred prolific stories
+    # still made it in (content-quality repair, 2026-08-11: cross-category
+    # coverage is a deterministic requirement, not just a per-family cap).
     assert family_counts.get("fed.gov", 0) >= 1
-    assert family_counts.get("tsmc.test", 0) >= 1
     assert family_counts.get("geo.test", 0) >= 1
+    # TSMC is also AI & Semiconductors, so it is now correctly excluded by
+    # the digest-wide AI cap (at most two AI stories total) once two
+    # higher-scoring prolific-family AI stories already fill that quota --
+    # this is the new, intentionally stricter cap, not a crowding bug.
+    assert family_counts.get("tsmc.test", 0) == 0
 
     categories = {row["category"] for row in digest_events}
     assert "Markets & Economy" in categories
     assert "AI & Semiconductors" in categories
+    assert sum(1 for row in digest_events if row["category"] == "AI & Semiconductors") <= 2
 
     # Evidence: the rendered fallback brief itself stays legible and diverse
     # (count distinct story numbers, since each event's own excerpt text also

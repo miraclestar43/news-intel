@@ -264,18 +264,51 @@ def test_run_daily_idempotency_key_is_distinct_from_canary_scheme(config, conn):
 # --- fail-closed: category / URL / allowlist --------------------------------
 
 
-def test_run_daily_fails_closed_on_excluded_category(config, conn):
+def test_run_daily_excludes_bad_category_before_selection_not_via_fail_closed(config, conn):
+    """2026-08-11: category/URL validation now happens at candidate-pool
+    filtering (selection order step 1), before dedup/coverage/fill -- so a
+    single bad-category candidate with no other qualified events produces
+    an honest empty digest, not a fail-closed error (the fail-closed path
+    is reserved for a bad item that reaches rendering some other way; see
+    test_run_daily_final_validation_still_catches_a_bypassed_bad_item)."""
     _seed_event(conn, config, event_id="E-1", title="A story", category="Unclassified")
+    summary = run_daily(config, conn, chat_id=555, dry_run=True, now=_NOW)
+    assert summary.fail_closed is False
+    assert summary.top3_count == 0
+    assert summary.quick_brief_count == 0
+    assert "No qualifying developments" in summary.rendered_text
+
+
+def test_run_daily_excludes_missing_url_before_selection_not_via_fail_closed(config, conn):
+    _seed_event(conn, config, event_id="E-1", title="A story", category="AI & Semiconductors", url="")
+    summary = run_daily(config, conn, chat_id=555, dry_run=True, now=_NOW)
+    assert summary.fail_closed is False
+    assert summary.top3_count == 0
+    assert summary.quick_brief_count == 0
+    assert "No qualifying developments" in summary.rendered_text
+
+
+def test_run_daily_final_validation_still_catches_a_bypassed_bad_item(config, conn, monkeypatch):
+    """Defense in depth: even if a bad-category/no-URL item somehow reached
+    selection (bypassing the step-1 pre-filter, e.g. a future regression),
+    the pre-send fail-closed check must still independently catch it."""
+    _seed_event(conn, config, event_id="E-1", title="A story", category="AI & Semiconductors")
+
+    import news_intel.jobs.daily as daily_module
+    from news_intel.pipeline.daily_selection import SelectionResult, Story
+
+    real_select = daily_module.select_daily_stories
+
+    def _bypassed(candidates, **kwargs):
+        result = real_select(candidates, **kwargs)
+        bad = dict(result.top_stories[0].primary)
+        bad["category"] = "Unclassified"
+        return SelectionResult(top_stories=[Story(primary=bad)], more_to_know=[])
+
+    monkeypatch.setattr(daily_module, "select_daily_stories", _bypassed)
     summary = run_daily(config, conn, chat_id=555, dry_run=True, now=_NOW)
     assert summary.fail_closed is True
     assert "excluded category" in summary.fail_reason
-
-
-def test_run_daily_fails_closed_on_missing_source_url(config, conn):
-    _seed_event(conn, config, event_id="E-1", title="A story", category="AI & Semiconductors", url="")
-    summary = run_daily(config, conn, chat_id=555, dry_run=True, now=_NOW)
-    assert summary.fail_closed is True
-    assert "no mapped source URL" in summary.fail_reason
 
 
 def test_run_daily_fails_closed_when_not_exactly_one_allowed_chat(config, conn, monkeypatch):

@@ -75,7 +75,7 @@ def _seed_events(config, conn, now):
             "INSERT INTO raw_items (source_id, external_id, canonical_url, url_hash, title, "
             "normalized_title, summary_excerpt, language, fetched_at, content_hash, origin_family) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, 'en', ?, ?, ?)",
-            (source_id, f"ext{i}", f"https://x.test/{i}", f"hash{i}", title, title.lower(), excerpt,
+            (source_id, f"ext{i}", f"https://{origin}/{i}", f"hash{i}", title, title.lower(), excerpt,
              now.isoformat(), f"content{i}", origin),
         )
         raw_id = cur.lastrowid
