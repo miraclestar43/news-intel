@@ -137,6 +137,8 @@ def _render_top_story(index: int, story: Story) -> list[str]:
     summary = summarize(story.primary.get("excerpt"), story.primary.get("title", ""))
     if summary:
         lines.append(_escape(summary))
+    if story.update_note:
+        lines.append(_escape(story.update_note))
     source_line = _source_line(story)
     if source_line:
         lines.append(source_line)
@@ -147,10 +149,13 @@ def _render_more_to_know(story: Story) -> str:
     primary_src = _primary_source(story.primary)
     title_url = primary_src["url"] if primary_src else None
     title_link = _link(story.primary.get("title", "(untitled)"), title_url)
+    parts = [f"• {title_link}"]
+    if story.update_note:
+        parts.append(_escape(story.update_note))
     source_line = _source_line(story)
     if source_line:
-        return f"• {title_link} — {source_line}"
-    return f"• {title_link}"
+        parts.append(source_line)
+    return " — ".join(parts)
 
 
 def render_production_daily(

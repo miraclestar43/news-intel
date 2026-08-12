@@ -66,10 +66,10 @@ def make_source_context(
     )
 
 
-def insert_source_row(conn, source_id: str, tier: int, adapter_type: str = "rss") -> None:
+def insert_source_row(conn, source_id: str, tier: int, adapter_type: str = "rss", name: str | None = None) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO sources (id, name, adapter_type, tier, enabled, url, "
         "category_hints_json, poll_interval_seconds, health_state, config_hash) "
         "VALUES (?, ?, ?, ?, 1, 'https://example.com', '[]', 300, 'healthy', 'test')",
-        (source_id, source_id, adapter_type, tier),
+        (source_id, name or source_id, adapter_type, tier),
     )

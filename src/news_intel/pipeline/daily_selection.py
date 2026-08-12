@@ -1,31 +1,33 @@
-"""Daily-digest story selection (2026-08-11 content-quality repair, first
-real production digest): story-family deduplication and coverage-aware
-selection, applied to the SAME already-qualified candidate pool
-(`event_repo.qualified_events_since`, unchanged threshold) that
-jobs/daily.py has always used -- this module never lowers or bypasses
+"""Daily-digest story selection. Applied to the SAME already-qualified
+candidate pool (`event_repo.qualified_events_since`, unchanged threshold)
+that jobs/daily.py has always used -- this module never lowers or bypasses
 qualification, it only decides which qualified events become one digest
-slot and in what order.
+slot, in what order, and whether a repeat of an already-delivered story is
+suppressed or shown with what changed.
 
-Root cause of the 2026-08-10 digest defects (see the accompanying incident
-report): (1) two OpenAI "Daybreak" blog posts published the same day were
-never same-EVENT-clustered (pipeline/cluster.py correctly did not merge
-them -- their titles and extracted entities genuinely don't overlap enough
-to be the *same article*), but they are clearly the *same announcement
-family* for digest purposes; (2) the old select_diverse_events() only
-capped by *origin_family* (e.g. "openai.com" vs "www.techmeme.com" as one
-family), not by displayed source domain, and had no category-coverage or
-per-topic cap logic at all -- it filled purely by score, and every
-qualified event that day happened to be AI & Semiconductors.
-
-Selection order (matches the incident report's spec exactly):
+Selection order:
+  0. Cross-day novelty -- _apply_cross_day_novelty() drops a candidate that
+     is the same underlying event as a story delivered in the last several
+     daily digests, UNLESS pipeline/story_identity.detect_material_update()
+     finds a concrete, textually-grounded delta since that prior telling
+     (2026-08-12 repair: the Aug 10 NVIDIA financing announcement and its
+     Aug 12 recap under a new headline/URL were, before this, both
+     independently selectable as "new" stories).
   1. Qualification and source validation -- already done by the caller
      (qualified_events_since + jobs/daily.py's own category/URL checks).
-  2. Story-level clustering/deduplication -- group_story_families().
-  3. Cross-category coverage -- _apply_coverage() picks one family per
-     required category, from the highest-scoring qualified family in that
-     category, if one exists.
-  4. Score-based filling of remaining positions -- _fill_remaining(),
-     respecting the AI-family cap and the per-source-domain cap.
+  2. Story-level clustering/deduplication -- group_story_families(), using
+     pipeline/story_identity.same_event_story() (2026-08-12 repair: replaces
+     the 2026-08-11 same-domain + same-day + shared-capitalized-token
+     heuristic, which had no filter for a shared *company* name and so
+     falsely merged two unrelated NVIDIA blog posts; see that module's
+     docstring for the full root-cause account).
+  3. Cross-category coverage -- one family per required category, from the
+     highest-scoring qualified family in that category, if one exists.
+  4. Score-based filling of remaining positions -- respecting the AI-family
+     cap and the per-publisher-family cap (pipeline/publisher_family.py:
+     registrable-domain based, 2026-08-12 repair -- replaces the 2026-08-11
+     exact-hostname cap, which let blogs.nvidia.com and developer.nvidia.com
+     count as two different sources).
   5. Final rendering validation -- the caller (jobs/daily.py) already
      re-validates category/URL/length before ever contacting Telegram;
      this module's caps are enforced constructively, not just checked.
@@ -33,11 +35,11 @@ Selection order (matches the incident report's spec exactly):
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
-from datetime import datetime
-from urllib.parse import urlparse
-from zoneinfo import ZoneInfo
+
+from news_intel.pipeline.publisher_family import publisher_family_of_url
+from news_intel.pipeline.story_identity import detect_material_update, same_event_story
+from news_intel.settings import AlertTriggersConfig
 
 MAX_TOP_STORIES = 3
 MAX_TOTAL_STORIES = 8
@@ -50,16 +52,17 @@ MIN_NON_AI_WHEN_FOUR_OR_MORE = 2
 TECHNOLOGY_FAMILY_CATEGORIES = {"AI & Semiconductors"}
 REQUIRED_COVERAGE_CATEGORIES = ("Markets & Economy", "Politics", "US / China / World")
 
-_CAPITALIZED_TOKEN_RE = re.compile(r"\b[A-Z][A-Za-z0-9]{3,}\b")
-
 
 @dataclass
 class Story:
     """One digest slot: a primary event dict (event_repo.event_as_digest_dict
     shape) plus, if a story family had more than one member, up to one
-    additional linked source kept as a secondary citation."""
+    additional linked source kept as a secondary citation. `update_note` is
+    set when this story is a legitimate repeat of an already-delivered
+    story with a proven material delta (cross-day novelty step 0)."""
     primary: dict
     secondary: dict | None = None
+    update_note: str | None = None
 
     @property
     def event_id(self) -> str:
@@ -75,66 +78,61 @@ class Story:
 
     @property
     def domain(self) -> str:
-        return _domain_of(self.primary)
+        return _publisher_family_of(self.primary)
 
 
-def _domain_of(item: dict) -> str:
+def _publisher_family_of(item: dict) -> str:
     sources = item.get("sources") or []
     if not sources or not sources[0].get("url"):
         return ""
-    return urlparse(sources[0]["url"]).netloc.lower()
+    return publisher_family_of_url(sources[0]["url"])
 
 
-def _pt_date(item: dict, tz: ZoneInfo) -> str | None:
-    sources = item.get("sources") or []
-    if not sources or not sources[0].get("published_at"):
-        return None
-    try:
-        dt = datetime.fromisoformat(sources[0]["published_at"])
-    except ValueError:
-        return None
-    return dt.astimezone(tz).strftime("%Y-%m-%d")
+def _apply_cross_day_novelty(
+    candidates: list[dict],
+    prior_stories: list[dict],
+    *,
+    generic_terms: set[str],
+    known_entities: set[str],
+    alert_triggers: AlertTriggersConfig,
+) -> tuple[list[dict], dict[str, str]]:
+    """Drops any candidate matching an already-delivered prior story unless
+    a material update is found; returns (kept_candidates, {event_id: note})
+    for the ones kept *because* of a proven update."""
+    if not prior_stories:
+        return candidates, {}
+    kept: list[dict] = []
+    notes: dict[str, str] = {}
+    for cand in candidates:
+        prior_match = next(
+            (p for p in prior_stories if same_event_story(cand, p, generic_terms=generic_terms)), None
+        )
+        if prior_match is None:
+            kept.append(cand)
+            continue
+        update = detect_material_update(
+            cand, prior_match, known_entities=known_entities, alert_triggers=alert_triggers
+        )
+        if update.is_update:
+            kept.append(cand)
+            notes[cand["event_id"]] = update.note or ""
+        # else: silently suppressed -- a repeat, recap, or restatement of an
+        # already-delivered story with no proven new fact.
+    return kept, notes
 
 
-def _capitalized_tokens(item: dict, generic_terms: set[str]) -> set[str]:
-    text = f"{item.get('title', '')} {item.get('excerpt', '')}"
-    tokens = set(_CAPITALIZED_TOKEN_RE.findall(text))
-    lowered_generic = {t.lower() for t in generic_terms}
-    return {t for t in tokens if t.lower() not in lowered_generic}
-
-
-def _same_story_family(a: dict, b: dict, *, generic_terms: set[str], tz: ZoneInfo) -> bool:
-    """Same announcement/program, not necessarily the same article. Both
-    conditions are same-source AND same-Pacific-day (a real publisher
-    rarely posts two genuinely unrelated stories sharing a distinctive
-    proper noun on the same day) -- distinguishing this from
-    pipeline/trends.py's weekly cross-day trend matching, which has no
-    same-day/same-source requirement and a looser trigram-based test."""
-    if _domain_of(a) != _domain_of(b) or not _domain_of(a):
-        return False
-    date_a, date_b = _pt_date(a, tz), _pt_date(b, tz)
-    if date_a != date_b or date_a is None:
-        return False
-    tokens_a = _capitalized_tokens(a, generic_terms)
-    tokens_b = _capitalized_tokens(b, generic_terms)
-    return bool(tokens_a & tokens_b)
-
-
-def group_story_families(
-    candidates: list[dict], *, generic_terms: set[str], timezone: str = "America/Los_Angeles"
-) -> list[Story]:
+def group_story_families(candidates: list[dict], *, generic_terms: set[str]) -> list[Story]:
     """Complete-link grouping (mirrors pipeline/trends.py's transitive-
     bridging safeguard): a candidate only joins an existing family if it
     matches *every* current member, never just the first. Input must
     already be sorted by score descending; the highest-scoring member of
     each family becomes primary, the next-highest becomes the sole
     secondary citation (a family is a digest slot, not an unbounded list)."""
-    tz = ZoneInfo(timezone)
     groups: list[list[dict]] = []
     for item in candidates:
         target = None
         for group in groups:
-            if all(_same_story_family(item, member, generic_terms=generic_terms, tz=tz) for member in group):
+            if all(same_event_story(item, member, generic_terms=generic_terms) for member in group):
                 target = group
                 break
         if target is None:
@@ -174,13 +172,13 @@ def _domain_counts(selected: list[Story]) -> dict[str, int]:
 
 
 def _can_add(story: Story, selected: list[Story]) -> bool:
-    """AI-family cap and the *total* per-domain cap -- both apply
+    """AI-family cap and the *total* per-publisher-family cap -- both apply
     regardless of eventual top/more-to-know placement, since those are
     decided by final score rank after every position is filled (see
-    select_daily_stories). The stricter "at most one per domain among the
-    eventual top stories" rule is enforced separately, after ranking, since
-    which stories end up in the top-3 isn't known until selection (which
-    can include coverage picks) is complete."""
+    select_daily_stories). The stricter "at most one per publisher family
+    among the eventual top stories" rule is enforced separately, after
+    ranking, since which stories end up in the top-3 isn't known until
+    selection (which can include coverage picks) is complete."""
     ai_count = sum(1 for s in selected if _is_ai(s))
     if _is_ai(story) and ai_count >= MAX_AI_STORIES:
         return False
@@ -191,12 +189,12 @@ def _can_add(story: Story, selected: list[Story]) -> bool:
 
 def _enforce_top_domain_cap(selected: list[Story]) -> list[Story]:
     """Post-rank pass: at most MAX_TOP_STORIES_PER_DOMAIN stories from the
-    same domain may occupy the top MAX_TOP_STORIES positions. If violated,
-    demote the lower-scored offender below the top cut by swapping it with
-    the highest-scored story currently below the cut whose domain isn't
-    already at the top-cap (a no-op if no such swap exists -- selected
-    stays valid either way, just potentially with a rare unresolved
-    domain-clustering in the top slots)."""
+    same publisher family may occupy the top MAX_TOP_STORIES positions. If
+    violated, demote the lower-scored offender below the top cut by
+    swapping it with the highest-scored story currently below the cut whose
+    publisher family isn't already at the top-cap (a no-op if no such swap
+    exists -- selected stays valid either way, just potentially with a rare
+    unresolved publisher-family clustering in the top slots)."""
     changed = True
     while changed:
         changed = False
@@ -220,13 +218,36 @@ def _enforce_top_domain_cap(selected: list[Story]) -> list[Story]:
 
 
 def select_daily_stories(
-    candidates: list[dict], *, generic_terms: set[str], timezone: str = "America/Los_Angeles",
+    candidates: list[dict],
+    *,
+    generic_terms: set[str],
+    known_entities: set[str] | None = None,
+    alert_triggers: AlertTriggersConfig | None = None,
+    prior_stories: list[dict] | None = None,
     max_total: int = MAX_TOTAL_STORIES,
 ) -> SelectionResult:
     """candidates must already be qualified (score/category/URL-validated)
-    and sorted by final_score descending -- this function only clusters,
-    covers, and caps; it never re-derives eligibility."""
-    families = group_story_families(candidates, generic_terms=generic_terms, timezone=timezone)
+    and sorted by final_score descending -- this function only suppresses
+    proven repeats, clusters, covers, and caps; it never re-derives
+    eligibility. `prior_stories`/`known_entities`/`alert_triggers` are
+    optional so callers that don't need cross-day novelty (e.g. isolated
+    unit tests of clustering/coverage) can omit them; step 0 is then a
+    no-op."""
+    update_notes: dict[str, str] = {}
+    if prior_stories:
+        candidates, update_notes = _apply_cross_day_novelty(
+            candidates,
+            prior_stories,
+            generic_terms=generic_terms,
+            known_entities=known_entities or set(),
+            alert_triggers=alert_triggers,
+        )
+
+    families = group_story_families(candidates, generic_terms=generic_terms)
+    for family in families:
+        note = update_notes.get(family.primary["event_id"])
+        if note:
+            family.update_note = note
     selected: list[Story] = []
 
     # Step 3: cross-category coverage -- one family per required category,

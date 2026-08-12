@@ -3,6 +3,7 @@ plain dicts the LLM boundary and the deterministic fallback both consume."""
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import UTC, datetime
 
@@ -70,11 +71,30 @@ def events_in_window(
     ).fetchall()
 
 
+# Sources whose adapter stores the *original* publisher's own article URL
+# and domain as canonical_url/origin_family (verified against
+# adapters/gdelt.py: canonical_url is the article's own url, origin_family
+# is the article's own site domain -- never GDELT's own site) -- for these,
+# and only these, the discovery aggregator's static source name ("GDELT DOC
+# API") is replaced with the resolved original-publisher domain for display.
+# Deliberately NOT applied to other tier-3 sources such as Techmeme, whose
+# canonical_url points at Techmeme's own roundup page, not the original
+# article -- resolving a publisher name from that would be a fabrication.
+_DISCOVERY_PASSTHROUGH_SOURCE_IDS = frozenset({"gdelt_doc"})
+
+
+def _display_publisher(source_id: str, origin_family: str | None, source_name: str) -> str:
+    if source_id in _DISCOVERY_PASSTHROUGH_SOURCE_IDS and origin_family:
+        return origin_family.removeprefix("www.")
+    return source_name
+
+
 def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
     rows = conn.execute(
         """
         SELECT r.id AS raw_item_id, r.title AS title, r.summary_excerpt AS excerpt,
                r.canonical_url AS url, r.published_at AS published_at,
+               r.origin_family AS origin_family, r.source_id AS source_id,
                s.name AS publisher, s.tier AS tier
         FROM event_sources es
         JOIN raw_items r ON r.id = es.raw_item_id
@@ -87,7 +107,8 @@ def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
     return [
         {
             "id": f"S{r['raw_item_id']}",
-            "publisher": r["publisher"],
+            "publisher": _display_publisher(r["source_id"], r["origin_family"], r["publisher"]),
+            "source_id": r["source_id"],
             "excerpt": r["excerpt"] or r["title"],
             "published_at": r["published_at"] or "",
             "url": r["url"],
@@ -111,6 +132,10 @@ def combined_text_for_event(conn: sqlite3.Connection, event_id: str) -> str:
 
 def event_as_digest_dict(conn: sqlite3.Connection, event_row: sqlite3.Row) -> dict:
     sources = event_sources(conn, event_row["id"])
+    try:
+        entities = json.loads(event_row["entities_json"] or "[]")
+    except (json.JSONDecodeError, IndexError, KeyError):
+        entities = []
     return {
         "event_id": event_row["id"],
         "title": event_row["primary_title"],
@@ -119,7 +144,29 @@ def event_as_digest_dict(conn: sqlite3.Connection, event_row: sqlite3.Row) -> di
         "sources": sources,
         "final_score": event_row["final_score"],
         "confirmation_state": event_row["confirmation_state"],
+        "entities": entities,
     }
+
+
+def recent_digest_events(
+    conn: sqlite3.Connection, *, since: datetime, kind: str = "daily"
+) -> list[dict]:
+    """Distinct events delivered in any `kind` digest with window_end >=
+    `since` -- the cross-day novelty lookback pool (2026-08-12 content-
+    quality repair). Ordered most-recent-first so a candidate's closest
+    prior appearance is compared first."""
+    rows = conn.execute(
+        """
+        SELECT DISTINCT e.*, d.window_end AS digest_window_end
+        FROM digest_events de
+        JOIN digests d ON d.id = de.digest_id
+        JOIN events e ON e.id = de.event_id
+        WHERE d.kind = ? AND d.window_end >= ?
+        ORDER BY d.window_end DESC
+        """,
+        (kind, since.isoformat()),
+    ).fetchall()
+    return [event_as_digest_dict(conn, r) for r in rows]
 
 
 def record_digest(

@@ -23,10 +23,10 @@ _GENERIC_TERMS = {"OpenAI", "ChatGPT", "NVIDIA", "AI", "GPT"}
 
 
 def _item(event_id, title, category, score, *, domain="example.test", excerpt="A complete sentence here.",
-          published_at="2026-08-10T10:00:00+00:00", publisher="Test Publisher"):
+          published_at="2026-08-10T10:00:00+00:00", publisher="Test Publisher", entities=None):
     return {
         "event_id": event_id, "title": title, "category": category, "final_score": score,
-        "excerpt": excerpt, "confirmation_state": "official",
+        "excerpt": excerpt, "confirmation_state": "official", "entities": entities or [],
         "sources": [{"publisher": publisher, "url": f"https://{domain}/{event_id}", "published_at": published_at}],
     }
 
@@ -61,11 +61,44 @@ def test_unrelated_same_day_same_domain_posts_are_not_merged():
     assert len(families) == 2  # no shared distinctive token beyond generic "OpenAI"
 
 
-def test_different_domain_same_token_is_not_merged():
-    a = _item("E-1", "Company unveils Daybreak initiative", "AI & Semiconductors", 70, domain="openai.com")
-    b = _item("E-2", "Analyst covers Daybreak initiative reaction", "AI & Semiconductors", 65, domain="techmeme.com")
+def test_cross_publisher_same_event_is_merged():
+    """2026-08-12 repair: the same underlying announcement, reported by two
+    different publishers, must be recognized as one story -- the old
+    same-domain requirement made this impossible. Verified against real
+    2026-08-10 data too (nvidianews.nvidia.com's own release vs
+    techmeme.com's Financial-Times-sourced report of the identical $500B
+    financing deal)."""
+    a = _item(
+        "E-1", "OpenAI announces Daybreak Program expansion", "AI & Semiconductors", 70, domain="openai.com",
+        entities=["Daybreak Program", "OpenAI"],
+    )
+    b = _item(
+        "E-2", "Analyst reviews Daybreak Program impact", "AI & Semiconductors", 65, domain="techmeme.com",
+        publisher="Techmeme", entities=["Daybreak Program"],
+    )
     families = group_story_families([a, b], generic_terms=_GENERIC_TERMS)
-    assert len(families) == 2  # different source, not the same announcement
+    assert len(families) == 1
+    assert families[0].primary["event_id"] == "E-1"
+    assert families[0].secondary["event_id"] == "E-2"
+
+
+def test_same_publisher_different_products_not_merged():
+    """2026-08-12 repair reproduction: two unrelated posts from the SAME
+    publisher (both mentioning only the company name, no shared specific
+    product/entity) must stay separate -- the 2026-08-11 defect that merged
+    NVIDIA's AI-financing story with an unrelated Nemotron release."""
+    a = _item(
+        "E-1", "NVIDIA Partners With Apollo and KKR on Financing", "AI & Semiconductors", 74,
+        domain="blogs.nvidia.com", publisher="NVIDIA newsroom",
+        excerpt="NVIDIA announced financing platforms with Apollo, BlackRock and KKR.",
+    )
+    b = _item(
+        "E-2", "NVIDIA Nemotron 3.5 Lightning Delivers Fast Execution", "AI & Semiconductors", 74,
+        domain="developer.nvidia.com", publisher="NVIDIA developer blog",
+        excerpt="NVIDIA Nemotron 3.5 Lightning is a new open model for agentic workloads.",
+    )
+    families = group_story_families([a, b], generic_terms=_GENERIC_TERMS)
+    assert len(families) == 2
 
 
 def test_selection_selects_most_informative_as_primary_and_keeps_secondary():
@@ -145,13 +178,15 @@ def test_single_domain_capped_at_two_total_stories():
 
 def test_at_most_one_domain_in_top_stories():
     candidates = [
-        _item("E-1", "Story one", "AI & Semiconductors", 90, domain="dominant.test"),
-        _item("E-2", "Story two", "Markets & Economy", 89, domain="dominant.test"),
-        _item("E-3", "Story three", "Politics", 70, domain="other.test"),
+        _item("E-1", "Alpha headline", "AI & Semiconductors", 90, domain="dominant.test"),
+        _item("E-2", "Bravo headline", "Markets & Economy", 89, domain="dominant.test"),
+        _item("E-3", "Charlie headline", "Politics", 70, domain="other.test"),
+        _item("E-4", "Delta headline", "US / China / World", 60, domain="fourth.test"),
     ]
     result = select_daily_stories(candidates, generic_terms=_GENERIC_TERMS)
     top_domains = [s.domain for s in result.top_stories]
     assert len(top_domains) == len(set(top_domains))  # no domain repeats within TOP
+    assert "fourth.test" in [s.domain for s in result.all_stories]  # the swapped-in story is still included
 
 
 # --- clickable links / safe escaping ----------------------------------------

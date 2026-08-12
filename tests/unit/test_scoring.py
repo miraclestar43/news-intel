@@ -55,3 +55,40 @@ def test_classify_severity_thresholds(config):
     assert classify_severity_candidate(t.alert_candidate, t) == Severity.S2
     assert classify_severity_candidate(t.daily_quick_brief, t) == Severity.S1
     assert classify_severity_candidate(0, t) == Severity.S0
+
+
+def test_significance_no_longer_plateaus_at_47_5_for_unverified_single_source(config, conn):
+    """2026-08-12 scoring repair reproduction: before, EVERY single-source
+    UNVERIFIED (tier != 0) event scored significance = 40 + 0 + 30*0.25 =
+    47.5 no matter what it was about. A materially significant single-
+    source story (regulatory action, large dollar figure) must now be able
+    to score well above that fixed value."""
+    event_id = _make_event_with_source(
+        conn,
+        "Government imposes new sanctions and export controls on major firm",
+        "Regulators announced a $2 billion penalty and new export controls, effective immediately.",
+        tier=3,
+        origin_family="gdelt-style.test",
+    )
+    scores = score_event(conn, event_id, config, is_new_event=True)
+    assert scores.confirmation_quality == 30  # still unverified -- confidence component unchanged
+    assert scores.significance > 47.5 + 15  # materiality no longer pinned to the old plateau value
+
+
+def test_significance_independent_of_source_tier_for_identical_text(config, conn):
+    """Same text, same confirmation state, different source tier -> the
+    2026-08-12 repair means significance must be identical (materiality
+    has no has_t0 input); only confirmation_quality/corroboration may
+    legitimately differ with source characteristics."""
+    text = "NVIDIA today announced a new product update for developers."
+    t0_event = _make_event_with_source(conn, text, text, tier=0, origin_family="a.test")
+    t0_scores = score_event(conn, t0_event, config, is_new_event=True)
+
+    conn.execute("DELETE FROM event_sources")
+    conn.execute("DELETE FROM raw_items")
+    conn.execute("DELETE FROM events")
+
+    t3_event = _make_event_with_source(conn, text, text, tier=3, origin_family="b.test")
+    t3_scores = score_event(conn, t3_event, config, is_new_event=True)
+
+    assert t0_scores.significance == t3_scores.significance

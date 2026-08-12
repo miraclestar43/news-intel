@@ -10,6 +10,7 @@ import sqlite3
 from datetime import UTC, datetime
 
 from news_intel.models import ConfirmationState, ScoreComponents, Severity
+from news_intel.pipeline.materiality import compute_materiality
 from news_intel.pipeline.relevance import classify_relevance
 from news_intel.settings import AppConfig
 
@@ -72,7 +73,10 @@ def score_event(
 ) -> ScoreComponents:
     now = now or datetime.now(UTC)
     event = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
-    combined_text, has_t0, origin_families, popularity_signal, _ = _event_text_and_signals(conn, event_id)
+    # has_t0 (source tier) no longer feeds significance directly (2026-08-12
+    # scoring repair) -- source authority continues to inform confidence via
+    # the existing confirmation-state pipeline, not as a materiality input.
+    combined_text, _has_t0, origin_families, popularity_signal, _ = _event_text_and_signals(conn, event_id)
 
     relevance = classify_relevance(combined_text, config.topics, config.policy.relevance_multipliers)
     conn.execute(
@@ -83,8 +87,15 @@ def score_event(
     confirmation_state = ConfirmationState(event["confirmation_state"])
     confirmation_quality = _CONFIRMATION_QUALITY[confirmation_state]
 
-    significance_base = 40 + (25 if has_t0 else 0) + (confirmation_quality * 0.25)
-    significance = max(0.0, min(100.0, significance_base))
+    # 2026-08-12 scoring repair: significance is materiality -- what the
+    # event actually is -- computed from the event's own text, independent
+    # of source tier (has_t0) and confirmation state (confirmation_quality
+    # is its own separately-weighted component below). The prior formula
+    # (40 + 25*has_t0 + confirmation_quality*0.25) made significance a pure
+    # function of source authority/evidence confidence, plateauing every
+    # single-source UNVERIFIED event at exactly 47.5 regardless of
+    # substance -- see pipeline/materiality.py for the replacement.
+    significance = compute_materiality(combined_text, relevance.bucket)
 
     user_relevance_base = 55.0
     user_relevance = max(0.0, min(100.0, user_relevance_base * relevance.multiplier))
