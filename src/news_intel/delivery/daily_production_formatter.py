@@ -19,72 +19,14 @@ or invented -- see pipeline.daily_selection for how those URLs got there.
 from __future__ import annotations
 
 import html
-import re
 
 from news_intel.pipeline.daily_selection import SelectionResult, Story
-from news_intel.pipeline.normalize import normalize_title
-from news_intel.pipeline.similarity import trigram_jaccard
+from news_intel.pipeline.summary_quality import extract_summary
 
-SUMMARY_MAX_CHARS = 280
-_SENTENCE_END_RE = re.compile(r"[.!?](?=\s|$)")
-_ELLIPSIS_SUFFIXES = ("...", "…")
-_REDUNDANCY_TRIGRAM_FLOOR = 0.75
-
-
-def _strip_trailing_ellipsis(text: str) -> str:
-    """A trailing '...' or '…' is the source's own truncation marker, not
-    sentence-ending punctuation -- whatever precedes it is never treated as
-    complete just because a period-like character happens to follow."""
-    stripped = text
-    changed = True
-    while changed:
-        changed = False
-        for suffix in _ELLIPSIS_SUFFIXES:
-            rs = stripped.rstrip()
-            if rs.endswith(suffix):
-                stripped = rs[: -len(suffix)]
-                changed = True
-    return stripped
-
-
-def _complete_sentences(excerpt: str, max_chars: int) -> list[str]:
-    window = _strip_trailing_ellipsis(excerpt[:max_chars])
-    matches = list(_SENTENCE_END_RE.finditer(window))
-    sentences = []
-    start = 0
-    for m in matches:
-        s = window[start : m.end()].strip()
-        if s:
-            sentences.append(s)
-        start = m.end()
-    return sentences
-
-
-def _is_redundant_with_title(candidate: str, title: str) -> bool:
-    if not candidate or not title:
-        return False
-    return trigram_jaccard(normalize_title(candidate), normalize_title(title)) >= _REDUNDANCY_TRIGRAM_FLOOR
-
-
-def summarize(excerpt: str | None, title: str, *, max_chars: int = SUMMARY_MAX_CHARS) -> str | None:
-    """None means: omit the summary line entirely (title/category/source
-    are still shown) -- never a truncated fragment, never a restatement of
-    the title, never an invented fact."""
-    if not excerpt:
-        return None
-    sentences = _complete_sentences(excerpt, max_chars)
-    if not sentences:
-        return None
-    # Redundancy is judged on the leading sentence specifically -- a
-    # multi-sentence summary that merely *starts* by restating the title
-    # should drop that opening sentence, not be rejected wholesale.
-    if not _is_redundant_with_title(sentences[0], title):
-        return " ".join(sentences)
-    if len(sentences) > 1:
-        rest = " ".join(sentences[1:])
-        if rest and not _is_redundant_with_title(sentences[1], title):
-            return rest
-    return None
+# Backward-compatible alias -- the extraction logic now lives in
+# pipeline/summary_quality.py (shared with daily_selection.py's TOP-
+# eligibility check), but this module's own public name is unchanged.
+summarize = extract_summary
 
 
 def _escape(text: str) -> str:
@@ -185,6 +127,10 @@ def render_production_daily(
         for cal in calendar_items:
             title = cal.get("title", "")
             url = cal.get("url")
-            lines.append(f"• {_link(title, url) if url else _escape(title)}")
+            entry = _link(title, url) if url else _escape(title)
+            time_label = cal.get("pacific_time_label")
+            if time_label:
+                entry += f" — {_escape(time_label)}"
+            lines.append(f"• {entry}")
 
     return "\n".join(lines)

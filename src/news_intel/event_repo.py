@@ -7,6 +7,8 @@ import json
 import sqlite3
 from datetime import UTC, datetime
 
+from news_intel.pipeline.citation import resolve_citation_publisher
+
 
 def qualified_events_since(
     conn: sqlite3.Connection, *, window_start: datetime, min_score: float
@@ -75,17 +77,28 @@ def events_in_window(
 # and domain as canonical_url/origin_family (verified against
 # adapters/gdelt.py: canonical_url is the article's own url, origin_family
 # is the article's own site domain -- never GDELT's own site) -- for these,
-# and only these, the discovery aggregator's static source name ("GDELT DOC
-# API") is replaced with the resolved original-publisher domain for display.
-# Deliberately NOT applied to other tier-3 sources such as Techmeme, whose
-# canonical_url points at Techmeme's own roundup page, not the original
-# article -- resolving a publisher name from that would be a fabrication.
+# the discovery aggregator's static source name ("GDELT DOC API") is
+# replaced with the resolved original-publisher domain for display.
 _DISCOVERY_PASSTHROUGH_SOURCE_IDS = frozenset({"gdelt_doc"})
 
+# Techmeme's canonical_url points at Techmeme's own roundup page, not the
+# original article -- so unlike GDELT, there's no URL to resolve. But its
+# excerpt reliably starts with a "Publication:" or "Author / Publication:"
+# citation (pipeline/citation.py, parsed from Techmeme's own text, never
+# invented) -- 2026-08-13 fix: displaying "Source: Techmeme" on every item
+# both hid the real publisher (Wired, Bloomberg, ...) and, more materially,
+# let two DIFFERENT real publishers both discovered via Techmeme collide
+# under one misleading "Techmeme" label.
+_CITATION_PASSTHROUGH_SOURCE_IDS = frozenset({"techmeme"})
 
-def _display_publisher(source_id: str, origin_family: str | None, source_name: str) -> str:
+
+def _display_publisher(source_id: str, origin_family: str | None, source_name: str, excerpt: str | None) -> str:
     if source_id in _DISCOVERY_PASSTHROUGH_SOURCE_IDS and origin_family:
         return origin_family.removeprefix("www.")
+    if source_id in _CITATION_PASSTHROUGH_SOURCE_IDS:
+        resolved = resolve_citation_publisher(excerpt)
+        if resolved:
+            return resolved
     return source_name
 
 
@@ -107,7 +120,7 @@ def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
     return [
         {
             "id": f"S{r['raw_item_id']}",
-            "publisher": _display_publisher(r["source_id"], r["origin_family"], r["publisher"]),
+            "publisher": _display_publisher(r["source_id"], r["origin_family"], r["publisher"], r["excerpt"]),
             "source_id": r["source_id"],
             "excerpt": r["excerpt"] or r["title"],
             "published_at": r["published_at"] or "",

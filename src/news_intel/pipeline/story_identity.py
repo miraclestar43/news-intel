@@ -79,6 +79,19 @@ _BOILERPLATE_TERMS = frozenset(
     }
 )
 
+# Standard macro/economic acronyms (2026-08-13 fix): a BLS "latest numbers"
+# dashboard and an unrelated Asian-markets commentary piece both mention
+# "CPI" -- shared generic economic terminology, not a shared distinctive
+# entity. These are common enough, and short enough, that the ALL-CAPS
+# acronym allowance (below) would otherwise treat any one of them as a
+# valid anchor on its own.
+_MACRO_ACRONYM_TERMS = frozenset(
+    {
+        "CPI", "GDP", "PPI", "FOMC", "ECI", "YOY", "YTD", "QOQ", "MOM",
+        "GNP", "PCE", "ISM", "PMI", "CPIH", "NFP",
+    }
+)
+
 
 _WORD_SPLIT_RE = re.compile(r"[^A-Za-z0-9]+")
 
@@ -123,6 +136,7 @@ def _material_tokens(item: dict, generic_terms: set[str]) -> set[str]:
         if (len(t) >= 4 or t.isupper())  # short ALL-CAPS tokens (KKR, SEC, FDA) are acronyms, not noise
         and t not in _CONNECTOR_WORDS
         and t not in _BOILERPLATE_TERMS
+        and t.upper() not in _MACRO_ACRONYM_TERMS
         and t.lower() not in lowered_generic
         and t.lower() not in publisher_words
     }

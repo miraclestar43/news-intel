@@ -22,11 +22,13 @@ groups:
       - inference
       - training compute
       - data center
+      - Nebius
+      - neocloud
     terms_zh:
       - 人工智能
       - 大模型
       - 智能体
-    entities: [OpenAI, ChatGPT, Anthropic, xAI, DeepMind, Google, Microsoft, Meta, NVIDIA]
+    entities: [OpenAI, ChatGPT, Anthropic, xAI, DeepMind, Google, Microsoft, Meta, NVIDIA, Nebius]
 
   semiconductors:
     weight: 1.30

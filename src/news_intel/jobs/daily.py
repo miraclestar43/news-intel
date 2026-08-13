@@ -29,6 +29,7 @@ from news_intel.llm.provider import get_provider
 from news_intel.models import DailyDigestInput
 from news_intel.pipeline.daily_selection import SelectionResult, select_daily_stories
 from news_intel.pipeline.entities import known_entities
+from news_intel.pipeline.event_integrity import is_dashboard_like
 from news_intel.scheduled_repo import upcoming
 from news_intel.settings import AppConfig
 
@@ -55,6 +56,15 @@ def _has_human_readable_url(item: dict) -> bool:
         if parsed.path and parsed.path != "/" and not parsed.path.lower().endswith(_MACHINE_FEED_SUFFIXES):
             return True
     return False
+
+
+def _is_discrete_event(item: dict) -> bool:
+    """2026-08-13 repair: a dashboard/"latest numbers" landing page is not
+    a discrete news event -- see pipeline/event_integrity.py. Checked
+    against the primary source's own title/excerpt (the item's own
+    primary_title mirrors the primary source's title)."""
+    primary = item["sources"][0] if item.get("sources") else {}
+    return not is_dashboard_like(item.get("title", ""), primary.get("excerpt"))
 
 
 # Cross-day novelty lookback (2026-08-12 repair): "at least the previous
@@ -106,6 +116,7 @@ def _tomorrow_calendar_items(conn: sqlite3.Connection, config: AppConfig, now: d
             {
                 "title": row["title"],
                 "scheduled_at": row["scheduled_at"],
+                "pacific_time_label": scheduled.astimezone(tz).strftime("%-I:%M %p PT"),
                 "url": _calendar_display_url(row["title"], row["url"]),
             }
         )
@@ -146,7 +157,9 @@ def _select_events(conn: sqlite3.Connection, config: AppConfig, now: datetime) -
     candidates = [event_as_digest_dict(conn, r) for r in qualified_rows]
     candidates = [
         c for c in candidates
-        if c["category"] not in _EXCLUDED_CATEGORIES and _has_human_readable_url(c)
+        if c["category"] not in _EXCLUDED_CATEGORIES
+        and _has_human_readable_url(c)
+        and _is_discrete_event(c)
     ]
 
     generic_terms = set(config.topics.trend_identity.generic_anchor_terms)

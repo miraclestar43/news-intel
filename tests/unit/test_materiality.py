@@ -57,3 +57,39 @@ def test_high_impact_keyword_raises_score_over_routine_language():
     assert compute_materiality(sanction_text, "us_china_policy_geopolitics") > compute_materiality(
         routine_text, "us_china_policy_geopolitics"
     )
+
+
+def test_small_dollar_figure_earns_no_magnitude_bonus():
+    """2026-08-12 defect: a website's "$100/day" running cost earned the
+    same magnitude bonus as a multi-billion-dollar acquisition just for
+    matching "$<number>" -- must now scale with actual parsed value."""
+    small = compute_materiality(
+        "A look at AI news website RuntimeWire, which costs $100/day to run.", "ai_semiconductor_export_controls"
+    )
+    large = compute_materiality(
+        "Anthropic is in talks to buy Decart for about $6 billion.", "ai_semiconductor_export_controls"
+    )
+    assert large > small
+
+
+def test_generic_ai_media_story_does_not_reach_maximum_materiality():
+    """2026-08-12 defect reproduction: a media-industry story about an AI
+    newsroom "beating" reporters to a security-conference disclosure
+    reached materiality=100 purely from two trivial "$100" mentions plus
+    one incidental "hacking" reference -- must no longer max out."""
+    text = (
+        'A look at AI news website RuntimeWire, which costs $100/day to run and "beat" human '
+        "reporters to OpenAI's Black Hat disclosure, favoring quantity over quality. Last week, an "
+        "AI newsroom beat mainstream journalists to a story about OpenAI and hacking."
+    )
+    score = compute_materiality(text, "ai_semiconductor_export_controls")
+    assert score < 90
+
+
+def test_abbreviated_dollar_units_are_parsed():
+    """Techmeme-style headlines commonly abbreviate ("$575M", "$6B") rather
+    than spelling out "million"/"billion" -- both must be recognized."""
+    bucket = "ai_semiconductor_export_controls"
+    abbreviated = compute_materiality("Nebius reports revenue of $575M this quarter.", bucket)
+    baseline = compute_materiality("Nebius reports steady revenue this quarter.", bucket)
+    assert abbreviated > baseline

@@ -9,7 +9,7 @@ def test_adapter_type_diversity(config):
 
 def test_social_handles_disabled_by_default(config):
     social = [s for s in config.sources.sources if s.adapter == "social_stub"]
-    assert len(social) == 3
+    assert len(social) == 4  # includes 2026-08-13's social_amitisinvesting evaluation
     assert all(not s.enabled for s in social)
 
 

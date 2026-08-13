@@ -97,7 +97,12 @@ def classify_relevance(
     lowered = text.lower()
 
     for term in topics.noise_exclusions:
-        if term.lower() in lowered:
+        # 2026-08-13 fix: this loop used a bare substring check (`term in
+        # lowered`) despite the module's own word-boundary discipline
+        # everywhere else -- "sale" matched inside "sales", silently
+        # zeroing out (noise_penalty=100, final_score=0) a Nebius earnings
+        # report whose only offending word was "second-quarter sales".
+        if _term_matches(term, lowered, lowered):
             return RelevanceMatch("explicit_noise", multipliers.get("explicit_noise", 0.0), [term], [])
 
     if is_legal_notice_boilerplate(text, topics.legal_notice_boilerplate):

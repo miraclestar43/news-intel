@@ -25,11 +25,69 @@ from __future__ import annotations
 
 import re
 
-_MAGNITUDE_RE = re.compile(
-    r"\$\s?\d[\d,]*(?:\.\d+)?\s?(?:billion|million|trillion|bn|mn|tn)?"
-    r"|\b\d[\d,]*(?:\.\d+)?\s?(?:billion|million|trillion|percent|%)\b",
+# Dollar-figure magnitude, captured with its numeric value and unit so the
+# bonus can scale with actual SIZE, not just presence (2026-08-13 fix: a
+# website's "$100/day" running cost and a "$6 billion" acquisition
+# previously earned the identical magnitude bonus just for containing a
+# "$<number>" pattern -- see _dollar_magnitude_bonus). Unit accepts both
+# spelled-out words and the single-letter abbreviations Techmeme-style
+# headlines actually use ("$575M", "$6B").
+_DOLLAR_RE = re.compile(
+    r"\$\s?(\d[\d,]*(?:\.\d+)?)\s?(billion|million|trillion|bn|mn|tn|b|m|t)?\b",
     re.IGNORECASE,
 )
+_PERCENT_RE = re.compile(r"\b\d[\d,]*(?:\.\d+)?\s?(?:percent|%)", re.IGNORECASE)
+
+_UNIT_MULTIPLIERS = {
+    "billion": 1_000_000_000, "bn": 1_000_000_000, "b": 1_000_000_000,
+    "million": 1_000_000, "mn": 1_000_000, "m": 1_000_000,
+    "trillion": 1_000_000_000_000, "tn": 1_000_000_000_000, "t": 1_000_000_000_000,
+}
+
+# (floor_usd, bonus) -- largest parsed dollar figure decides the band;
+# anything under $1M (a website's daily running cost, a small fine) earns
+# no magnitude credit at all.
+_DOLLAR_MAGNITUDE_BANDS: tuple[tuple[float, float], ...] = (
+    (10_000_000_000.0, 40.0),
+    (1_000_000_000.0, 32.0),
+    (100_000_000.0, 22.0),
+    (10_000_000.0, 12.0),
+    (1_000_000.0, 5.0),
+)
+_PERCENT_MAGNITUDE_WEIGHT = 4.0
+_PERCENT_MAGNITUDE_CAP = 12.0
+
+
+def _parse_dollar_values(text: str) -> list[float]:
+    values: list[float] = []
+    for amount_str, unit in _DOLLAR_RE.findall(text):
+        try:
+            amount = float(amount_str.replace(",", ""))
+        except ValueError:
+            continue
+        values.append(amount * _UNIT_MULTIPLIERS.get(unit.lower(), 1))
+    return values
+
+
+def _dollar_magnitude_bonus(text: str) -> float:
+    values = _parse_dollar_values(text)
+    if not values:
+        return 0.0
+    largest = max(values)
+    for floor, bonus in _DOLLAR_MAGNITUDE_BANDS:
+        if largest >= floor:
+            return bonus
+    return 0.0
+
+
+def _percent_magnitude_bonus(text: str) -> float:
+    # Percent changes are not scaled by parsed value (a 0.1% CPI move and a
+    # 50% stock swing are both "percent" syntactically but very differently
+    # significant, and that judgment needs context this module doesn't
+    # have) -- kept as a small, flat, capped signal rather than a precise
+    # one; documented as a limitation, not fixed here.
+    hits = len(_PERCENT_RE.findall(text))
+    return min(_PERCENT_MAGNITUDE_CAP, hits * _PERCENT_MAGNITUDE_WEIGHT)
 
 # Decision/consequence language: something was actually decided, changed,
 # or happened -- as opposed to a routine product/marketing update. Deliberate
@@ -69,8 +127,6 @@ ROUTINE_TERMS: frozenset[str] = frozenset(
     }
 )
 
-_MAGNITUDE_WEIGHT = 25.0
-_MAGNITUDE_CAP = 40.0
 _HIGH_IMPACT_WEIGHT = 15.0
 _HIGH_IMPACT_CAP = 30.0
 _ROUTINE_WEIGHT = 6.0
@@ -99,12 +155,12 @@ def compute_materiality(text: str, bucket: str) -> float:
     sources) so a magnitude/impact signal anywhere in the coverage counts."""
     lowered = text.lower()
     category_base = CATEGORY_MATERIALITY_BASE.get(bucket, DEFAULT_MATERIALITY_BASE)
-    magnitude_hits = len(_MAGNITUDE_RE.findall(text))
     high_impact_hits = _count_hits(lowered, HIGH_IMPACT_TERMS)
     routine_hits = _count_hits(lowered, ROUTINE_TERMS)
 
     score = category_base
-    score += min(_MAGNITUDE_CAP, magnitude_hits * _MAGNITUDE_WEIGHT)
+    score += _dollar_magnitude_bonus(text)
+    score += _percent_magnitude_bonus(text)
     score += min(_HIGH_IMPACT_CAP, high_impact_hits * _HIGH_IMPACT_WEIGHT)
     score -= min(_ROUTINE_CAP, routine_hits * _ROUTINE_WEIGHT)
     return max(0.0, min(100.0, score))

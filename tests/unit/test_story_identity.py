@@ -103,3 +103,18 @@ def test_reversal_language_counts_as_material_update():
                        excerpt="Regulators have withdrawn approval and blocked the merger.")
     result = detect_material_update(candidate, prior, known_entities=known, alert_triggers=config.alert_triggers)
     assert result.is_update is True
+
+
+def test_shared_macro_acronym_alone_does_not_merge():
+    """2026-08-12 defect: a BLS "latest numbers" dashboard and an unrelated
+    Asian-markets commentary article both mentioned "CPI" -- shared generic
+    economic terminology, not a shared distinctive entity."""
+    bls = _item(
+        "Major Economic Indicators Latest Numbers", "Markets & Economy",
+        excerpt="Consumer Price Index (CPI): +0.1% in Jul 2026. Unemployment Rate: 4.1% in Jul 2026.",
+    )
+    hellenic = _item(
+        "Asian stocks rise as KOSPI surges; CPI, Hormuz risks temper tech rally", "Markets & Economy",
+        excerpt="Asian markets rallied even as CPI data and Hormuz risks weighed on tech shares.",
+    )
+    assert same_event_story(bls, hellenic, generic_terms=_GENERIC_TERMS) is False

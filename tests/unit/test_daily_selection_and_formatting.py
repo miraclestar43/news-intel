@@ -189,6 +189,61 @@ def test_at_most_one_domain_in_top_stories():
     assert "fourth.test" in [s.domain for s in result.all_stories]  # the swapped-in story is still included
 
 
+# --- hard publisher-family-in-TOP rule (2026-08-13) -------------------------
+
+
+def test_second_same_family_story_demotes_to_more_to_know_when_no_swap_needed():
+    """2026-08-12 defect reproduction: two Techmeme-discovered stories both
+    qualified and both would have been TOP by score alone -- the second
+    must move to MORE TO KNOW, never occupy TOP alongside the first."""
+    candidates = [
+        _item("E-1", "Cerebras reports quarterly results", "AI & Semiconductors", 90, domain="techmeme.com",
+              publisher="Reuters"),
+        _item("E-2", "SpaceXAI releases a new model", "AI & Semiconductors", 89, domain="techmeme.com",
+              publisher="xAI"),
+    ]
+    result = select_daily_stories(candidates, generic_terms=_GENERIC_TERMS)
+    assert len(result.top_stories) == 1
+    assert result.top_stories[0].event_id == "E-1"
+    assert len(result.more_to_know) == 1
+    assert result.more_to_know[0].event_id == "E-2"
+
+
+def test_top_may_have_fewer_than_three_stories_rather_than_violate_family_cap():
+    """Only two candidates total, both same publisher family -- TOP must
+    end up with exactly one story, never padded with the second."""
+    candidates = [
+        _item("E-1", "Cerebras reports quarterly revenue growth", "AI & Semiconductors", 90, domain="techmeme.com",
+              publisher="Reuters"),
+        _item("E-2", "Grok 4.6 model pricing announced by xAI", "AI & Semiconductors", 85, domain="techmeme.com",
+              publisher="Bloomberg"),
+    ]
+    result = select_daily_stories(candidates, generic_terms=_GENERIC_TERMS)
+    assert len(result.top_stories) == 1
+    assert len(result.more_to_know) == 1  # still shown, just not in TOP
+
+
+# --- TOP requires a complete source-supported summary (2026-08-13) ----------
+
+
+def test_headline_only_candidate_is_not_eligible_for_top():
+    """A candidate with no complete-sentence excerpt (headline only) must
+    not occupy a TOP slot even if it out-scores everything else; it may
+    still appear in MORE TO KNOW, where no summary is required."""
+    candidates = [
+        _item("E-1", "Headline with no supporting sentence", "AI & Semiconductors", 95, domain="a.test",
+              excerpt="Headline with no supporting sentence"),  # no ending punctuation -> no complete sentence
+        _item("E-2", "Second story with a real summary", "AI & Semiconductors", 80, domain="b.test",
+              excerpt="This is a distinct, complete supporting sentence."),
+    ]
+    result = select_daily_stories(candidates, generic_terms=_GENERIC_TERMS)
+    top_ids = [s.event_id for s in result.top_stories]
+    assert "E-1" not in top_ids
+    assert "E-2" in top_ids
+    all_ids = [s.event_id for s in result.all_stories]
+    assert "E-1" in all_ids  # still present, just demoted to MORE TO KNOW
+
+
 # --- clickable links / safe escaping ----------------------------------------
 
 

@@ -208,3 +208,23 @@ sources:
     poll_interval_seconds: 300
     category_hints: [social, discovery]
     note: "T3 discovery only; no compliant free endpoint validated."
+
+  - id: social_amitisinvesting
+    name: "@amitisinvesting (nightly market recap)"
+    adapter: social_stub
+    tier: 3
+    enabled: false
+    url: ""
+    poll_interval_seconds: 300
+    category_hints: [social, discovery, markets]
+    note: >-
+      2026-08-13 evaluation: requested as an optional nightly market-
+      curation discovery signal. x.com/robots.txt disallows all paths
+      (Disallow: /) for unnamed user agents -- only specific named crawlers
+      (Googlebot, Bingbot, etc.) are excepted, and this project's collector
+      is not one of them. X's official API is paid; public pages require
+      login and prohibit scraping/circumvention. Same constraint already
+      applied to social_trumpdailyposts/social_firstsquawk/
+      social_financialjuice above. Kept disabled/unavailable rather than
+      scraped or accessed via session cookies. Re-enable only if a
+      compliant free read-only endpoint is later identified.

@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 
 from news_intel.pipeline.publisher_family import publisher_family_of_url
 from news_intel.pipeline.story_identity import detect_material_update, same_event_story
+from news_intel.pipeline.summary_quality import has_complete_summary
 from news_intel.settings import AlertTriggersConfig
 
 MAX_TOP_STORIES = 3
@@ -187,34 +188,41 @@ def _can_add(story: Story, selected: list[Story]) -> bool:
     return True
 
 
-def _enforce_top_domain_cap(selected: list[Story]) -> list[Story]:
-    """Post-rank pass: at most MAX_TOP_STORIES_PER_DOMAIN stories from the
-    same publisher family may occupy the top MAX_TOP_STORIES positions. If
-    violated, demote the lower-scored offender below the top cut by
-    swapping it with the highest-scored story currently below the cut whose
-    publisher family isn't already at the top-cap (a no-op if no such swap
-    exists -- selected stays valid either way, just potentially with a rare
-    unresolved publisher-family clustering in the top slots)."""
-    changed = True
-    while changed:
-        changed = False
-        top = selected[:MAX_TOP_STORIES]
-        seen: dict[str, int] = {}
-        for idx, story in enumerate(top):
-            if not story.domain:
-                continue
-            seen[story.domain] = seen.get(story.domain, 0) + 1
-            if seen[story.domain] > MAX_TOP_STORIES_PER_DOMAIN:
-                for j in range(MAX_TOP_STORIES, len(selected)):
-                    candidate = selected[j]
-                    top_domains_without_offender = _domain_counts(top[:idx] + top[idx + 1 :])
-                    other_count = top_domains_without_offender.get(candidate.domain, 0)
-                    if not candidate.domain or other_count < MAX_TOP_STORIES_PER_DOMAIN:
-                        selected[idx], selected[j] = selected[j], selected[idx]
-                        changed = True
-                        break
-                break
-    return selected
+def _finalize_top_and_more(selected: list[Story], max_total: int) -> tuple[list[Story], list[Story]]:
+    """Constructs TOP and MORE TO KNOW from the fully coverage/cap/novelty-
+    filtered `selected` list (already sorted by score descending). Two hard
+    constraints apply only to TOP, never as a best-effort swap that can
+    still fail (2026-08-13 repair -- the prior swap-based approach left two
+    Techmeme-family stories in TOP when no valid swap partner existed):
+
+      - at most MAX_TOP_STORIES_PER_DOMAIN stories from the same publisher
+        family; a second same-family story moves to MORE TO KNOW (still
+        subject to the digest-wide MAX_STORIES_PER_DOMAIN total, already
+        enforced when `selected` was built) or is dropped if MORE TO KNOW
+        is already at max_total.
+      - a story needs a complete, source-supported summary sentence
+        (pipeline/summary_quality.has_complete_summary) to occupy a TOP
+        slot; a headline-only candidate demotes to MORE TO KNOW (no
+        summary is required there) instead.
+
+    TOP may end up with fewer than MAX_TOP_STORIES entries -- never padded
+    with a story that fails either constraint."""
+    top: list[Story] = []
+    more: list[Story] = []
+    top_domains_seen: set[str] = set()
+    for story in selected:
+        eligible_for_top = (
+            len(top) < MAX_TOP_STORIES
+            and (not story.domain or story.domain not in top_domains_seen)
+            and has_complete_summary(story.primary)
+        )
+        if eligible_for_top:
+            top.append(story)
+            if story.domain:
+                top_domains_seen.add(story.domain)
+        elif len(top) + len(more) < max_total:
+            more.append(story)
+    return top, more
 
 
 def select_daily_stories(
@@ -290,8 +298,5 @@ def select_daily_stories(
             non_ai_count += 1
         selected.sort(key=lambda s: s.score, reverse=True)
 
-    selected = _enforce_top_domain_cap(selected)
-
-    top_stories = selected[:MAX_TOP_STORIES]
-    more_to_know = selected[MAX_TOP_STORIES:max_total]
+    top_stories, more_to_know = _finalize_top_and_more(selected, max_total)
     return SelectionResult(top_stories=top_stories, more_to_know=more_to_know)

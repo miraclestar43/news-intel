@@ -1,0 +1,64 @@
+"""Techmeme-style citation-prefix parsing (2026-08-13 repair).
+
+Techmeme excerpts are consistently formatted as either:
+  "Author Name / Publication: <restated headline> — <actual sentence>"
+  "Publication: <restated headline> — <actual sentence>"
+
+Two independent problems this fixes:
+  1. Provenance (event_repo.py): the displayed "Source:" label said
+     "Techmeme" for every Techmeme-discovered item, even though the real
+     original publisher (Wired, Bloomberg, ...) is right there in the
+     excerpt's own citation prefix. Techmeme's canonical_url still points
+     at Techmeme's own roundup page (unlike GDELT, there is no separate
+     original-article URL to link to), so only the *label* changes here.
+  2. Summarization (delivery/daily_production_formatter.py): the citation
+     prefix restates the (often very long) headline before the actual new
+     sentence, which pushed the real sentence past the summary module's
+     character window entirely -- summarize() found zero complete
+     sentences and every Techmeme-sourced TOP story rendered with no body
+     text at all (2026-08-12 diagnosis).
+"""
+
+from __future__ import annotations
+
+import re
+
+_CITATION_PREFIX_RE = re.compile(r"^\s*([^:]{1,80}?)\s*:\s*")
+_AUTHOR_PUB_RE = re.compile(r"^(.+?)\s*/\s*(.+)$")
+_DASH_SPLIT_RE = re.compile(r"\s*[—–-]{1,2}\s+")
+
+_MAX_PUBLISHER_NAME_LEN = 40
+
+
+def resolve_citation_publisher(excerpt: str | None) -> str | None:
+    """Returns the resolved original-publisher name (e.g. "Wired",
+    "Bloomberg") from a Techmeme-style citation prefix, or None if the
+    excerpt doesn't start with a recognizable "Name:" / "Name / Name:"
+    prefix."""
+    if not excerpt:
+        return None
+    match = _CITATION_PREFIX_RE.match(excerpt)
+    if not match:
+        return None
+    prefix = match.group(1).strip()
+    author_pub = _AUTHOR_PUB_RE.match(prefix)
+    publisher = author_pub.group(2).strip() if author_pub else prefix
+    if not publisher or len(publisher) > _MAX_PUBLISHER_NAME_LEN:
+        return None
+    return publisher
+
+
+def strip_citation_preamble(excerpt: str) -> str:
+    """Drops a leading "Name: <restated headline> —" citation prefix
+    so summarization windows over the actual new sentence instead of a
+    restatement of the title. Falls back to the original text unchanged if
+    no citation-prefix/dash structure is found (never discards content it
+    can't confidently identify as a restated preamble)."""
+    match = _CITATION_PREFIX_RE.match(excerpt)
+    if not match:
+        return excerpt
+    after_colon = excerpt[match.end():]
+    dash_match = _DASH_SPLIT_RE.search(after_colon)
+    if not dash_match:
+        return excerpt
+    return after_colon[dash_match.end():]

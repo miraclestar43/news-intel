@@ -102,3 +102,32 @@ def test_legal_notice_with_material_override_is_not_forced_to_noise():
     )
     result = _classify(text)
     assert result.bucket != "explicit_noise"
+
+
+def test_noise_exclusion_terms_use_word_boundaries_not_bare_substring():
+    """2026-08-12 defect: "sale" is a legitimate noise_exclusions term (for
+    retail-spam headlines like "flash sale"), but the check was a bare
+    substring test that also matched "sales" -- a Nebius earnings report
+    ("second-quarter sales") was silently zeroed out (noise_penalty=100,
+    final_score=0) as a result. A genuine "sale" headline must still be
+    caught; the "sales" false positive must not be."""
+    genuine_noise = _classify("Huge flash sale this weekend on all electronics")
+    assert genuine_noise.bucket == "explicit_noise"
+
+    earnings_report = _classify(
+        "Amsterdam-based neocloud Nebius reports Q2 cloud revenue up 514% YoY. "
+        "Nebius Group NV reported a 514% jump in second-quarter sales for its cloud business "
+        "following strong demand for AI computing power."
+    )
+    assert earnings_report.bucket != "explicit_noise"
+
+
+def test_nebius_classifies_as_ai_semiconductor():
+    """2026-08-12 diagnosis: Nebius (a major AI-infrastructure "neocloud")
+    was outside the AI vocabulary entirely, so even after the noise-filter
+    fix it would still have fallen to "unclassified" and been excluded."""
+    result = _classify(
+        "Amsterdam-based neocloud Nebius reports Q2 cloud revenue up 514% YoY to $575M, "
+        "above estimates, following strong demand for AI computing power."
+    )
+    assert result.bucket == "ai_semiconductor_export_controls"
