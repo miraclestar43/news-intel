@@ -162,23 +162,38 @@ def event_as_digest_dict(conn: sqlite3.Connection, event_row: sqlite3.Row) -> di
 
 
 def recent_digest_events(
-    conn: sqlite3.Connection, *, since: datetime, kind: str = "daily"
+    conn: sqlite3.Connection, *, since: datetime, until: datetime | None = None, kind: str = "daily"
 ) -> list[dict]:
     """Distinct events delivered in any `kind` digest with window_end >=
     `since` -- the cross-day novelty lookback pool (2026-08-12 content-
     quality repair). Ordered most-recent-first so a candidate's closest
-    prior appearance is compared first."""
-    rows = conn.execute(
-        """
+    prior appearance is compared first.
+
+    `until` (2026-08-13 hardening) bounds the pool to digests whose
+    window_end <= until -- i.e. digests that had *already finished their
+    own window* by the time this selection is happening. jobs/daily.py
+    always passes until=window_start (this run's own window boundary),
+    which structurally cannot include this same run's own digest (not yet
+    created in normal operation) or any digest whose window overlaps or
+    follows it. Without this bound, a read-only replay run *after* the
+    target day's digest already exists in the database would see that same
+    day's own delivered stories as "prior coverage" and wrongly suppress
+    them as repeats of themselves -- self-contamination, not a real
+    novelty result. Defaults to None (no upper bound) only for callers that
+    intentionally want the unbounded view."""
+    query = """
         SELECT DISTINCT e.*, d.window_end AS digest_window_end
         FROM digest_events de
         JOIN digests d ON d.id = de.digest_id
         JOIN events e ON e.id = de.event_id
         WHERE d.kind = ? AND d.window_end >= ?
-        ORDER BY d.window_end DESC
-        """,
-        (kind, since.isoformat()),
-    ).fetchall()
+    """
+    params: list = [kind, since.isoformat()]
+    if until is not None:
+        query += " AND d.window_end <= ?"
+        params.append(until.isoformat())
+    query += " ORDER BY d.window_end DESC"
+    rows = conn.execute(query, params).fetchall()
     return [event_as_digest_dict(conn, r) for r in rows]
 
 

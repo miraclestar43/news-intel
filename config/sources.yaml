@@ -158,6 +158,44 @@ sources:
       link: "a"
       date: "span"
 
+  - id: bbc_world
+    name: "BBC News — World"
+    adapter: rss
+    tier: 1
+    enabled: true
+    # 2026-08-13 evaluation: feeds.bbci.co.uk/robots.txt does not disallow
+    # this path (checked live; only /cgi-bin, /weatherbeta, and a handful
+    # of unrelated legacy paths are blocked). Free, no login, no cookies.
+    # Addresses the structural gap identified across rounds 2-3: no broad
+    # Politics/World source existed in this project at all.
+    url: "https://feeds.bbci.co.uk/news/world/rss.xml"
+    poll_interval_seconds: 900
+    category_hints: [world, geopolitics]
+
+  - id: bbc_china
+    name: "BBC News — China"
+    adapter: rss
+    tier: 1
+    enabled: true
+    # 2026-08-13 evaluation: used as the second (China/US-China) source
+    # instead of the proposed Xinhua RSS (confirmed stale -- newest items
+    # from March 2017) and instead of Xinhua's currently-updated HTML pages
+    # (english.news.cn/world, /china): those pages provide no extractable
+    # per-item publish date, and this project's html_index adapter never
+    # extracts one (its `date` selector, e.g. on gov_cn_policy below, is
+    # accepted in config but not read by the adapter code) -- every item
+    # would resolve to published_at=None and, per
+    # pipeline/time_semantics.resolve_anchor, become archive_only=True:
+    # permanently ineligible for the daily digest regardless of content.
+    # This is a real, disclosed adapter gap (not fixed here, out of this
+    # round's scope) that also affects gov_cn_policy today. robots.txt
+    # allows this path; same rss adapter as bbc_world above, so
+    # publisher-family caps apply jointly across both BBC feeds (both
+    # normalize to the bbc.co.uk registrable domain).
+    url: "https://feeds.bbci.co.uk/news/world/asia/china/rss.xml"
+    poll_interval_seconds: 900
+    category_hints: [china, world]
+
   - id: pboc_policy
     name: "People's Bank of China — monetary policy"
     adapter: html_index

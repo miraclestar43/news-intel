@@ -29,7 +29,7 @@ from news_intel.llm.provider import get_provider
 from news_intel.models import DailyDigestInput
 from news_intel.pipeline.daily_selection import SelectionResult, select_daily_stories
 from news_intel.pipeline.entities import known_entities
-from news_intel.pipeline.event_integrity import is_dashboard_like
+from news_intel.pipeline.event_integrity import is_dashboard_like, is_unqualified_recognition_story
 from news_intel.scheduled_repo import upcoming
 from news_intel.settings import AppConfig
 
@@ -65,6 +65,15 @@ def _is_discrete_event(item: dict) -> bool:
     primary_title mirrors the primary source's title)."""
     primary = item["sources"][0] if item.get("sources") else {}
     return not is_dashboard_like(item.get("title", ""), primary.get("excerpt"))
+
+
+def _has_material_consequence(item: dict) -> bool:
+    """2026-08-13 materiality gate: a recognition/award/ranking/listicle
+    story (e.g. a "best CEO" list) must not qualify for the digest merely
+    because the publisher is authoritative or no better story exists --
+    see pipeline/event_integrity.is_unqualified_recognition_story."""
+    primary = item["sources"][0] if item.get("sources") else {}
+    return not is_unqualified_recognition_story(item.get("title", ""), primary.get("excerpt"))
 
 
 # Cross-day novelty lookback (2026-08-12 repair): "at least the previous
@@ -160,12 +169,13 @@ def _select_events(conn: sqlite3.Connection, config: AppConfig, now: datetime) -
         if c["category"] not in _EXCLUDED_CATEGORIES
         and _has_human_readable_url(c)
         and _is_discrete_event(c)
+        and _has_material_consequence(c)
     ]
 
     generic_terms = set(config.topics.trend_identity.generic_anchor_terms)
     entities_vocab = known_entities(config.topics.groups)
     prior_stories = recent_digest_events(
-        conn, since=now - timedelta(days=_NOVELTY_LOOKBACK_DAYS), kind="daily"
+        conn, since=now - timedelta(days=_NOVELTY_LOOKBACK_DAYS), until=window_start, kind="daily"
     )
     result = select_daily_stories(
         candidates,

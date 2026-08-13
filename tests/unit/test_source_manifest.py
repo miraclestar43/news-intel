@@ -29,3 +29,13 @@ def test_at_least_one_enabled_chinese_t0_source(config):
         if "china" in s.category_hints and s.tier == 0 and s.enabled
     ]
     assert len(enabled_chinese_t0) >= 1
+
+
+def test_bbc_world_and_china_sources_present_and_enabled(config):
+    """2026-08-13: closes the structural Politics/World and China/US-China
+    source gap confirmed across rounds 2-3."""
+    by_id = {s.id: s for s in config.sources.sources}
+    assert by_id["bbc_world"].enabled is True
+    assert by_id["bbc_world"].adapter == "rss"
+    assert by_id["bbc_china"].enabled is True
+    assert by_id["bbc_china"].adapter == "rss"

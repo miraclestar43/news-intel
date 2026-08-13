@@ -29,7 +29,7 @@ import re
 # bonus can scale with actual SIZE, not just presence (2026-08-13 fix: a
 # website's "$100/day" running cost and a "$6 billion" acquisition
 # previously earned the identical magnitude bonus just for containing a
-# "$<number>" pattern -- see _dollar_magnitude_bonus). Unit accepts both
+# "$<number>" pattern -- see dollar_magnitude_bonus). Unit accepts both
 # spelled-out words and the single-letter abbreviations Techmeme-style
 # headlines actually use ("$575M", "$6B").
 _DOLLAR_RE = re.compile(
@@ -69,7 +69,7 @@ def _parse_dollar_values(text: str) -> list[float]:
     return values
 
 
-def _dollar_magnitude_bonus(text: str) -> float:
+def dollar_magnitude_bonus(text: str) -> float:
     values = _parse_dollar_values(text)
     if not values:
         return 0.0
@@ -159,7 +159,7 @@ def compute_materiality(text: str, bucket: str) -> float:
     routine_hits = _count_hits(lowered, ROUTINE_TERMS)
 
     score = category_base
-    score += _dollar_magnitude_bonus(text)
+    score += dollar_magnitude_bonus(text)
     score += _percent_magnitude_bonus(text)
     score += min(_HIGH_IMPACT_CAP, high_impact_hits * _HIGH_IMPACT_WEIGHT)
     score -= min(_ROUTINE_CAP, routine_hits * _ROUTINE_WEIGHT)

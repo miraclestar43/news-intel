@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
+  <channel>
+    <title>BBC News</title>
+    <description>BBC News - World</description>
+    <link>https://www.bbc.co.uk/news/world</link>
+    <lastBuildDate>Thu, 13 Aug 2026 14:16:52 GMT</lastBuildDate>
+    <item>
+      <title>Putin can no longer claim victory in Ukraine, Nobel Peace Prize winner tells BBC</title>
+      <description>In an exclusive interview, Dmitry Muratov says the Kremlin leader can only "destroy Ukraine, not conquer it".</description>
+      <link>https://www.bbc.co.uk/news/articles/c74grmy2v7ko?at_medium=RSS&amp;at_campaign=rss</link>
+      <guid isPermaLink="true">https://www.bbc.co.uk/news/articles/c74grmy2v7ko</guid>
+      <pubDate>Thu, 13 Aug 2026 04:55:58 GMT</pubDate>
+    </item>
+    <item>
+      <title>Travis Kelce shares first details from his wedding</title>
+      <description>In the comments, Kelce called Swift his "wife" for the first time.</description>
+      <link>https://www.bbc.co.uk/news/articles/cx2r179e232o?at_medium=RSS&amp;at_campaign=rss</link>
+      <guid isPermaLink="true">https://www.bbc.co.uk/news/articles/cx2r179e232o</guid>
+      <pubDate>Thu, 13 Aug 2026 01:19:23 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
