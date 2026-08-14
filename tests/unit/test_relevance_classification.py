@@ -131,3 +131,14 @@ def test_nebius_classifies_as_ai_semiconductor():
         "above estimates, following strong demand for AI computing power."
     )
     assert result.bucket == "ai_semiconductor_export_controls"
+
+
+def test_china_group_has_english_vocabulary_coverage():
+    """2026-08-14 fix: the "china" group previously had zero terms_en,
+    despite feeding the same us_china_policy_geopolitics bucket as the
+    geopolitics group -- English-language China/US-China coverage (BBC,
+    Reuters-via-Techmeme, etc.) had no vocabulary coverage at all. Real
+    Aug 13 reproduction: a genuine US-China trade-policy story classified
+    as unclassified and was excluded before qualification."""
+    result = _classify("US says dozens of countries helped China dodge Trump's tariffs")
+    assert result.bucket == "us_china_policy_geopolitics"

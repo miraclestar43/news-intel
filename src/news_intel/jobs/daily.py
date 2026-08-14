@@ -29,7 +29,7 @@ from news_intel.llm.provider import get_provider
 from news_intel.models import DailyDigestInput
 from news_intel.pipeline.daily_selection import SelectionResult, select_daily_stories
 from news_intel.pipeline.entities import known_entities
-from news_intel.pipeline.event_integrity import is_dashboard_like, is_unqualified_recognition_story
+from news_intel.pipeline.event_integrity import is_dashboard_like, is_low_consequence_event_type
 from news_intel.scheduled_repo import upcoming
 from news_intel.settings import AppConfig
 
@@ -68,12 +68,13 @@ def _is_discrete_event(item: dict) -> bool:
 
 
 def _has_material_consequence(item: dict) -> bool:
-    """2026-08-13 materiality gate: a recognition/award/ranking/listicle
-    story (e.g. a "best CEO" list) must not qualify for the digest merely
-    because the publisher is authoritative or no better story exists --
-    see pipeline/event_integrity.is_unqualified_recognition_story."""
+    """Event-type/consequence gate (stage 2 of selection): a recognition/
+    award/ranking story, a tutorial/builder-guide/promotional post, or an
+    enforcement action against a single named individual must not qualify
+    for the digest merely because the publisher is authoritative or no
+    better story exists -- see pipeline/event_integrity.py."""
     primary = item["sources"][0] if item.get("sources") else {}
-    return not is_unqualified_recognition_story(item.get("title", ""), primary.get("excerpt"))
+    return not is_low_consequence_event_type(item.get("title", ""), primary.get("excerpt"))
 
 
 # Cross-day novelty lookback (2026-08-12 repair): "at least the previous

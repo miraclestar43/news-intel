@@ -93,12 +93,21 @@ _CITATION_PASSTHROUGH_SOURCE_IDS = frozenset({"techmeme"})
 
 
 def _display_publisher(source_id: str, origin_family: str | None, source_name: str, excerpt: str | None) -> str:
+    """The returned label always describes what the stored URL actually
+    is. 2026-08-14 false-provenance fix: this previously returned just the
+    resolved citation name ("Wall Street Journal") while the href
+    underneath was still Techmeme's own roundup page -- a reader clicking
+    "Wall Street Journal" landed on techmeme.com, and the rendered label
+    didn't match the destination domain at all. Techmeme's own citation is
+    real information (worth surfacing) but is not, on its own, proof of
+    which original outlet actually wrote the piece or what its real URL
+    is -- so the label now honestly says "Techmeme (citing X)", not "X"."""
     if source_id in _DISCOVERY_PASSTHROUGH_SOURCE_IDS and origin_family:
         return origin_family.removeprefix("www.")
     if source_id in _CITATION_PASSTHROUGH_SOURCE_IDS:
         resolved = resolve_citation_publisher(excerpt)
         if resolved:
-            return resolved
+            return f"{source_name} (citing {resolved})"
     return source_name
 
 
@@ -158,6 +167,14 @@ def event_as_digest_dict(conn: sqlite3.Connection, event_row: sqlite3.Row) -> di
         "final_score": event_row["final_score"],
         "confirmation_state": event_row["confirmation_state"],
         "entities": entities,
+        # 2026-08-14: exposed so pipeline/daily_selection.py can rank by
+        # decision value (materiality/relevance) independent of
+        # confirmation_quality/corroboration, which final_score blends in
+        # at a combined weight that can outrank a much more material but
+        # single-sourced story -- see daily_selection._decision_value.
+        "significance": event_row["significance"],
+        "user_relevance": event_row["user_relevance"],
+        "market_impact": event_row["market_impact"],
     }
 
 

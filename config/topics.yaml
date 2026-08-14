@@ -96,6 +96,23 @@ groups:
 
   china:
     weight: 1.10
+    # 2026-08-14 fix: this group only ever had Chinese-language terms,
+    # despite feeding the same us_china_policy_geopolitics bucket as the
+    # geopolitics group below -- English-language China/US-China coverage
+    # (BBC, Reuters-via-Techmeme, etc.) had zero vocabulary coverage here.
+    # Confirmed against real Aug 13 data: "US says dozens of countries
+    # helped China dodge Trump's tariffs" classified as unclassified and
+    # was excluded before qualification, not because of a missing source.
+    terms_en:
+      - China
+      - Beijing
+      - Taiwan
+      - Hong Kong
+      - Xi Jinping
+      - Chinese government
+      - Chinese Communist Party
+      - PLA
+      - Politburo
     terms_zh:
       - 人工智能
       - 半导体

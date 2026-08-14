@@ -24,6 +24,7 @@ can be shown, not just asserted.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 # Dollar-figure magnitude, captured with its numeric value and unit so the
 # bonus can scale with actual SIZE, not just presence (2026-08-13 fix: a
@@ -146,8 +147,19 @@ CATEGORY_MATERIALITY_BASE: dict[str, float] = {
 DEFAULT_MATERIALITY_BASE = 35.0
 
 
+@lru_cache(maxsize=4096)
+def _leading_boundary_pattern(term: str) -> re.Pattern:
+    # Leading word-boundary only (not trailing): several terms are
+    # deliberate stems ("reschedul" must still match "rescheduling"), but a
+    # *complete*-word term with no boundary check at all can match mid-word
+    # inside an unrelated word -- "sues" inside "issues" falsely flagged
+    # "Federal Reserve Board issues enforcement action..." as containing a
+    # lawsuit-related high-impact signal (2026-08-14 diagnosis).
+    return re.compile(rf"\b{re.escape(term)}")
+
+
 def _count_hits(text_lower: str, terms: frozenset[str]) -> int:
-    return sum(1 for term in terms if term in text_lower)
+    return sum(1 for term in terms if _leading_boundary_pattern(term).search(text_lower))
 
 
 def compute_materiality(text: str, bucket: str) -> float:

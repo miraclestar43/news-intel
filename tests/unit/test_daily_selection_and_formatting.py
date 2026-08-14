@@ -226,10 +226,14 @@ def test_top_may_have_fewer_than_three_stories_rather_than_violate_family_cap():
 # --- TOP requires a complete source-supported summary (2026-08-13) ----------
 
 
-def test_headline_only_candidate_is_not_eligible_for_top():
-    """A candidate with no complete-sentence excerpt (headline only) must
-    not occupy a TOP slot even if it out-scores everything else; it may
-    still appear in MORE TO KNOW, where no summary is required."""
+def test_summary_availability_does_not_reorder_top_by_itself():
+    """2026-08-14 repair: a candidate with no complete-sentence excerpt
+    must NOT be demoted below a lower-value story just because its summary
+    extraction failed -- "summary availability must not cause a lower-
+    value story to outrank a higher-value event." Both of these fixtures
+    carry no significance/user_relevance/market_impact decomposition, so
+    _decision_value() falls back to final_score, making E-1's 95 the
+    clear winner regardless of its missing summary."""
     candidates = [
         _item("E-1", "Headline with no supporting sentence", "AI & Semiconductors", 95, domain="a.test",
               excerpt="Headline with no supporting sentence"),  # no ending punctuation -> no complete sentence
@@ -238,10 +242,8 @@ def test_headline_only_candidate_is_not_eligible_for_top():
     ]
     result = select_daily_stories(candidates, generic_terms=_GENERIC_TERMS)
     top_ids = [s.event_id for s in result.top_stories]
-    assert "E-1" not in top_ids
+    assert top_ids[0] == "E-1"  # higher decision value stays on top despite the missing summary
     assert "E-2" in top_ids
-    all_ids = [s.event_id for s in result.all_stories]
-    assert "E-1" in all_ids  # still present, just demoted to MORE TO KNOW
 
 
 # --- clickable links / safe escaping ----------------------------------------

@@ -22,13 +22,26 @@ Selection order:
      falsely merged two unrelated NVIDIA blog posts; see that module's
      docstring for the full root-cause account).
   3. Cross-category coverage -- one family per required category, from the
-     highest-scoring qualified family in that category, if one exists.
-  4. Score-based filling of remaining positions -- respecting the AI-family
-     cap and the per-publisher-family cap (pipeline/publisher_family.py:
-     registrable-domain based, 2026-08-12 repair -- replaces the 2026-08-11
-     exact-hostname cap, which let blogs.nvidia.com and developer.nvidia.com
-     count as two different sources).
-  5. Final rendering validation -- the caller (jobs/daily.py) already
+     highest-decision-value qualified family in that category, if one
+     exists.
+  4. Decision-value-based filling of remaining positions -- respecting the
+     AI-family cap and the per-publisher-family cap (pipeline/
+     publisher_family.py: registrable-domain based, 2026-08-12 repair --
+     replaces the 2026-08-11 exact-hostname cap, which let blogs.nvidia.com
+     and developer.nvidia.com count as two different sources). Ranking uses
+     _decision_value() (materiality/relevance/market-impact), NOT
+     final_score (2026-08-14 repair: final_score blends in confirmation_
+     quality/corroboration at a combined weight -- 0.15 + 0.10 -- that let
+     a routine T0 vendor blog post consistently outrank a much more
+     material but single-sourced story purely on source tier; final_score
+     remains the qualification threshold, unchanged, but is no longer the
+     ranking key once a candidate pool is already qualified).
+  5. Summary enrichment -- attempted for every selected story regardless of
+     rank; a story that already earned its slot on decision value is never
+     displaced by a lower-value story just because its summary extraction
+     failed (see _render_top_story's explicit "no summary available" note
+     in delivery/daily_production_formatter.py).
+  6. Final rendering validation -- the caller (jobs/daily.py) already
      re-validates category/URL/length before ever contacting Telegram;
      this module's caps are enforced constructively, not just checked.
 """
@@ -39,7 +52,6 @@ from dataclasses import dataclass, field
 
 from news_intel.pipeline.publisher_family import publisher_family_of_url
 from news_intel.pipeline.story_identity import detect_material_update, same_event_story
-from news_intel.pipeline.summary_quality import has_complete_summary
 from news_intel.settings import AlertTriggersConfig
 
 MAX_TOP_STORIES = 3
@@ -52,6 +64,36 @@ MIN_NON_AI_WHEN_FOUR_OR_MORE = 2
 
 TECHNOLOGY_FAMILY_CATEGORIES = {"AI & Semiconductors"}
 REQUIRED_COVERAGE_CATEGORIES = ("Markets & Economy", "Politics", "US / China / World")
+
+
+# Decision-value weights (2026-08-14): materiality dominates, user-relevance
+# and market-impact are secondary. Deliberately excludes confirmation_
+# quality/corroboration/novelty/popularity/freshness -- those remain part
+# of final_score's qualification threshold (a single-sourced, low-
+# confidence story still has to clear the same bar to be a candidate at
+# all) but must not additionally control *ranking* among already-qualified
+# candidates, which is what let source tier consistently beat substance.
+_DECISION_VALUE_SIGNIFICANCE_WEIGHT = 0.55
+_DECISION_VALUE_USER_RELEVANCE_WEIGHT = 0.25
+_DECISION_VALUE_MARKET_IMPACT_WEIGHT = 0.20
+
+
+def _decision_value(item: dict) -> float:
+    """Ranking key for stage 3 (materiality/user-relevance ranking) and
+    every later ordering decision in this module. Falls back to
+    final_score when an item doesn't carry the score decomposition fields
+    (event_repo.event_as_digest_dict always does for real candidates; test
+    fixtures that only set final_score still get a sensible ranking)."""
+    if "significance" not in item or item.get("significance") is None:
+        return item.get("final_score", 0.0) or 0.0
+    significance = item.get("significance") or 0.0
+    user_relevance = item.get("user_relevance") or 0.0
+    market_impact = item.get("market_impact") or 0.0
+    return (
+        _DECISION_VALUE_SIGNIFICANCE_WEIGHT * significance
+        + _DECISION_VALUE_USER_RELEVANCE_WEIGHT * user_relevance
+        + _DECISION_VALUE_MARKET_IMPACT_WEIGHT * market_impact
+    )
 
 
 @dataclass
@@ -76,6 +118,10 @@ class Story:
     @property
     def score(self) -> float:
         return self.primary["final_score"]
+
+    @property
+    def decision_value(self) -> float:
+        return _decision_value(self.primary)
 
     @property
     def domain(self) -> str:
@@ -125,10 +171,14 @@ def _apply_cross_day_novelty(
 def group_story_families(candidates: list[dict], *, generic_terms: set[str]) -> list[Story]:
     """Complete-link grouping (mirrors pipeline/trends.py's transitive-
     bridging safeguard): a candidate only joins an existing family if it
-    matches *every* current member, never just the first. Input must
-    already be sorted by score descending; the highest-scoring member of
-    each family becomes primary, the next-highest becomes the sole
-    secondary citation (a family is a digest slot, not an unbounded list)."""
+    matches *every* current member, never just the first. The highest-
+    scoring (final_score) member of each family becomes primary -- picking
+    the most *complete/authoritative* source to cite is a different
+    question from picking the most *material* family, so this stays on
+    final_score even though cross-family ranking (below) does not. The
+    next-highest becomes the sole secondary citation (a family is a digest
+    slot, not an unbounded list). Families themselves are ranked by
+    decision value (materiality/relevance), not final_score."""
     groups: list[list[dict]] = []
     for item in candidates:
         target = None
@@ -146,7 +196,7 @@ def group_story_families(candidates: list[dict], *, generic_terms: set[str]) -> 
         group.sort(key=lambda i: i["final_score"], reverse=True)
         secondary = group[1] if len(group) > 1 else None
         stories.append(Story(primary=group[0], secondary=secondary))
-    stories.sort(key=lambda s: s.score, reverse=True)
+    stories.sort(key=lambda s: s.decision_value, reverse=True)
     return stories
 
 
@@ -190,31 +240,36 @@ def _can_add(story: Story, selected: list[Story]) -> bool:
 
 def _finalize_top_and_more(selected: list[Story], max_total: int) -> tuple[list[Story], list[Story]]:
     """Constructs TOP and MORE TO KNOW from the fully coverage/cap/novelty-
-    filtered `selected` list (already sorted by score descending). Two hard
-    constraints apply only to TOP, never as a best-effort swap that can
-    still fail (2026-08-13 repair -- the prior swap-based approach left two
-    Techmeme-family stories in TOP when no valid swap partner existed):
+    filtered `selected` list (already sorted by decision value descending).
+    One hard constraint applies to TOP, never as a best-effort swap that
+    can still fail (2026-08-13 repair -- the prior swap-based approach left
+    two Techmeme-family stories in TOP when no valid swap partner existed):
+    at most MAX_TOP_STORIES_PER_DOMAIN stories from the same publisher
+    family; a second same-family story moves to MORE TO KNOW (still
+    subject to the digest-wide MAX_STORIES_PER_DOMAIN total, already
+    enforced when `selected` was built) or is dropped if MORE TO KNOW is
+    already at max_total.
 
-      - at most MAX_TOP_STORIES_PER_DOMAIN stories from the same publisher
-        family; a second same-family story moves to MORE TO KNOW (still
-        subject to the digest-wide MAX_STORIES_PER_DOMAIN total, already
-        enforced when `selected` was built) or is dropped if MORE TO KNOW
-        is already at max_total.
-      - a story needs a complete, source-supported summary sentence
-        (pipeline/summary_quality.has_complete_summary) to occupy a TOP
-        slot; a headline-only candidate demotes to MORE TO KNOW (no
-        summary is required there) instead.
+    2026-08-14 repair: summary availability is deliberately NOT a TOP-
+    eligibility gate here anymore -- "summary availability must not cause a
+    lower-value story to outrank a higher-value event." The 2026-08-13
+    version of this rule demoted any story with a poorly-formatted excerpt
+    straight to MORE TO KNOW regardless of how material it was, which is
+    exactly what let a routine tutorial win a TOP slot over a genuine
+    earnings beat whose Techmeme excerpt happened to be cut off mid-
+    sentence. The renderer (delivery/daily_production_formatter.py) shows
+    an explicit "no summary available" note for a TOP story with no
+    extractable sentence, rather than silently promoting a lower-value
+    story to fill the gap.
 
     TOP may end up with fewer than MAX_TOP_STORIES entries -- never padded
-    with a story that fails either constraint."""
+    with a story that fails the domain constraint."""
     top: list[Story] = []
     more: list[Story] = []
     top_domains_seen: set[str] = set()
     for story in selected:
-        eligible_for_top = (
-            len(top) < MAX_TOP_STORIES
-            and (not story.domain or story.domain not in top_domains_seen)
-            and has_complete_summary(story.primary)
+        eligible_for_top = len(top) < MAX_TOP_STORIES and (
+            not story.domain or story.domain not in top_domains_seen
         )
         if eligible_for_top:
             top.append(story)
@@ -279,7 +334,7 @@ def select_daily_stories(
     # only swaps in a family that is *already validly addable* -- never
     # bypasses the AI/domain caps, and never pads with something that
     # wasn't already a qualified, capped-compliant candidate.
-    selected.sort(key=lambda s: s.score, reverse=True)
+    selected.sort(key=lambda s: s.decision_value, reverse=True)
     if len(selected) >= MIN_TOTAL_STORIES:
         non_ai_count = sum(1 for s in selected if not _is_ai(s))
         while non_ai_count < MIN_NON_AI_WHEN_FOUR_OR_MORE:
@@ -296,7 +351,7 @@ def select_daily_stories(
                 break
             selected[worst_ai_idx] = replacement
             non_ai_count += 1
-        selected.sort(key=lambda s: s.score, reverse=True)
+        selected.sort(key=lambda s: s.decision_value, reverse=True)
 
     top_stories, more_to_know = _finalize_top_and_more(selected, max_total)
     return SelectionResult(top_stories=top_stories, more_to_know=more_to_know)

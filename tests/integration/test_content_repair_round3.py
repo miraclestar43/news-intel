@@ -154,11 +154,15 @@ def test_two_techmeme_stories_end_to_end_only_one_in_top_with_resolved_publisher
     techmeme_domain_markers = sum(1 for marker in ("Cerebras", "Grok 4.6") if marker in top_section)
     assert techmeme_domain_markers <= 1
 
+    # 2026-08-14 false-provenance fix: the displayed label now honestly
+    # names Techmeme as the actual page being linked to, alongside the
+    # citation it carries -- never just "Reuters"/"xAI" with a
+    # techmeme.com href underneath.
     reuters_sources = event_sources(conn, "E-CEREBRAS")
-    assert reuters_sources[0]["publisher"] == "Reuters"
+    assert reuters_sources[0]["publisher"] == "Techmeme (citing Reuters)"
     xai_sources = event_sources(conn, "E-GROK")
-    assert xai_sources[0]["publisher"] == "xAI"
-    assert "Techmeme" not in summary.rendered_text
+    assert xai_sources[0]["publisher"] == "Techmeme (citing xAI)"
+    assert "Techmeme (citing" in summary.rendered_text
 
 
 # --- TOP requires a complete summary ----------------------------------------

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 
-from news_intel.pipeline.materiality import HIGH_IMPACT_TERMS, dollar_magnitude_bonus
+from news_intel.pipeline.materiality import HIGH_IMPACT_TERMS, _count_hits, dollar_magnitude_bonus
 
 _DASHBOARD_TITLE_PATTERNS = (
     "latest numbers",
@@ -73,19 +73,97 @@ _RECOGNITION_TERMS = frozenset(
 )
 
 
+def _has_material_consequence_signal(text: str, lowered: str) -> bool:
+    """Shared "is there an independently material consequence" check used
+    by every event-type gate in this module: a real dollar-magnitude figure
+    or a decision/consequence keyword (pipeline/materiality.HIGH_IMPACT_TERMS)
+    -- deliberately NOT the percent-magnitude signal, which an approval-
+    rating or satisfaction-score percentage (exactly the substance of a
+    "best CEO" piece) would otherwise use to self-certify as material."""
+    return dollar_magnitude_bonus(text) > 0 or _count_hits(lowered, HIGH_IMPACT_TERMS) > 0
+
+
 def is_unqualified_recognition_story(title: str, excerpt: str | None) -> bool:
     """True if this is recognition/award/ranking language with no
     independently material consequence (leadership change, compensation/
     governance action, measurable business result, market reaction, or
-    regulatory consequence) attached. Only the dollar-magnitude and
-    decision/consequence-keyword signals count as "material" here --
-    deliberately NOT the percent-magnitude signal, since an approval-rating
-    or satisfaction-score percentage (exactly what a "best CEO" piece is
-    built from) would otherwise self-certify as material."""
+    regulatory consequence) attached."""
     text = f"{title or ''} {excerpt or ''}"
     lowered = text.lower()
     if not any(term in lowered for term in _RECOGNITION_TERMS):
         return False
-    has_dollar_magnitude = dollar_magnitude_bonus(text) > 0
-    has_high_impact_term = any(term in lowered for term in HIGH_IMPACT_TERMS)
-    return not (has_dollar_magnitude or has_high_impact_term)
+    return not _has_material_consequence_signal(text, lowered)
+
+
+# 2026-08-14 event-type/consequence gate: a tutorial/builder-guide/how-to/
+# customer-story is educational or promotional content about an ALREADY-
+# KNOWN release, not a news event on its own -- reproduction: "The
+# builder's guide to GPT-5.6" (a usage tutorial, not a new-model
+# announcement) outranked a genuine, much more material semiconductor
+# earnings beat (Applied Materials) for a digest slot.
+_TUTORIAL_TERMS = frozenset(
+    {
+        "builder's guide", "builders guide", "guide to", "how to", "getting started",
+        "customer story", "case study", "adoption guide", "tutorial", "walkthrough",
+        "best practices for", "tips for",
+    }
+)
+
+# An enforcement/regulatory action against one NAMED INDIVIDUAL (a former
+# employee, a single officer) is not institutionally or systemically
+# material unless it carries its own measurable consequence (a real dollar
+# penalty, or decision/consequence language indicating broader reach).
+# Reproduction: "Federal Reserve Board issues enforcement action with
+# former employee of Regions Bank" -- an action against the *institution*
+# itself, a large civil money penalty, or broader systemic language is
+# deliberately NOT caught by this (the individual-subject terms below
+# require a specifically individual, not institutional, subject).
+_ENFORCEMENT_TRIGGER_TERMS = frozenset(
+    {
+        "enforcement action", "consent order", "cease and desist",
+        "civil money penalty", "settles with regulators", "charged with",
+    }
+)
+_INDIVIDUAL_ENFORCEMENT_SUBJECT_TERMS = frozenset(
+    {
+        "former employee", "a former officer", "an individual", "one employee",
+        "single employee", "former officer of",
+    }
+)
+
+
+def is_routine_tutorial_or_promotional_content(title: str, excerpt: str | None) -> bool:
+    """True if this is instructional/promotional content about an
+    already-known product, with no independently material new-capability
+    or consequence signal attached."""
+    text = f"{title or ''} {excerpt or ''}"
+    lowered = text.lower()
+    if not any(term in lowered for term in _TUTORIAL_TERMS):
+        return False
+    return not _has_material_consequence_signal(text, lowered)
+
+
+def is_individual_enforcement_without_consequence(title: str, excerpt: str | None) -> bool:
+    """True if this is an enforcement/regulatory action against a single
+    named individual (not the institution itself) with no measurable
+    consequence (dollar penalty, decision/consequence language) attached."""
+    text = f"{title or ''} {excerpt or ''}"
+    lowered = text.lower()
+    is_enforcement = any(term in lowered for term in _ENFORCEMENT_TRIGGER_TERMS)
+    is_individual_subject = any(term in lowered for term in _INDIVIDUAL_ENFORCEMENT_SUBJECT_TERMS)
+    if not (is_enforcement and is_individual_subject):
+        return False
+    return not _has_material_consequence_signal(text, lowered)
+
+
+def is_low_consequence_event_type(title: str, excerpt: str | None) -> bool:
+    """Combined event-type/consequence gate (stage 2 of selection): true if
+    this candidate is a normally non-material event type -- recognition/
+    award/ranking, tutorial/promotional content, or individual-employee
+    enforcement -- with no independently material consequence attached.
+    General event-type logic only; never a title-specific exclusion."""
+    return (
+        is_unqualified_recognition_story(title, excerpt)
+        or is_routine_tutorial_or_promotional_content(title, excerpt)
+        or is_individual_enforcement_without_consequence(title, excerpt)
+    )

@@ -68,6 +68,21 @@ def _source_line(story: Story) -> str | None:
     return "Source: " + ", ".join(links)
 
 
+def _best_available_summary(story: Story) -> str | None:
+    """Tries the primary source's excerpt first, then the secondary's
+    (2026-08-14: "attempt to resolve and summarize the higher-value event
+    from its valid original source first" -- a family whose highest-ranked
+    member has a poorly-formatted excerpt but whose linked secondary
+    source has a clean one should not lose its summary over that)."""
+    title = story.primary.get("title", "")
+    summary = summarize(story.primary.get("excerpt"), title)
+    if summary:
+        return summary
+    if story.secondary:
+        return summarize(story.secondary.get("excerpt"), title)
+    return None
+
+
 def _render_top_story(index: int, story: Story) -> list[str]:
     primary_src = _primary_source(story.primary)
     title_url = primary_src["url"] if primary_src else None
@@ -76,9 +91,16 @@ def _render_top_story(index: int, story: Story) -> list[str]:
         f"{index}. {_link(story.primary.get('title', '(untitled)'), title_url)}",
         f"Category: {_escape(story.category)}",
     ]
-    summary = summarize(story.primary.get("excerpt"), story.primary.get("title", ""))
+    summary = _best_available_summary(story)
     if summary:
         lines.append(_escape(summary))
+    else:
+        # 2026-08-14: a TOP story earns its slot on decision value, not
+        # summary availability -- "record the failure explicitly rather
+        # than silently promoting a trivial story" means this story still
+        # occupies TOP with an honest note, not a fabricated sentence and
+        # not demotion to make room for a less material story.
+        lines.append("(No complete source-supported summary available — see original link.)")
     if story.update_note:
         lines.append(_escape(story.update_note))
     source_line = _source_line(story)
