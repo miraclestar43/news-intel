@@ -92,3 +92,21 @@ def has_complete_summary(item: dict) -> bool:
     source-supported text to explain what happened in at least one
     complete sentence? A headline alone is not enough for a TOP slot."""
     return extract_summary(item.get("excerpt"), item.get("title", "")) is not None
+
+
+def best_available_summary(primary: dict, secondary: dict | None) -> str | None:
+    """Tries the primary source's excerpt first, then the secondary's
+    (2026-08-14: "attempt to resolve and summarize the higher-value event
+    from its valid original source first" -- a family whose highest-ranked
+    member has a poorly-formatted excerpt but whose linked secondary
+    source has a clean one should not lose its summary over that). Shared
+    by delivery/daily_production_formatter.py's rendered "what happened"
+    line and pipeline/render_readiness.py's TOP render-readiness gate, so
+    both agree on exactly what counts as "enrichment was attempted"."""
+    title = primary.get("title", "")
+    summary = extract_summary(primary.get("excerpt"), title)
+    if summary:
+        return summary
+    if secondary:
+        return extract_summary(secondary.get("excerpt"), title)
+    return None

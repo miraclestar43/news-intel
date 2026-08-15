@@ -78,7 +78,14 @@ def score_event(
     # the existing confirmation-state pipeline, not as a materiality input.
     combined_text, _has_t0, origin_families, popularity_signal, _ = _event_text_and_signals(conn, event_id)
 
-    relevance = classify_relevance(combined_text, config.topics, config.policy.relevance_multipliers)
+    # 2026-08-15: the event's own primary_title, kept separate from the
+    # combined multi-source text -- classify_relevance tries this first
+    # (see its docstring) so a vocabulary term appearing only in
+    # background/excerpt text can't hijack the category of a story the
+    # title itself is not about.
+    relevance = classify_relevance(
+        combined_text, config.topics, config.policy.relevance_multipliers, title=event["primary_title"]
+    )
     conn.execute(
         "UPDATE events SET category = ? WHERE id = ?",
         (_CATEGORY_LABELS.get(relevance.bucket, "Unclassified"), event_id),

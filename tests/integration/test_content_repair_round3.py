@@ -25,7 +25,7 @@ from tests.conftest import insert_source_row
 
 def _seed_event(
     conn, *, event_id, title, excerpt, category, now, source_id, tier=0,
-    origin_family="example.test", source_name=None, canonical_url=None,
+    origin_family="example.test", source_name=None, canonical_url=None, origin_url=None,
 ):
     insert_source_row(conn, source_id, tier, name=source_name)
     conn.execute(
@@ -36,9 +36,12 @@ def _seed_event(
     url = canonical_url or f"https://{origin_family}/{event_id}"
     cur = conn.execute(
         "INSERT INTO raw_items (source_id, external_id, canonical_url, url_hash, title, "
-        "normalized_title, summary_excerpt, language, fetched_at, content_hash, origin_family) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, 'en', ?, ?, ?)",
-        (source_id, event_id, url, event_id, title, title.lower(), excerpt, now.isoformat(), event_id, origin_family),
+        "normalized_title, summary_excerpt, language, fetched_at, content_hash, origin_family, origin_url) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 'en', ?, ?, ?, ?)",
+        (
+            source_id, event_id, url, event_id, title, title.lower(), excerpt, now.isoformat(), event_id,
+            origin_family, origin_url,
+        ),
     )
     raw_id = cur.lastrowid
     conn.execute(

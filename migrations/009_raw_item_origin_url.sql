@@ -1,0 +1,20 @@
+-- 2026-08-15 content-quality repair (publisher-family repair, now
+-- authorized): raw_items.origin_family for a Techmeme-discovered item was
+-- always "techmeme.com" (the feed's own domain -- see adapters/rss.py's
+-- _origin_family, which reads the FEED url, not the linked article), so
+-- the per-digest publisher-diversity cap treated every Techmeme-discovered
+-- story as the same publisher family regardless of which outlet actually
+-- wrote it -- a WSJ-originated story and a Bloomberg-originated story,
+-- both discovered via Techmeme, collided under one "techmeme.com" family
+-- and only one could ever reach TOP.
+--
+-- origin_url is the verified original article's own URL, extracted from
+-- the aggregator feed's own raw HTML description (Techmeme's description
+-- reliably opens with an <A HREF="..."> to the original article, ahead of
+-- its own "Techmeme permalink" anchor -- confirmed against a live feed
+-- sample; see adapters/rss.py's _extract_origin_url). NULL for every
+-- existing row and for any feed whose excerpt doesn't match the citation-
+-- prefix pattern (pipeline/citation.py) that gates this extraction -- so a
+-- normal direct-publisher feed, where origin_family is already correct,
+-- is entirely unaffected.
+ALTER TABLE raw_items ADD COLUMN origin_url TEXT;

@@ -49,6 +49,7 @@ from datetime import datetime
 from news_intel.models import ConfirmationState
 from news_intel.pipeline.entities import extract_entities
 from news_intel.pipeline.material_facts import MaterialFactSnapshot, build_snapshot
+from news_intel.pipeline.materiality import _parse_dollar_values, format_dollar_value
 from news_intel.pipeline.normalize import normalize_title
 from news_intel.pipeline.similarity import trigram_jaccard
 from news_intel.settings import AlertTriggersConfig
@@ -90,6 +91,34 @@ _MACRO_ACRONYM_TERMS = frozenset(
         "CPI", "GDP", "PPI", "FOMC", "ECI", "YOY", "YTD", "QOQ", "MOM",
         "GNP", "PCE", "ISM", "PMI", "CPIH", "NFP",
     }
+)
+
+# 2026-08-15 defect (found during the Aug 14 as-of replay): "Demand"
+# survived as a "distinctive" material token and falsely merged a
+# completely unrelated SMIC earnings story ("Strong Chip Demand") with the
+# Aug 12 BLS "latest numbers" dashboard ("Producer Price Index - Final
+# Demand") -- both entity phrases happen to end in this same generic
+# economic-report word once split into individual tokens. Same root cause
+# as the CPI/PBC fixes above: a single spelled-out generic economic term,
+# not a shared distinctive entity. These are the words that make up
+# _MACRO_ACRONYM_TERMS's spelled-out names (Price [Index], [Interest]
+# Rate, [Chip] Demand, [Economic] Growth, [Money] Supply) and are exactly
+# as generic on their own.
+_GENERIC_ECONOMIC_TERMS = frozenset(
+    {"Demand", "Price", "Prices", "Rate", "Rates", "Index", "Growth", "Supply", "Cost", "Costs", "Income"}
+)
+
+# 2026-08-14 defect: "PBC" (Public Benefit Corporation, a generic legal
+# suffix -- Anthropic PBC, OpenAI's own entity is a PBC-adjacent structure
+# too) survived as a short ALL-CAPS "acronym" token and matched between two
+# completely unrelated M&A stories that both merely mentioned "Anthropic
+# PBC" -- one as the actual acquirer (Anthropic buying Decart), the other
+# as a competitor named in passing (SpaceX's Cursor acquisition, framed as
+# catching up to "rivals Anthropic PBC and OpenAI"). A corporate-structure
+# suffix is exactly the same class of noise as a macro acronym: shared
+# terminology, not a shared distinctive entity.
+_CORPORATE_SUFFIX_TERMS = frozenset(
+    {"PBC", "INC", "LLC", "CORP", "LTD", "PLC", "NV", "SA", "AG", "CO"}
 )
 
 
@@ -137,6 +166,8 @@ def _material_tokens(item: dict, generic_terms: set[str]) -> set[str]:
         and t not in _CONNECTOR_WORDS
         and t not in _BOILERPLATE_TERMS
         and t.upper() not in _MACRO_ACRONYM_TERMS
+        and t.upper() not in _CORPORATE_SUFFIX_TERMS
+        and t not in _GENERIC_ECONOMIC_TERMS
         and t.lower() not in lowered_generic
         and t.lower() not in publisher_words
     }
@@ -203,16 +234,13 @@ class MaterialUpdate:
     note: str | None = None
 
 
-def _normalize_amount(value: str | None) -> str:
-    """$500 Billion / $500 billion / $ 500 billion must compare equal --
-    pipeline/material_facts.py's own diff_snapshots() does a raw string
-    compare and would treat those as different (a latent bug in that
-    module, left unfixed here since it is shared with the live alerts
-    pipeline, which this task must not modify; disclosed in the checkpoint
-    report instead)."""
-    if not value:
-        return ""
-    return re.sub(r"\s+", " ", value.replace("$", "").replace(",", "")).strip().lower()
+# 2026-08-14: amount comparison now uses materiality._parse_dollar_values
+# (unit-aware numeric parsing) instead of a raw-string normalize/compare of
+# material_facts.py's own `amount` field -- see detect_material_update.
+# pipeline/material_facts.py's own diff_snapshots() still does a raw string
+# compare there (a latent bug in that module, left unfixed since it is
+# shared with the live alerts pipeline, which this task must not modify;
+# disclosed in the checkpoint report instead).
 
 
 # Status-change language beyond pipeline/alert_triggers.py's curated alert
@@ -234,6 +262,38 @@ _STATUS_CHANGE_TERMS = frozenset(
 
 def _status_terms_in(text_lower: str) -> set[str]:
     return {t for t in _STATUS_CHANGE_TERMS if re.search(rf"\b{re.escape(t)}\b", text_lower)}
+
+
+# 2026-08-14 defect: a competitor or background entity named in passing
+# ("a key part of Elon Musk's bid to gain ground on rivals Anthropic PBC
+# and OpenAI") was reported as a "newly named" TRANSACTION PARTY, when it
+# is neither the buyer, the target, nor any other structural party to
+# *this* event -- just context about the competitive landscape. Any
+# known-vocabulary entity mentioned within a competitive/comparative clause
+# is excluded from the "newly named" comparison (it may still legitimately
+# be part of same_event_story's match itself, since that question -- "is
+# this the same event" -- is different from "is this a new transaction
+# party").
+_COMPETITIVE_CONTEXT_RE = re.compile(
+    r"\brivals?\b|\bcompetitors?\b|\bcompete[sd]?\s+with\b|\bcompared?\s+(?:to|with)\b|"
+    r"\bversus\b|\bvs\.?\b|\bunlike\b",
+    re.IGNORECASE,
+)
+
+
+def _competitive_context_entities(text: str, known_entities: set[str]) -> set[str]:
+    """Known-vocabulary entities that appear only inside a competitive/
+    comparative clause (the sentence-ish segment around a "rivals"/"vs."/
+    "compared to" marker) -- see module docstring above."""
+    found: set[str] = set()
+    for match in _COMPETITIVE_CONTEXT_RE.finditer(text):
+        start = max(0, match.start() - 60)
+        end = min(len(text), match.end() + 60)
+        window = text[start:end]
+        for entity in known_entities:
+            if re.search(rf"\b{re.escape(entity)}\b", window, re.IGNORECASE):
+                found.add(entity)
+    return found
 
 
 def _snapshot_for(item: dict, *, known_entities: set[str], alert_triggers: AlertTriggersConfig) -> MaterialFactSnapshot:
@@ -260,13 +320,27 @@ def detect_material_update(
     snap_new = _snapshot_for(candidate, known_entities=known_entities, alert_triggers=alert_triggers)
     snap_old = _snapshot_for(prior, known_entities=known_entities, alert_triggers=alert_triggers)
 
-    cand_text_lower = f"{candidate.get('title', '')} {candidate.get('excerpt', '')}".lower()
-    prior_text_lower = f"{prior.get('title', '')} {prior.get('excerpt', '')}".lower()
+    cand_text = f"{candidate.get('title', '')} {candidate.get('excerpt', '')}"
+    prior_text = f"{prior.get('title', '')} {prior.get('excerpt', '')}"
+    cand_text_lower = cand_text.lower()
+    prior_text_lower = prior_text.lower()
 
     reasons: list[str] = []
-    if snap_new.amount and _normalize_amount(snap_new.amount) != _normalize_amount(snap_old.amount):
-        reasons.append(f"new figures ({snap_new.amount})")
-    newly_named = set(snap_new.target_entities) - set(snap_old.target_entities)
+    # Compares actual parsed dollar VALUES (materiality._parse_dollar_values,
+    # unit-aware: "$60B" and "$60 billion" both parse to 6e10), not
+    # material_facts.py's own raw-string amount field -- that field's own
+    # regex only recognizes spelled-out units, so an abbreviated "$60B"
+    # loses its unit entirely and would otherwise be reported as a bare,
+    # meaningless "new figure ($60)" even when $60B was already known from
+    # the prior telling.
+    new_dollar_values = set(_parse_dollar_values(cand_text)) - set(_parse_dollar_values(prior_text))
+    if new_dollar_values:
+        formatted = ", ".join(format_dollar_value(v) for v in sorted(new_dollar_values, reverse=True)[:3])
+        reasons.append(f"new figures ({formatted})")
+    competitive_context = _competitive_context_entities(cand_text, known_entities) | _competitive_context_entities(
+        prior_text, known_entities
+    )
+    newly_named = (set(snap_new.target_entities) - set(snap_old.target_entities)) - competitive_context
     if newly_named:
         reasons.append(f"newly named ({', '.join(sorted(newly_named)[:3])})")
     if snap_new.effective_date and snap_new.effective_date != snap_old.effective_date:

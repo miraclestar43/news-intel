@@ -26,6 +26,7 @@ class CollectedItem:
     language: str
     published_at: datetime | None
     origin_family: str
+    origin_url: str | None = None
     metadata: dict = field(default_factory=dict)
 
 

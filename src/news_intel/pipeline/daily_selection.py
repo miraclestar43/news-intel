@@ -51,6 +51,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from news_intel.pipeline.publisher_family import publisher_family_of_url
+from news_intel.pipeline.render_readiness import is_render_ready
 from news_intel.pipeline.story_identity import detect_material_update, same_event_story
 from news_intel.settings import AlertTriggersConfig
 
@@ -127,12 +128,31 @@ class Story:
     def domain(self) -> str:
         return _publisher_family_of(self.primary)
 
+    @property
+    def render_ready(self) -> bool:
+        return is_render_ready(self.primary, self.secondary)
+
 
 def _publisher_family_of(item: dict) -> str:
+    """2026-08-15 publisher-family repair: keys on event_repo.event_sources's
+    verified `origin_family` (the original outlet's own domain when
+    resolvable, e.g. via a Techmeme citation's extracted origin_url) rather
+    than re-deriving a family from the stored source URL, which for an
+    aggregator-discovered item is the aggregator's own page
+    (techmeme.com) -- that collapsed a WSJ-originated and a Bloomberg-
+    originated story, both discovered via Techmeme, into one publisher
+    family. `origin_family` already falls back to the discovery domain
+    conservatively when origin can't be verified (event_repo.event_sources
+    docstring). Falls back further to parsing the source URL directly only
+    for callers/fixtures that don't carry the origin_family field at all."""
     sources = item.get("sources") or []
-    if not sources or not sources[0].get("url"):
+    if not sources:
         return ""
-    return publisher_family_of_url(sources[0]["url"])
+    if "origin_family" in sources[0]:
+        return sources[0]["origin_family"] or ""
+    if sources[0].get("url"):
+        return publisher_family_of_url(sources[0]["url"])
+    return ""
 
 
 def _apply_cross_day_novelty(
@@ -280,6 +300,62 @@ def _finalize_top_and_more(selected: list[Story], max_total: int) -> tuple[list[
     return top, more
 
 
+def _apply_render_readiness_gate(
+    top: list[Story], more: list[Story], families: list[Story], max_top: int
+) -> tuple[list[Story], list[Story]]:
+    """2026-08-15 repair: a story that earned its TOP slot on decision value
+    (see module docstring, stage 4) but for which enrichment -- primary
+    source, then linked secondary source, the only two sources this
+    pipeline has for it -- still produces no complete "what happened"
+    sentence must not occupy that slot with a placeholder. It is demoted
+    (never dropped outright -- MORE TO KNOW never required a full account,
+    just a title and a truthful link, so it can still inform the reader
+    there). The vacated slot is backfilled, in order: first from MORE TO
+    KNOW's own already-selected, already-cap-compliant, decision-value-
+    ordered stories; then from any other qualified family that lost an
+    earlier cap competition (e.g. the AI-family cap) but would validly fit
+    now that a slot is open -- re-checked against _can_add so this can
+    never bypass the AI-family or per-publisher-family caps. Ordering
+    itself was already fixed before this gate runs -- this only ever swaps
+    a render-failed story for a render-ready one, never reorders on any
+    other basis."""
+    ready_top: list[Story] = []
+    demoted: list[Story] = []
+    for story in top:
+        if story.render_ready:
+            ready_top.append(story)
+        else:
+            demoted.append(story)
+    if not demoted:
+        return top, more
+
+    remaining_more = list(more)
+    already_selected_ids = {s.event_id for s in top} | {s.event_id for s in more}
+    already_selected_pool = [s for s in remaining_more if s.render_ready]
+    new_pool = [f for f in families if f.event_id not in already_selected_ids and f.render_ready]
+    top_domains = {s.domain for s in ready_top if s.domain}
+
+    def _try_promote(candidate: Story, *, needs_cap_check: bool) -> bool:
+        if len(ready_top) >= max_top:
+            return False
+        if candidate.domain and candidate.domain in top_domains:
+            return False
+        if needs_cap_check and not _can_add(candidate, ready_top + remaining_more):
+            return False
+        ready_top.append(candidate)
+        if candidate.domain:
+            top_domains.add(candidate.domain)
+        return True
+
+    for candidate in already_selected_pool:
+        if _try_promote(candidate, needs_cap_check=False) and candidate in remaining_more:
+            remaining_more.remove(candidate)
+    for candidate in new_pool:
+        _try_promote(candidate, needs_cap_check=True)
+
+    return ready_top, demoted + remaining_more
+
+
 def select_daily_stories(
     candidates: list[dict],
     *,
@@ -354,4 +430,5 @@ def select_daily_stories(
         selected.sort(key=lambda s: s.decision_value, reverse=True)
 
     top_stories, more_to_know = _finalize_top_and_more(selected, max_total)
+    top_stories, more_to_know = _apply_render_readiness_gate(top_stories, more_to_know, families, MAX_TOP_STORIES)
     return SelectionResult(top_stories=top_stories, more_to_know=more_to_know)

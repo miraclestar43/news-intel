@@ -79,7 +79,7 @@ def test_applied_materials_outranks_builder_guide_and_regions_bank_end_to_end(co
             "Elias Schisgall / Wall Street Journal : Applied Materials reports Q3 revenue up 25% YoY to "
             "$9.12B, vs. $8.99B est., net income up 43% to $2.54B, and forecasts Q4 revenue above "
             "estimates — The company is looking to ramp up its manufacturing capacity to meet continued "
-            "semiconductor solutions demand"
+            "semiconductor solutions demand."
         ),
         now=now,
     )
@@ -117,9 +117,20 @@ def test_source_label_domain_consistency_no_false_provenance(config, conn):
     assert "Wall Street Journal" in label  # the citation is still surfaced, just honestly framed
 
 
-def test_summary_enrichment_does_not_reverse_materiality_order(config, conn):
-    """A high-decision-value story with a broken/truncated excerpt must
-    still outrank a lower-value story with a clean one."""
+def test_render_readiness_gate_demotes_unsummarizable_story_and_backfills_top(config, conn):
+    """2026-08-15 repair: a high-decision-value story whose excerpt yields
+    no complete sentence from any source must NOT render with the old
+    internal-diagnostic placeholder in TOP (that placeholder is not
+    reader-facing content). It is demoted to MORE TO KNOW instead -- still
+    delivered, just not as an unsupported TOP headline -- and the next
+    qualified, render-ready story backfills the vacated TOP slot. This
+    supersedes the pre-2026-08-15 expectation (a summary-less story stayed
+    in TOP with an honest placeholder note): the placeholder mechanism
+    itself is what this round eliminates, while the underlying principle
+    it protected -- decision-value ordering is computed before, and
+    unaffected by, summary availability -- is unchanged and covered by
+    tests/unit/test_daily_selection_and_formatting.py's render-readiness
+    gate tests."""
     now = datetime(2026, 8, 13, 22, 0, tzinfo=UTC)
     _seed_event(
         conn, event_id="E-HIGH-VALUE-NO-SUMMARY", source_id="techmeme", tier=3, source_name="Techmeme",
@@ -132,6 +143,17 @@ def test_summary_enrichment_does_not_reverse_materiality_order(config, conn):
     )
     _score(conn, config, "E-HIGH-VALUE-NO-SUMMARY", now)
     _seed_event(
+        conn, event_id="E-BACKFILL-CANDIDATE", source_id="techmeme", tier=3, source_name="Techmeme",
+        canonical_url="https://www.techmeme.com/260813/p61",
+        title="Cerebras reports Q2 revenue up 74% YoY to $180M and raises its forecast",
+        excerpt=(
+            "Reuters : Cerebras reports Q2 revenue up 74% YoY to $180M and raises its forecast — "
+            "Cerebras Systems raised its annual revenue and gross margin forecasts on Wednesday."
+        ),
+        now=now,
+    )
+    _score(conn, config, "E-BACKFILL-CANDIDATE", now)
+    _seed_event(
         conn, event_id="E-LOW-VALUE-CLEAN-SUMMARY", source_id="openai_news", source_name="OpenAI News",
         title="A guide to prompt engineering",
         excerpt="This guide explains helpful prompt engineering tips for developers.",
@@ -141,7 +163,9 @@ def test_summary_enrichment_does_not_reverse_materiality_order(config, conn):
 
     summary = run_daily(config, conn, dry_run=True, now=now)
     top_section = summary.rendered_text.split("MORE TO KNOW")[0]
-    assert "NVIDIA data center supplier" in top_section
-    assert "No complete source-supported summary available" in top_section
+    assert "No complete source-supported summary available" not in summary.rendered_text
+    assert "NVIDIA data center supplier" not in top_section  # demoted, not rendered with a placeholder
+    assert "NVIDIA data center supplier" in summary.rendered_text  # still delivered, in MORE TO KNOW
+    assert "Cerebras" in top_section  # backfilled the vacated TOP slot
     # the low-value tutorial fails the event-type gate entirely
     assert "prompt engineering" not in summary.rendered_text.lower()

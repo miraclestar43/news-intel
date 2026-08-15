@@ -91,8 +91,25 @@ def _trade_tariff_bucket(lowered: str, topics: TopicsConfig) -> str | None:
     return None  # bare "tariff" with no supporting context at all
 
 
+def _match_buckets(text: str, topics: TopicsConfig) -> tuple[str, list[str]] | None:
+    """The first bucket (priority order) with any vocabulary hit in `text`,
+    or None. Factored out of classify_relevance so it can be tried against
+    the title alone before falling back to the full combined text."""
+    lowered = text.lower()
+    for bucket, group_names in _BUCKET_PRIORITY:
+        matched: list[str] = []
+        for group_name in group_names:
+            group = topics.groups.get(group_name, {})
+            for term in _all_terms(group):
+                if _term_matches(term, lowered, text):
+                    matched.append(term)
+        if matched:
+            return bucket, matched
+    return None
+
+
 def classify_relevance(
-    text: str, topics: TopicsConfig, multipliers: dict[str, float]
+    text: str, topics: TopicsConfig, multipliers: dict[str, float], *, title: str | None = None
 ) -> RelevanceMatch:
     lowered = text.lower()
 
@@ -110,15 +127,26 @@ def classify_relevance(
             "explicit_noise", multipliers.get("explicit_noise", 0.0), ["legal_notice_boilerplate"], []
         )
 
-    for bucket, group_names in _BUCKET_PRIORITY:
-        matched: list[str] = []
-        for group_name in group_names:
-            group = topics.groups.get(group_name, {})
-            for term in _all_terms(group):
-                if _term_matches(term, lowered, text):
-                    matched.append(term)
-        if matched:
+    # 2026-08-15 defect: an event whose title is squarely a Markets &
+    # Economy earnings-quality analysis (Amazon/Alphabet "other income")
+    # was classified as AI & Semiconductors purely because "Anthropic"
+    # appeared once, in a background clause of the excerpt, as one example
+    # of the investments driving those paper gains -- not because the
+    # story is about Anthropic or AI at all. The title is what a story is
+    # actually about; matching it first (when it alone yields a bucket)
+    # takes priority over a vocabulary term that only appears in
+    # supporting/background body text. Falls back to the combined text
+    # (unchanged prior behavior) whenever the title alone is inconclusive.
+    if title:
+        title_match = _match_buckets(title, topics)
+        if title_match is not None:
+            bucket, matched = title_match
             return RelevanceMatch(bucket, multipliers.get(bucket, 1.0), matched, [])
+
+    full_match = _match_buckets(text, topics)
+    if full_match is not None:
+        bucket, matched = full_match
+        return RelevanceMatch(bucket, multipliers.get(bucket, 1.0), matched, [])
 
     tariff_bucket = _trade_tariff_bucket(lowered, topics)
     if tariff_bucket is not None:

@@ -89,6 +89,20 @@ groups:
       - liquidity
       - banking stress
       - trading halt
+      # 2026-08-15 fix: general corporate financial-report vocabulary was
+      # entirely absent -- a story whose title is squarely a corporate
+      # earnings-quality analysis ("other income" driven by investment
+      # gains at Amazon/Alphabet) had no title-level vocabulary match at
+      # all, so classification fell through to the combined text and
+      # picked up an incidental single mention of "Anthropic" in
+      # background/excerpt detail, misclassifying it as AI & Semiconductors.
+      - earnings
+      - profit
+      - profits
+      - net income
+      - quarterly results
+      - annual report
+      - revenue
     terms_zh:
       - 央行
       - 国家统计局

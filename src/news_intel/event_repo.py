@@ -6,8 +6,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 from news_intel.pipeline.citation import resolve_citation_publisher
+from news_intel.pipeline.publisher_family import registrable_domain
 
 
 def qualified_events_since(
@@ -92,30 +94,59 @@ _DISCOVERY_PASSTHROUGH_SOURCE_IDS = frozenset({"gdelt_doc"})
 _CITATION_PASSTHROUGH_SOURCE_IDS = frozenset({"techmeme"})
 
 
-def _display_publisher(source_id: str, origin_family: str | None, source_name: str, excerpt: str | None) -> str:
-    """The returned label always describes what the stored URL actually
-    is. 2026-08-14 false-provenance fix: this previously returned just the
-    resolved citation name ("Wall Street Journal") while the href
-    underneath was still Techmeme's own roundup page -- a reader clicking
-    "Wall Street Journal" landed on techmeme.com, and the rendered label
-    didn't match the destination domain at all. Techmeme's own citation is
-    real information (worth surfacing) but is not, on its own, proof of
-    which original outlet actually wrote the piece or what its real URL
-    is -- so the label now honestly says "Techmeme (citing X)", not "X"."""
+def _display_publisher(
+    source_id: str, origin_family: str | None, source_name: str, excerpt: str | None, origin_verified: bool
+) -> str:
+    """The returned label always describes what `display_url` (see
+    event_sources) actually points at. 2026-08-14 false-provenance fix:
+    this previously returned just the resolved citation name ("Wall
+    Street Journal") while the href underneath was still Techmeme's own
+    roundup page. 2026-08-15 publisher-family repair: now that
+    origin_url/origin_verified can supply a genuinely resolved original-
+    article URL (adapters/rss.py's _extract_origin_url), a verified
+    citation can honestly use the bare outlet name again -- display_url
+    really does point there. An unverified citation still falls back to
+    the honest "Techmeme (citing X)" hedge, since only the aggregator page
+    is available to link to."""
     if source_id in _DISCOVERY_PASSTHROUGH_SOURCE_IDS and origin_family:
         return origin_family.removeprefix("www.")
     if source_id in _CITATION_PASSTHROUGH_SOURCE_IDS:
         resolved = resolve_citation_publisher(excerpt)
+        if resolved and origin_verified:
+            return resolved
         if resolved:
             return f"{source_name} (citing {resolved})"
     return source_name
 
 
 def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
+    """Each source dict separates four distinct provenance concepts
+    (2026-08-15 publisher-family repair -- the discovery-domain publisher
+    cap was conflating them, letting a WSJ-originated and a Bloomberg-
+    originated story, both discovered via Techmeme, collide as "the same
+    publisher"):
+
+      discovery_family -- the domain of the feed that surfaced this item
+        (e.g. "techmeme.com"). Never treated as independent corroboration.
+      cited_publisher -- the aggregator-named original outlet (e.g. "Wall
+        Street Journal"), parsed from the citation text -- a name, not a
+        verified link.
+      origin_url / origin_verified -- the original article's own URL, when
+        resolvable (raw_items.origin_url; see adapters/rss.py), and
+        whether one was found.
+      origin_family -- the verified original outlet's registrable domain
+        when origin_verified, else conservatively falls back to
+        discovery_family.
+
+    `display_url` is the origin article when verified, else the same
+    discovery-page URL as `url` -- delivery/daily_production_formatter.py
+    must link `display_url`, never fabricate a link `url` doesn't back.
+    `origin_family` (not `url`) is what pipeline/daily_selection.py's
+    publisher-diversity cap keys on."""
     rows = conn.execute(
         """
         SELECT r.id AS raw_item_id, r.title AS title, r.summary_excerpt AS excerpt,
-               r.canonical_url AS url, r.published_at AS published_at,
+               r.canonical_url AS url, r.origin_url AS origin_url, r.published_at AS published_at,
                r.origin_family AS origin_family, r.source_id AS source_id,
                s.name AS publisher, s.tier AS tier
         FROM event_sources es
@@ -126,18 +157,51 @@ def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
         """,
         (event_id,),
     ).fetchall()
-    return [
-        {
-            "id": f"S{r['raw_item_id']}",
-            "publisher": _display_publisher(r["source_id"], r["origin_family"], r["publisher"], r["excerpt"]),
-            "source_id": r["source_id"],
-            "excerpt": r["excerpt"] or r["title"],
-            "published_at": r["published_at"] or "",
-            "url": r["url"],
-            "tier": r["tier"],
-        }
-        for r in rows
-    ]
+    results = []
+    for r in rows:
+        # The discovered page's own domain -- the stored canonical_url's
+        # registrable domain, same computation daily_selection.py's caps
+        # always relied on (registrable_domain), not the separately-stored
+        # origin_family column: for a direct-publisher feed those normally
+        # agree, but only the URL is guaranteed consistent with what a
+        # reader actually lands on if origin can't be verified.
+        discovery_family = registrable_domain(urlparse(r["url"]).netloc)
+        is_discovery_passthrough = r["source_id"] in _DISCOVERY_PASSTHROUGH_SOURCE_IDS
+        cited_publisher = (
+            resolve_citation_publisher(r["excerpt"]) if r["source_id"] in _CITATION_PASSTHROUGH_SOURCE_IDS else None
+        )
+        origin_verified = bool(r["origin_url"]) or (is_discovery_passthrough and bool(r["origin_family"]))
+        if r["origin_url"]:
+            origin_family = registrable_domain(urlparse(r["origin_url"]).netloc)
+        elif is_discovery_passthrough and r["origin_family"]:
+            # gdelt_doc's own adapter already resolves origin_family to the
+            # real article's domain (adapters/gdelt.py) -- no aggregator
+            # page in between, so this is verified without needing a
+            # separately-extracted origin_url.
+            origin_family = r["origin_family"].removeprefix("www.")
+        else:
+            origin_family = discovery_family  # unverified: conservative fallback to discovery domain
+        display_url = r["origin_url"] or r["url"]
+        results.append(
+            {
+                "id": f"S{r['raw_item_id']}",
+                "publisher": _display_publisher(
+                    r["source_id"], r["origin_family"], r["publisher"], r["excerpt"], origin_verified
+                ),
+                "source_id": r["source_id"],
+                "excerpt": r["excerpt"] or r["title"],
+                "published_at": r["published_at"] or "",
+                "url": r["url"],
+                "display_url": display_url,
+                "tier": r["tier"],
+                "discovery_family": discovery_family,
+                "cited_publisher": cited_publisher,
+                "origin_url": r["origin_url"],
+                "origin_verified": origin_verified,
+                "origin_family": origin_family,
+            }
+        )
+    return results
 
 
 def combined_text_for_event(conn: sqlite3.Connection, event_id: str) -> str:

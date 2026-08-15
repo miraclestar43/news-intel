@@ -65,6 +65,7 @@ class NormalizedItem:
         "fetched_at",
         "content_hash",
         "origin_family",
+        "origin_url",
         "metadata",
     )
 
@@ -90,5 +91,6 @@ def normalize(item: CollectedItem, *, excerpt_max_chars: int, now: datetime | No
         fetched_at=now or datetime.now(UTC),
         content_hash=content_hash(norm_title, excerpt),
         origin_family=item.origin_family,
+        origin_url=item.origin_url,
         metadata=item.metadata,
     )

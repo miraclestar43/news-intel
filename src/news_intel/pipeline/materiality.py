@@ -70,6 +70,20 @@ def _parse_dollar_values(text: str) -> list[float]:
     return values
 
 
+def format_dollar_value(value: float) -> str:
+    """Renders a parsed dollar amount back into the same human/Telegram-
+    readable "$X billion/million" form a reader would recognize, rather than
+    a bare digit string ("$700,000,000") that loses the magnitude at a
+    glance. Shared by pipeline/story_identity.py's novelty notes and
+    pipeline/render_readiness.py's "why it matters" line."""
+    for threshold, unit in ((1_000_000_000_000, "trillion"), (1_000_000_000, "billion"), (1_000_000, "million")):
+        if value >= threshold:
+            scaled = value / threshold
+            number = f"{scaled:.1f}".removesuffix(".0")
+            return f"${number} {unit}"
+    return f"${value:,.0f}"
+
+
 def dollar_magnitude_bonus(text: str) -> float:
     values = _parse_dollar_values(text)
     if not values:

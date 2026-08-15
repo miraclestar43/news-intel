@@ -142,3 +142,49 @@ def test_china_group_has_english_vocabulary_coverage():
     as unclassified and was excluded before qualification."""
     result = _classify("US says dozens of countries helped China dodge Trump's tariffs")
     assert result.bucket == "us_china_policy_geopolitics"
+
+
+def test_title_only_ai_mention_in_background_does_not_hijack_markets_category():
+    """2026-08-14 defect reproduction: an Amazon/Alphabet "other income"
+    earnings-quality analysis was classified AI & Semiconductors purely
+    because "Anthropic" appeared once, in a background clause about what
+    drove the investment gains -- not because the story is about Anthropic
+    or AI. The title itself is a corporate financial-report story and must
+    win once title-level vocabulary (see config/topics.yaml's macro_markets
+    additions) can classify it on its own."""
+    title = (
+        'In Q2, "other income", mostly from investment gains, at Amazon and Alphabet totaled ~$121B '
+        "after taxes and made up 66% and 71%, respectively, of profits"
+    )
+    excerpt = (
+        title + " — Gains on investments in companies like Anthropic are boosting earnings at some of "
+        "the biggest technology companies"
+    )
+    combined = f"{title} {excerpt}"
+    result = classify_relevance(combined, TOPICS, MULTIPLIERS, title=title)
+    assert result.bucket == "markets_macro_corporate"
+
+
+def test_title_level_ai_vocabulary_still_wins_when_title_is_genuinely_about_ai():
+    """The title-priority fix must not suppress a genuine AI story just
+    because it also touches on markets/earnings language -- when the title
+    itself carries AI-semiconductor vocabulary, that bucket still wins
+    (unchanged from prior behavior; ai_semiconductor_export_controls is
+    still checked ahead of markets_macro_corporate in _BUCKET_PRIORITY)."""
+    title = "NVIDIA reports record quarterly revenue and profits on AI chip demand"
+    result = _classify(title)
+    assert result.bucket == "ai_semiconductor_export_controls"
+
+
+def test_title_with_no_vocabulary_falls_back_to_full_text_classification():
+    """When the title alone has no vocabulary match at all, classification
+    falls back to the full combined text exactly as before the title-
+    priority fix (2026-08-12's Cerebras-style case: the title is generic
+    but the excerpt carries the real classification signal)."""
+    title = "Cerebras reports Q2 revenue up 74% YoY to $180M and raises its forecast"
+    excerpt = (
+        "Cerebras Systems raised its annual revenue and gross margin forecasts on Wednesday, buoyed by "
+        "robust demand for its chips from companies ramping up data-center capacity."
+    )
+    result = classify_relevance(f"{title} {excerpt}", TOPICS, MULTIPLIERS, title=title)
+    assert result.bucket != UNCLASSIFIED_BUCKET

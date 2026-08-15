@@ -226,14 +226,17 @@ def test_top_may_have_fewer_than_three_stories_rather_than_violate_family_cap():
 # --- TOP requires a complete source-supported summary (2026-08-13) ----------
 
 
-def test_summary_availability_does_not_reorder_top_by_itself():
-    """2026-08-14 repair: a candidate with no complete-sentence excerpt
-    must NOT be demoted below a lower-value story just because its summary
-    extraction failed -- "summary availability must not cause a lower-
-    value story to outrank a higher-value event." Both of these fixtures
-    carry no significance/user_relevance/market_impact decomposition, so
-    _decision_value() falls back to final_score, making E-1's 95 the
-    clear winner regardless of its missing summary."""
+def test_render_readiness_gate_demotes_missing_summary_and_promotes_next():
+    """2026-08-15 repair: a candidate with no complete-sentence excerpt
+    (enrichment attempted -- daily_selection.Story.render_ready tries the
+    primary source, exactly what happened here) must not occupy a TOP slot
+    at all -- the old "stays in TOP with an honest placeholder note"
+    behavior is what this round's render-readiness gate replaces, since
+    that placeholder is not acceptable reader-facing content
+    (delivery/daily_production_formatter.py no longer renders it). E-1 is
+    demoted to MORE TO KNOW (still delivered -- MORE TO KNOW never needed
+    a summary); E-2, the next render-ready candidate, is promoted into
+    TOP."""
     candidates = [
         _item("E-1", "Headline with no supporting sentence", "AI & Semiconductors", 95, domain="a.test",
               excerpt="Headline with no supporting sentence"),  # no ending punctuation -> no complete sentence
@@ -242,8 +245,35 @@ def test_summary_availability_does_not_reorder_top_by_itself():
     ]
     result = select_daily_stories(candidates, generic_terms=_GENERIC_TERMS)
     top_ids = [s.event_id for s in result.top_stories]
-    assert top_ids[0] == "E-1"  # higher decision value stays on top despite the missing summary
-    assert "E-2" in top_ids
+    more_ids = [s.event_id for s in result.more_to_know]
+    assert top_ids == ["E-2"]
+    assert "E-1" in more_ids  # demoted, not dropped
+
+
+def test_decision_value_selection_is_computed_before_render_readiness():
+    """The render-readiness gate only ever swaps stories *after* selection
+    -- decision-value ranking itself (which family wins a coverage/fill
+    slot) is entirely unaffected by summary availability, matching "summary
+    availability must not change the initial decision-value ordering
+    before enrichment has been attempted." Here E-1 (higher score, no
+    summary) still wins the coverage/fill competition over E-3 (a lower-
+    score, unrelated-domain family with a real summary) and is selected at
+    all -- it just can't hold the TOP slot once render-readiness is
+    checked, and is demoted rather than replaced by a family that never
+    would have qualified for selection on its own."""
+    candidates = [
+        _item("E-1", "Headline with no supporting sentence", "AI & Semiconductors", 95, domain="a.test",
+              excerpt="Headline with no supporting sentence"),
+        _item("E-2", "Second story with a real summary", "AI & Semiconductors", 80, domain="b.test",
+              excerpt="This is a distinct, complete supporting sentence."),
+        _item("E-3", "Third, much lower-value story", "AI & Semiconductors", 10, domain="c.test",
+              excerpt="This is also a distinct, complete supporting sentence."),
+    ]
+    result = select_daily_stories(candidates, generic_terms=_GENERIC_TERMS)
+    all_ids = {s.event_id for s in result.all_stories}
+    assert all_ids == {"E-1", "E-2", "E-3"}  # AI cap is 2, but render-readiness demotion adds E-3 as a 3rd
+    assert [s.event_id for s in result.top_stories] == ["E-2", "E-3"]
+    assert [s.event_id for s in result.more_to_know] == ["E-1"]
 
 
 # --- clickable links / safe escaping ----------------------------------------

@@ -21,7 +21,8 @@ from __future__ import annotations
 import html
 
 from news_intel.pipeline.daily_selection import SelectionResult, Story
-from news_intel.pipeline.summary_quality import extract_summary
+from news_intel.pipeline.render_readiness import chinese_takeaway, why_it_matters
+from news_intel.pipeline.summary_quality import best_available_summary, extract_summary
 
 # Backward-compatible alias -- the extraction logic now lives in
 # pipeline/summary_quality.py (shared with daily_selection.py's TOP-
@@ -44,6 +45,14 @@ def _primary_source(item: dict) -> dict | None:
     return sources[0] if sources and sources[0].get("url") else None
 
 
+def _display_url(source: dict) -> str:
+    """2026-08-15 publisher-family repair: the verified original article
+    when event_repo.event_sources resolved one (`display_url`), else the
+    stored discovery URL -- never a URL this module invents. Falls back to
+    `url` for callers/fixtures predating the display_url field."""
+    return source.get("display_url") or source["url"]
+
+
 def _source_labels(story: Story) -> list[tuple[str, str]]:
     """Up to two (name, url) pairs -- the primary story's source, plus its
     linked secondary source if the family had one (2026-08-11: the second
@@ -52,11 +61,11 @@ def _source_labels(story: Story) -> list[tuple[str, str]]:
     labels: list[tuple[str, str]] = []
     primary_src = _primary_source(story.primary)
     if primary_src:
-        labels.append((primary_src.get("publisher") or "Source", primary_src["url"]))
+        labels.append((primary_src.get("publisher") or "Source", _display_url(primary_src)))
     if story.secondary:
         secondary_src = _primary_source(story.secondary)
         if secondary_src and secondary_src["url"] != (primary_src or {}).get("url"):
-            labels.append((secondary_src.get("publisher") or "Source", secondary_src["url"]))
+            labels.append((secondary_src.get("publisher") or "Source", _display_url(secondary_src)))
     return labels[:2]
 
 
@@ -69,23 +78,22 @@ def _source_line(story: Story) -> str | None:
 
 
 def _best_available_summary(story: Story) -> str | None:
-    """Tries the primary source's excerpt first, then the secondary's
-    (2026-08-14: "attempt to resolve and summarize the higher-value event
-    from its valid original source first" -- a family whose highest-ranked
-    member has a poorly-formatted excerpt but whose linked secondary
-    source has a clean one should not lose its summary over that)."""
-    title = story.primary.get("title", "")
-    summary = summarize(story.primary.get("excerpt"), title)
-    if summary:
-        return summary
-    if story.secondary:
-        return summarize(story.secondary.get("excerpt"), title)
-    return None
+    return best_available_summary(story.primary, story.secondary)
 
 
 def _render_top_story(index: int, story: Story) -> list[str]:
+    """2026-08-15 render-readiness repair: pipeline/daily_selection.py's
+    _apply_render_readiness_gate already guarantees every story reaching
+    this function has a complete "what happened" summary from at least one
+    of its sources -- a story that didn't was demoted to MORE TO KNOW and
+    replaced before this renders, so the old internal-diagnostic
+    placeholder ("No complete source-supported summary available") can
+    never legitimately appear here anymore. "Why it matters" and the
+    Chinese takeaway are deterministic, template-based syntheses of
+    already-verified structured facts (see pipeline/render_readiness.py's
+    docstring for exactly what that does and does not claim)."""
     primary_src = _primary_source(story.primary)
-    title_url = primary_src["url"] if primary_src else None
+    title_url = _display_url(primary_src) if primary_src else None
     lines = [
         "",
         f"{index}. {_link(story.primary.get('title', '(untitled)'), title_url)}",
@@ -94,13 +102,8 @@ def _render_top_story(index: int, story: Story) -> list[str]:
     summary = _best_available_summary(story)
     if summary:
         lines.append(_escape(summary))
-    else:
-        # 2026-08-14: a TOP story earns its slot on decision value, not
-        # summary availability -- "record the failure explicitly rather
-        # than silently promoting a trivial story" means this story still
-        # occupies TOP with an honest note, not a fabricated sentence and
-        # not demotion to make room for a less material story.
-        lines.append("(No complete source-supported summary available — see original link.)")
+    lines.append(_escape(why_it_matters(story.primary, story.secondary, story.category)))
+    lines.append(_escape(chinese_takeaway(story.category)))
     if story.update_note:
         lines.append(_escape(story.update_note))
     source_line = _source_line(story)
@@ -111,7 +114,7 @@ def _render_top_story(index: int, story: Story) -> list[str]:
 
 def _render_more_to_know(story: Story) -> str:
     primary_src = _primary_source(story.primary)
-    title_url = primary_src["url"] if primary_src else None
+    title_url = _display_url(primary_src) if primary_src else None
     title_link = _link(story.primary.get("title", "(untitled)"), title_url)
     parts = [f"• {title_link}"]
     if story.update_note:
