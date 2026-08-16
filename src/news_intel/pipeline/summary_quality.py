@@ -24,6 +24,15 @@ SUMMARY_MAX_CHARS = 280
 _SENTENCE_END_RE = re.compile(r"[.!?](?=\s|$)")
 _ELLIPSIS_SUFFIXES = ("...", "…")
 _REDUNDANCY_TRIGRAM_FLOOR = 0.75
+_FALLBACK_MIN_CHARS = 30
+# A truncation that cuts off immediately after a bare dollar figure is
+# categorically misleading, not just inelegant -- "$500" could be $500,
+# $500 million, or $500 billion, and the missing unit is exactly the part
+# that got cut. This is the original 2026-08-10 defect the strict
+# terminal-punctuation rule was built to catch; the fallback-clause
+# relaxation below must still reject it even though it no longer requires
+# terminal punctuation in general.
+_DANGLING_DOLLAR_RE = re.compile(r"\$\s?[\d,]+\.?\d*$")
 
 
 def _strip_trailing_ellipsis(text: str) -> str:
@@ -73,18 +82,43 @@ def extract_summary(excerpt: str | None, title: str, *, max_chars: int = SUMMARY
     if not excerpt:
         return None
     sentences = _complete_sentences(excerpt, max_chars)
-    if not sentences:
+    if sentences:
+        # Redundancy is judged on the leading sentence specifically -- a
+        # multi-sentence summary that merely *starts* by restating the title
+        # should drop that opening sentence, not be rejected wholesale.
+        if not _is_redundant_with_title(sentences[0], title):
+            return " ".join(sentences)
+        if len(sentences) > 1:
+            rest = " ".join(sentences[1:])
+            if rest and not _is_redundant_with_title(sentences[1], title):
+                return rest
         return None
-    # Redundancy is judged on the leading sentence specifically -- a
-    # multi-sentence summary that merely *starts* by restating the title
-    # should drop that opening sentence, not be rejected wholesale.
-    if not _is_redundant_with_title(sentences[0], title):
-        return " ".join(sentences)
-    if len(sentences) > 1:
-        rest = " ".join(sentences[1:])
-        if rest and not _is_redundant_with_title(sentences[1], title):
-            return rest
-    return None
+    return _fallback_clause(excerpt, title, max_chars)
+
+
+def _fallback_clause(excerpt: str, title: str, max_chars: int) -> str | None:
+    """2026-08-16 render-readiness repair: real Aug 15 production
+    candidates routinely have a genuine, substantive clause with no
+    terminal [.!?] at all (Techmeme's own excerpt formatting, e.g. "...
+    nears resolution of Meta separation" with no trailing period) or one
+    that trails off mid-clause behind an explicit "..."/"…" truncation
+    marker (e.g. "... a massive planned Ohio …"). The strict sentence-
+    punctuation rule above treated both as "no summary", which left every
+    TOP slot unfillable and forced an empty TOP section even though real,
+    unaltered source text was available. This uses that same stripped-
+    preamble text verbatim -- dropping only the explicit ellipsis
+    truncation marker itself and appending a period for readability -- a
+    formatting decision, never an invented word. A short/near-empty
+    remainder (e.g. the excerpt is nothing but the citation preamble)
+    still yields no summary, and it is still checked for redundancy with
+    the title exactly like a normal sentence would be."""
+    fallback = strip_citation_preamble(excerpt)
+    fallback = _strip_trailing_ellipsis(fallback[:max_chars]).strip()
+    if len(fallback) < _FALLBACK_MIN_CHARS or _is_redundant_with_title(fallback, title):
+        return None
+    if _DANGLING_DOLLAR_RE.search(fallback):
+        return None
+    return fallback if fallback[-1] in ".!?" else fallback + "."
 
 
 def has_complete_summary(item: dict) -> bool:

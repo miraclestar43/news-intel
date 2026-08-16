@@ -8,7 +8,7 @@ import sqlite3
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
-from news_intel.pipeline.citation import resolve_citation_publisher
+from news_intel.pipeline.citation import resolve_citation_publisher, strip_title_preamble
 from news_intel.pipeline.publisher_family import registrable_domain
 
 
@@ -148,6 +148,7 @@ def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
         SELECT r.id AS raw_item_id, r.title AS title, r.summary_excerpt AS excerpt,
                r.canonical_url AS url, r.origin_url AS origin_url, r.published_at AS published_at,
                r.origin_family AS origin_family, r.source_id AS source_id,
+               r.origin_title AS origin_title, r.origin_published_at AS origin_published_at,
                s.name AS publisher, s.tier AS tier
         FROM event_sources es
         JOIN raw_items r ON r.id = es.raw_item_id
@@ -199,6 +200,9 @@ def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
                 "origin_url": r["origin_url"],
                 "origin_verified": origin_verified,
                 "origin_family": origin_family,
+                "origin_title": r["origin_title"],
+                "origin_published_at": r["origin_published_at"],
+                "raw_title": r["title"],
             }
         )
     return results
@@ -216,6 +220,19 @@ def combined_text_for_event(conn: sqlite3.Connection, event_id: str) -> str:
     return " ".join(f"{r['title']} {r['excerpt'] or ''}" for r in rows)
 
 
+def _display_title(sources: list[dict], raw_title: str) -> str:
+    """2026-08-16 title-normalization repair: prefers the verified origin
+    article's own title (fetched at collection time from origin_url --
+    adapters/rss.py's _fetch_origin_metadata) when available, since that
+    is the *actual* published headline; otherwise strips a recognized
+    aggregator preamble ("Sources:", "Source:", "More:", an "Author /
+    Publication:" citation) from the stored title. Never touches the
+    source label or URL -- purely a display-text transform."""
+    if sources and sources[0].get("origin_title"):
+        return sources[0]["origin_title"]
+    return strip_title_preamble(raw_title)
+
+
 def event_as_digest_dict(conn: sqlite3.Connection, event_row: sqlite3.Row) -> dict:
     sources = event_sources(conn, event_row["id"])
     try:
@@ -224,7 +241,7 @@ def event_as_digest_dict(conn: sqlite3.Connection, event_row: sqlite3.Row) -> di
         entities = []
     return {
         "event_id": event_row["id"],
-        "title": event_row["primary_title"],
+        "title": _display_title(sources, event_row["primary_title"]),
         "category": event_row["category"] or "uncategorized",
         "excerpt": sources[0]["excerpt"] if sources else "",
         "sources": sources,

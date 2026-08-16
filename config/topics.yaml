@@ -64,7 +64,14 @@ groups:
       - export control
       - entity list
       - sanction
-      - CHIPS
+      # 2026-08-16 fix: bare "CHIPS" matched case-insensitively against the
+      # ordinary word "chips" (e.g. "bargaining chips") -- classify_relevance's
+      # word-boundary matcher is always case-insensitive, so a short acronym
+      # that collides with a common English word needs enough context to be
+      # unambiguous, same as trade_policy_context's contextual "tariff"
+      # handling. "CHIPS Act" is how this legislation is actually referred to
+      # in real text; a bare "CHIPS" is never how it's written.
+      - CHIPS Act
       - Section 301
       - BIS
       - AI regulation

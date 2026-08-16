@@ -48,6 +48,39 @@ def resolve_citation_publisher(excerpt: str | None) -> str | None:
     return publisher
 
 
+# 2026-08-16 title-normalization repair: "Sources: China plans..." and
+# "Sources: Nvidia in talks..." were delivered verbatim as the rendered
+# TOP/MORE headline -- "Sources:" is Techmeme's own aggregation cue
+# ("this is sourced reporting, not an official release"), never part of
+# either original article's actual headline. General, not title-specific:
+# recognizes the same bare-word aggregation cues Techmeme uses
+# (Sources/Source/More) plus the "Author / Publication:" citation format
+# already handled for excerpts above -- never strips an arbitrary
+# "Word:" prefix that could be a legitimate part of a real headline
+# (e.g. "Analysis: ..." or "NVIDIA Q3: record revenue" are left alone).
+_KNOWN_TITLE_PREAMBLE_WORDS = frozenset({"sources", "source", "more"})
+
+
+def strip_title_preamble(title: str) -> str:
+    """Drops a recognized aggregator preamble ("Sources:", "Source:",
+    "More:", or an "Author / Publication:" citation prefix) from the start
+    of a title, returning the title unchanged if no recognized preamble is
+    present -- never touches a title that merely happens to contain an
+    early colon for other reasons."""
+    if not title:
+        return title
+    match = _CITATION_PREFIX_RE.match(title)
+    if not match:
+        return title
+    prefix = match.group(1).strip()
+    is_known_word = prefix.lower() in _KNOWN_TITLE_PREAMBLE_WORDS
+    is_author_pub = "/" in prefix
+    if not (is_known_word or is_author_pub):
+        return title
+    rest = title[match.end() :].strip()
+    return rest or title
+
+
 def strip_citation_preamble(excerpt: str) -> str:
     """Drops a leading "Name: <restated headline> —" citation prefix
     so summarization windows over the actual new sentence instead of a

@@ -66,6 +66,8 @@ class NormalizedItem:
         "content_hash",
         "origin_family",
         "origin_url",
+        "origin_title",
+        "origin_published_at",
         "metadata",
     )
 
@@ -92,5 +94,7 @@ def normalize(item: CollectedItem, *, excerpt_max_chars: int, now: datetime | No
         content_hash=content_hash(norm_title, excerpt),
         origin_family=item.origin_family,
         origin_url=item.origin_url,
+        origin_title=item.origin_title,
+        origin_published_at=item.origin_published_at,
         metadata=item.metadata,
     )

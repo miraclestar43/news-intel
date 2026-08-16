@@ -77,6 +77,41 @@ def _has_material_consequence(item: dict) -> bool:
     return not is_low_consequence_event_type(item.get("title", ""), primary.get("excerpt"))
 
 
+# 2026-08-16 freshness repair: a discovery aggregator (Techmeme) can
+# "republish" -- carry in its own daily roundup, with today's own pubDate
+# -- an article that is genuinely several days old. Exact regression: a
+# Point2 Series B story that SDxCentral itself published 2026-08-10 was
+# presented as 2026-08-15 news, because raw_items.published_at for a
+# Techmeme-discovered item is Techmeme's own roundup timestamp, never the
+# origin article's. Only fires when origin_published_at was actually
+# verified by a live fetch of the origin page (adapters/rss.py's
+# _fetch_origin_metadata, attempted at collection time); an unverifiable
+# origin (paywalled/bot-blocked -- confirmed live against ft.com, which
+# returns a 403 "Security Verification" page with no metadata at all -- or
+# any non-aggregator source, which never attempts this fetch) falls back
+# to the existing published_at-based window membership unchanged. Failing
+# an unverifiable origin closed would incorrectly exclude genuinely fresh
+# same-day stories from paywalled outlets (the Manus/FT and Nvidia/The
+# Information stories in this same regression) purely because their
+# publisher blocks metadata scraping -- verification failure is not
+# evidence of staleness.
+_STALE_ORIGIN_BUFFER = timedelta(hours=48)
+
+
+def _is_fresh(item: dict, window_end: datetime) -> bool:
+    primary = item["sources"][0] if item.get("sources") else {}
+    origin_published_at = primary.get("origin_published_at")
+    if not origin_published_at:
+        return True
+    try:
+        origin_dt = datetime.fromisoformat(origin_published_at)
+    except ValueError:
+        return True
+    if origin_dt.tzinfo is None:
+        origin_dt = origin_dt.replace(tzinfo=UTC)
+    return origin_dt >= (window_end - _STALE_ORIGIN_BUFFER)
+
+
 # Cross-day novelty lookback (2026-08-12 repair): "at least the previous
 # seven Pacific digest dates" -- 8 calendar days back from the eligibility
 # window comfortably covers 7+ prior daily digests even accounting for a
@@ -171,6 +206,7 @@ def _select_events(conn: sqlite3.Connection, config: AppConfig, now: datetime) -
         and _has_human_readable_url(c)
         and _is_discrete_event(c)
         and _has_material_consequence(c)
+        and _is_fresh(c, now)
     ]
 
     generic_terms = set(config.topics.trend_identity.generic_anchor_terms)

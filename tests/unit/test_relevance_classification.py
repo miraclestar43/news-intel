@@ -188,3 +188,24 @@ def test_title_with_no_vocabulary_falls_back_to_full_text_classification():
     )
     result = classify_relevance(f"{title} {excerpt}", TOPICS, MULTIPLIERS, title=title)
     assert result.bucket != UNCLASSIFIED_BUCKET
+
+
+
+def test_bare_chips_word_does_not_match_chips_act_acronym():
+    """2026-08-16 defect (found during the Aug 15 BBC World audit): a
+    Taliban/Afghanistan feature mentioning "does the West have any
+    bargaining chips left" was classified AI & Semiconductors purely
+    because "chips" matched the CHIPS Act policy vocabulary term
+    case-insensitively -- classify_relevance's word-boundary matcher is
+    always case-insensitive, so a bare acronym that collides with an
+    ordinary English word needs more context, same as bare "tariff"."""
+    result = _classify(
+        "Five years after the Taliban swept to power, does the West have any influence? "
+        "many are asking whether the West has any bargaining chips left"
+    )
+    assert result.bucket == UNCLASSIFIED_BUCKET
+
+
+def test_chips_act_phrase_still_classifies_as_ai_semiconductor():
+    result = _classify("Congress debates funding levels for the CHIPS Act semiconductor subsidy program")
+    assert result.bucket == "ai_semiconductor_export_controls"

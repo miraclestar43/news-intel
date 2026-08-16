@@ -226,17 +226,15 @@ def test_top_may_have_fewer_than_three_stories_rather_than_violate_family_cap():
 # --- TOP requires a complete source-supported summary (2026-08-13) ----------
 
 
-def test_render_readiness_gate_demotes_missing_summary_and_promotes_next():
-    """2026-08-15 repair: a candidate with no complete-sentence excerpt
+def test_render_readiness_gate_drops_missing_summary_and_promotes_next():
+    """2026-08-16 repair: a candidate with no complete-sentence excerpt
     (enrichment attempted -- daily_selection.Story.render_ready tries the
     primary source, exactly what happened here) must not occupy a TOP slot
-    at all -- the old "stays in TOP with an honest placeholder note"
-    behavior is what this round's render-readiness gate replaces, since
-    that placeholder is not acceptable reader-facing content
-    (delivery/daily_production_formatter.py no longer renders it). E-1 is
-    demoted to MORE TO KNOW (still delivered -- MORE TO KNOW never needed
-    a summary); E-2, the next render-ready candidate, is promoted into
-    TOP."""
+    at all -- and, per the 2026-08-15 regression (three render-failed
+    candidates left TOP entirely empty while still occupying MORE TO
+    KNOW), it must not be silently demoted into MORE TO KNOW either. It is
+    dropped from delivery entirely; E-2, the next render-ready candidate,
+    is promoted into TOP."""
     candidates = [
         _item("E-1", "Headline with no supporting sentence", "AI & Semiconductors", 95, domain="a.test",
               excerpt="Headline with no supporting sentence"),  # no ending punctuation -> no complete sentence
@@ -247,20 +245,22 @@ def test_render_readiness_gate_demotes_missing_summary_and_promotes_next():
     top_ids = [s.event_id for s in result.top_stories]
     more_ids = [s.event_id for s in result.more_to_know]
     assert top_ids == ["E-2"]
-    assert "E-1" in more_ids  # demoted, not dropped
+    assert "E-1" not in more_ids  # dropped, not silently demoted
+    assert "E-1" not in top_ids
 
 
-def test_decision_value_selection_is_computed_before_render_readiness():
-    """The render-readiness gate only ever swaps stories *after* selection
-    -- decision-value ranking itself (which family wins a coverage/fill
-    slot) is entirely unaffected by summary availability, matching "summary
-    availability must not change the initial decision-value ordering
-    before enrichment has been attempted." Here E-1 (higher score, no
-    summary) still wins the coverage/fill competition over E-3 (a lower-
-    score, unrelated-domain family with a real summary) and is selected at
-    all -- it just can't hold the TOP slot once render-readiness is
-    checked, and is demoted rather than replaced by a family that never
-    would have qualified for selection on its own."""
+def test_render_ready_backfill_replaces_dropped_candidate_not_just_next_lower_family():
+    """The render-readiness gate runs on the whole `selected` list before
+    the TOP/MORE split, so decision-value ranking itself (which family
+    wins a coverage/fill slot) is entirely unaffected by summary
+    availability, matching "summary availability must not change the
+    initial decision-value ordering before enrichment has been attempted."
+    Here E-1 (highest score, no summary) still wins the AI-cap fill
+    competition over E-3 (a much lower-score family) -- it just can't
+    survive the render-readiness gate, and E-3 (render-ready, and now
+    validly addable once E-1's AI-cap slot frees up) backfills in its
+    place rather than E-1 being kept in MORE regardless of its missing
+    summary."""
     candidates = [
         _item("E-1", "Headline with no supporting sentence", "AI & Semiconductors", 95, domain="a.test",
               excerpt="Headline with no supporting sentence"),
@@ -271,9 +271,39 @@ def test_decision_value_selection_is_computed_before_render_readiness():
     ]
     result = select_daily_stories(candidates, generic_terms=_GENERIC_TERMS)
     all_ids = {s.event_id for s in result.all_stories}
-    assert all_ids == {"E-1", "E-2", "E-3"}  # AI cap is 2, but render-readiness demotion adds E-3 as a 3rd
+    assert all_ids == {"E-2", "E-3"}  # E-1 dropped for failing render-readiness, not kept regardless
     assert [s.event_id for s in result.top_stories] == ["E-2", "E-3"]
-    assert [s.event_id for s in result.more_to_know] == ["E-1"]
+    assert result.more_to_know == []
+
+
+def test_more_to_know_never_populated_while_top_is_empty():
+    """Explicit invariant (2026-08-16): TOP must never be empty while MORE
+    TO KNOW is non-empty. When every candidate fails render-readiness,
+    both sections are empty -- underfilling, not inversion."""
+    candidates = [
+        _item("E-1", "Headline with no supporting sentence", "AI & Semiconductors", 95, domain="a.test",
+              excerpt="Headline with no supporting sentence"),
+        _item("E-2", "Another headline with no supporting sentence", "Markets & Economy", 90, domain="b.test",
+              excerpt="Another headline with no supporting sentence"),
+    ]
+    result = select_daily_stories(candidates, generic_terms=_GENERIC_TERMS)
+    assert result.top_stories == []
+    assert result.more_to_know == []
+
+
+def test_top_gets_min_three_selected_count_render_ready_events():
+    """Explicit invariant (2026-08-16): the highest-ranked min(3,
+    selected_count) render-ready events belong in TOP. With five
+    render-ready, distinct-domain AI candidates selected, TOP holds
+    exactly 3 (MAX_TOP_STORIES) and the remaining 2 land in MORE."""
+    candidates = [
+        _item(f"E-{i}", f"Distinct headline number {i} for this story", "Technology", 90 - i,
+              domain=f"domain{i}.test", excerpt=f"This is a distinct, complete supporting sentence number {i}.")
+        for i in range(5)
+    ]
+    result = select_daily_stories(candidates, generic_terms=_GENERIC_TERMS, max_total=8)
+    assert len(result.top_stories) == 3
+    assert [s.event_id for s in result.top_stories] == ["E-0", "E-1", "E-2"]
 
 
 # --- clickable links / safe escaping ----------------------------------------
@@ -344,6 +374,54 @@ def test_summary_uses_earlier_complete_sentence_before_ellipsis():
     excerpt = "NVIDIA announced a new partnership today. More details are forthcoming ..."
     result = summarize(excerpt, "NVIDIA partnership headline")
     assert result == "NVIDIA announced a new partnership today."
+
+
+def test_summary_fallback_clause_used_when_no_terminal_punctuation_at_all():
+    """2026-08-16 repair, exact Aug 15 Manus reproduction: a real, genuine
+    clause with no [.!?] anywhere (Techmeme's own formatting) is real,
+    unaltered source content, not a truncated fragment -- the strict
+    sentence-punctuation rule previously rejected this outright, leaving
+    every TOP slot unfillable."""
+    excerpt = (
+        "Zijing Wu / Financial Times : Sources: Some restated headline here — Chief executive "
+        "Xiao Hong plans to return to Singapore as AI company nears resolution of Meta separation"
+    )
+    result = summarize(excerpt, "China plans to lift a travel ban on Manus founders")
+    assert result == (
+        "Chief executive Xiao Hong plans to return to Singapore as AI company nears "
+        "resolution of Meta separation."
+    )
+
+
+def test_summary_fallback_clause_strips_ellipsis_but_keeps_the_clause():
+    """Exact Aug 15 Nvidia/SB Energy reproduction: the excerpt trails off
+    behind an explicit '…' truncation marker, but the clause up to that
+    point is genuine, substantive source text -- used verbatim with the
+    truncation marker itself dropped, not the words before it."""
+    excerpt = (
+        "The Information : Sources: restated headline — Nvidia is in talks to invest as much as "
+        "$3 billion in SB Energy, the Softbank Group-backed developer of a massive planned Ohio …"
+    )
+    result = summarize(excerpt, "Nvidia in talks to invest in SB Energy")
+    assert result == (
+        "Nvidia is in talks to invest as much as $3 billion in SB Energy, the Softbank "
+        "Group-backed developer of a massive planned Ohio."
+    )
+
+
+def test_summary_fallback_clause_still_rejects_dangling_dollar_figure():
+    """The fallback relaxation must not resurrect the original 2026-08-10
+    defect: a truncation that cuts off immediately after a bare dollar
+    amount hides the unit (million/billion/trillion) and is categorically
+    misleading, not just inelegant -- still rejected even under the
+    relaxed no-terminal-punctuation fallback."""
+    excerpt = "NVIDIA announced strategic partnerships to mobilize over $500 ..."
+    assert summarize(excerpt, "NVIDIA Partners announcement") is None
+
+
+def test_summary_fallback_clause_rejects_short_remainder():
+    excerpt = "Publication : Restated headline text goes here — OK"
+    assert summarize(excerpt, "Restated headline text goes here") is None
 
 
 def test_summary_omitted_when_title_redundant():

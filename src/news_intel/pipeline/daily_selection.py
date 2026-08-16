@@ -36,11 +36,18 @@ Selection order:
      material but single-sourced story purely on source tier; final_score
      remains the qualification threshold, unchanged, but is no longer the
      ranking key once a candidate pool is already qualified).
-  5. Summary enrichment -- attempted for every selected story regardless of
-     rank; a story that already earned its slot on decision value is never
-     displaced by a lower-value story just because its summary extraction
-     failed (see _render_top_story's explicit "no summary available" note
-     in delivery/daily_production_formatter.py).
+  5. Render-readiness gate (_apply_render_readiness_gate, 2026-08-16
+     repair) -- decision-value ordering from steps 3-4 is computed and
+     fixed BEFORE this runs, so summary availability never influences
+     *which* families were selected; but a selected story for which
+     enrichment (primary source, then linked secondary source --
+     pipeline/summary_quality.best_available_summary) still produces no
+     complete "what happened" text is dropped from delivery and
+     backfilled with the next qualified, render-ready family (re-checked
+     against the AI-family/publisher-family caps). Runs before the TOP/
+     MORE split specifically so TOP can never end up empty while MORE is
+     non-empty -- see that function's docstring for the exact 2026-08-15
+     regression this replaced.
   6. Final rendering validation -- the caller (jobs/daily.py) already
      re-validates category/URL/length before ever contacting Telegram;
      this module's caps are enforced constructively, not just checked.
@@ -270,17 +277,17 @@ def _finalize_top_and_more(selected: list[Story], max_total: int) -> tuple[list[
     enforced when `selected` was built) or is dropped if MORE TO KNOW is
     already at max_total.
 
-    2026-08-14 repair: summary availability is deliberately NOT a TOP-
-    eligibility gate here anymore -- "summary availability must not cause a
-    lower-value story to outrank a higher-value event." The 2026-08-13
-    version of this rule demoted any story with a poorly-formatted excerpt
-    straight to MORE TO KNOW regardless of how material it was, which is
-    exactly what let a routine tutorial win a TOP slot over a genuine
-    earnings beat whose Techmeme excerpt happened to be cut off mid-
-    sentence. The renderer (delivery/daily_production_formatter.py) shows
-    an explicit "no summary available" note for a TOP story with no
-    extractable sentence, rather than silently promoting a lower-value
-    story to fill the gap.
+    2026-08-14/2026-08-16 repair: summary availability never influences
+    which families were *selected* or their decision-value order --
+    "summary availability must not cause a lower-value story to outrank a
+    higher-value event." That ordering question is fully settled by the
+    time `selected` reaches this function; render-readiness (whether a
+    story has enough source text to actually render, as opposed to which
+    story is more material) is enforced separately, by
+    _apply_render_readiness_gate, which runs on `selected` *before* this
+    split -- so by the time this function sees it, every story here has
+    already passed that gate and is safe to place in TOP with real
+    content, never an internal placeholder.
 
     TOP may end up with fewer than MAX_TOP_STORIES entries -- never padded
     with a story that fails the domain constraint."""
@@ -300,60 +307,43 @@ def _finalize_top_and_more(selected: list[Story], max_total: int) -> tuple[list[
     return top, more
 
 
-def _apply_render_readiness_gate(
-    top: list[Story], more: list[Story], families: list[Story], max_top: int
-) -> tuple[list[Story], list[Story]]:
-    """2026-08-15 repair: a story that earned its TOP slot on decision value
-    (see module docstring, stage 4) but for which enrichment -- primary
-    source, then linked secondary source, the only two sources this
-    pipeline has for it -- still produces no complete "what happened"
-    sentence must not occupy that slot with a placeholder. It is demoted
-    (never dropped outright -- MORE TO KNOW never required a full account,
-    just a title and a truthful link, so it can still inform the reader
-    there). The vacated slot is backfilled, in order: first from MORE TO
-    KNOW's own already-selected, already-cap-compliant, decision-value-
-    ordered stories; then from any other qualified family that lost an
-    earlier cap competition (e.g. the AI-family cap) but would validly fit
-    now that a slot is open -- re-checked against _can_add so this can
-    never bypass the AI-family or per-publisher-family caps. Ordering
-    itself was already fixed before this gate runs -- this only ever swaps
-    a render-failed story for a render-ready one, never reorders on any
-    other basis."""
-    ready_top: list[Story] = []
-    demoted: list[Story] = []
-    for story in top:
-        if story.render_ready:
-            ready_top.append(story)
-        else:
-            demoted.append(story)
-    if not demoted:
-        return top, more
+def _apply_render_readiness_gate(selected: list[Story], families: list[Story]) -> list[Story]:
+    """2026-08-16 repair: runs BEFORE the TOP/MORE split (not after), and
+    filters+backfills the whole `selected` list rather than swapping
+    within an already-fixed TOP/MORE partition. The prior post-split
+    design demoted a render-failed TOP story into MORE TO KNOW and tried
+    to backfill TOP from MORE's own leftovers or from unselected
+    families -- but when *every* selected story failed render-readiness
+    (the exact 2026-08-15 regression: all three candidates' excerpts had
+    no [.!?]-terminated sentence under the pre-2026-08-16 stricter rule),
+    there was nothing render-ready anywhere to promote, leaving TOP empty
+    while the render-failed stories still sat, un-demoted-from-delivery,
+    in MORE TO KNOW.
 
-    remaining_more = list(more)
-    already_selected_ids = {s.event_id for s in top} | {s.event_id for s in more}
-    already_selected_pool = [s for s in remaining_more if s.render_ready]
-    new_pool = [f for f in families if f.event_id not in already_selected_ids and f.render_ready]
-    top_domains = {s.domain for s in ready_top if s.domain}
-
-    def _try_promote(candidate: Story, *, needs_cap_check: bool) -> bool:
-        if len(ready_top) >= max_top:
-            return False
-        if candidate.domain and candidate.domain in top_domains:
-            return False
-        if needs_cap_check and not _can_add(candidate, ready_top + remaining_more):
-            return False
-        ready_top.append(candidate)
-        if candidate.domain:
-            top_domains.add(candidate.domain)
-        return True
-
-    for candidate in already_selected_pool:
-        if _try_promote(candidate, needs_cap_check=False) and candidate in remaining_more:
-            remaining_more.remove(candidate)
-    for candidate in new_pool:
-        _try_promote(candidate, needs_cap_check=True)
-
-    return ready_top, demoted + remaining_more
+    This version can only ever produce an empty result when the render-
+    ready pool is genuinely empty everywhere -- in which case
+    _finalize_top_and_more's TOP and MORE are *both* empty, never one
+    without the other. A render-failed candidate is dropped from delivery
+    entirely here (not silently demoted) and, exactly like the original
+    stage-4 fill, backfilled from the next qualified family that is
+    render-ready and still respects the AI-family/publisher-family caps
+    (re-checked fresh against the surviving set, so a candidate
+    previously capped out by a now-dropped render-failed story can take
+    its place)."""
+    ready = [s for s in selected if s.render_ready]
+    if len(ready) == len(selected):
+        return selected
+    ready_ids = {s.event_id for s in ready}
+    for candidate in families:
+        if len(ready) >= len(selected):
+            break
+        if candidate.event_id in ready_ids or not candidate.render_ready:
+            continue
+        if _can_add(candidate, ready):
+            ready.append(candidate)
+            ready_ids.add(candidate.event_id)
+    ready.sort(key=lambda s: s.decision_value, reverse=True)
+    return ready
 
 
 def select_daily_stories(
@@ -429,6 +419,6 @@ def select_daily_stories(
             non_ai_count += 1
         selected.sort(key=lambda s: s.decision_value, reverse=True)
 
+    selected = _apply_render_readiness_gate(selected, families)
     top_stories, more_to_know = _finalize_top_and_more(selected, max_total)
-    top_stories, more_to_know = _apply_render_readiness_gate(top_stories, more_to_know, families, MAX_TOP_STORIES)
     return SelectionResult(top_stories=top_stories, more_to_know=more_to_know)

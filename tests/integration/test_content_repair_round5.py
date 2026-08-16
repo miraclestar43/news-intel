@@ -117,17 +117,16 @@ def test_source_label_domain_consistency_no_false_provenance(config, conn):
     assert "Wall Street Journal" in label  # the citation is still surfaced, just honestly framed
 
 
-def test_render_readiness_gate_demotes_unsummarizable_story_and_backfills_top(config, conn):
-    """2026-08-15 repair: a high-decision-value story whose excerpt yields
-    no complete sentence from any source must NOT render with the old
-    internal-diagnostic placeholder in TOP (that placeholder is not
-    reader-facing content). It is demoted to MORE TO KNOW instead -- still
-    delivered, just not as an unsupported TOP headline -- and the next
-    qualified, render-ready story backfills the vacated TOP slot. This
-    supersedes the pre-2026-08-15 expectation (a summary-less story stayed
-    in TOP with an honest placeholder note): the placeholder mechanism
-    itself is what this round eliminates, while the underlying principle
-    it protected -- decision-value ordering is computed before, and
+def test_render_readiness_gate_drops_unsummarizable_story_and_backfills_top(config, conn):
+    """2026-08-16 repair: a high-decision-value story whose excerpt yields
+    no complete sentence/fallback clause from any source must NOT render
+    with the old internal-diagnostic placeholder in TOP (not reader-facing
+    content), and -- per the exact 2026-08-15 regression, where three
+    render-failed candidates left TOP entirely empty while still occupying
+    MORE TO KNOW -- it must not be silently demoted into MORE TO KNOW
+    either. It is dropped from delivery entirely, and the next qualified,
+    render-ready story backfills the vacated TOP slot. The principle this
+    always protected -- decision-value ordering is computed before, and
     unaffected by, summary availability -- is unchanged and covered by
     tests/unit/test_daily_selection_and_formatting.py's render-readiness
     gate tests."""
@@ -164,8 +163,7 @@ def test_render_readiness_gate_demotes_unsummarizable_story_and_backfills_top(co
     summary = run_daily(config, conn, dry_run=True, now=now)
     top_section = summary.rendered_text.split("MORE TO KNOW")[0]
     assert "No complete source-supported summary available" not in summary.rendered_text
-    assert "NVIDIA data center supplier" not in top_section  # demoted, not rendered with a placeholder
-    assert "NVIDIA data center supplier" in summary.rendered_text  # still delivered, in MORE TO KNOW
+    assert "NVIDIA data center supplier" not in summary.rendered_text  # dropped, not demoted anywhere
     assert "Cerebras" in top_section  # backfilled the vacated TOP slot
     # the low-value tutorial fails the event-type gate entirely
     assert "prompt engineering" not in summary.rendered_text.lower()

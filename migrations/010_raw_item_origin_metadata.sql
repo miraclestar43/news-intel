@@ -1,0 +1,31 @@
+-- 2026-08-16 content-quality repair round 7: freshness and title-cleanup
+-- regression (the Aug 10 SDxCentral/Point2 article presented as Aug 15
+-- news; "Sources:" aggregator preambles left in delivered titles).
+--
+-- origin_title -- the verified original article's own <title>/og:title,
+-- fetched from origin_url (see adapters/rss.py's _fetch_origin_metadata)
+-- when resolvable. NULL when unresolved, blocked (paywall/bot-check --
+-- confirmed live against ft.com, which returns a 403 "Security
+-- Verification" page with no metadata at all), or not attempted (only
+-- attempted for citation-passthrough/aggregator sources with a resolved
+-- origin_url in the first place).
+--
+-- origin_published_at -- the origin article's own publish timestamp,
+-- parsed from article:published_time / a dated <time> element / JSON-LD
+-- datePublished on the origin page. This is what genuinely distinguishes
+-- "discovered/republished by the aggregator today" (raw_items.published_at
+-- for a Techmeme-sourced item is TECHMEME's own pubDate, not the origin
+-- article's) from "actually published today" -- confirmed against the
+-- live SDxCentral page, which correctly yields 2026-08-10, five days
+-- before Techmeme's own roundup entry.
+--
+-- Both NULL for the large majority of rows (every non-aggregator source,
+-- where the existing published_at is already the origin's own time and
+-- needs no separate verification; and any aggregator item where the fetch
+-- failed, was blocked, or found no parseable date) -- the freshness gate
+-- (jobs/daily.py) only tightens behavior when a *verified* origin date
+-- disagrees with the aggregator's own timestamp, never when verification
+-- is simply unavailable (a paywalled/bot-blocked origin must not be
+-- structurally excluded merely for being unverifiable).
+ALTER TABLE raw_items ADD COLUMN origin_title TEXT;
+ALTER TABLE raw_items ADD COLUMN origin_published_at TEXT;
