@@ -1,8 +1,20 @@
 [Unit]
-Description=pi-news-intel: weekly brief, Sun 22:00 America/Los_Angeles (Phase 3 — not yet implemented)
+Description=pi-news-intel: weekly brief, Sun 22:00 America/Los_Angeles (DST-aware)
 
 [Timer]
+# Timezone-aware directly (NOT a fixed-UTC OnCalendar like the daily
+# timer's current 05:00 UTC expression) -- systemd itself resolves
+# "America/Los_Angeles" against the correct DST offset at each firing, so
+# this stays correct across both the Nov 2026 fall-back and any future
+# spring-forward transition with no manual adjustment.
 OnCalendar=Sun *-*-* 22:00:00 America/Los_Angeles
+# Persistent=true is required (task spec), but the production weekly
+# entrypoint itself (jobs/weekly_production.py's _is_valid_weekly_window)
+# independently rejects execution outside an explicitly valid Sunday
+# Pacific window BEFORE any job-run/digest/delivery record is created --
+# this is what actually prevents a late catch-up firing (e.g. installing
+# this timer days after a missed Sunday) from producing a delayed send.
+# Never rely on systemd timer behavior alone for this protection.
 Persistent=true
 AccuracySec=1min
 

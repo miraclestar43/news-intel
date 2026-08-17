@@ -18,7 +18,8 @@ from datetime import time as dtime
 from zoneinfo import ZoneInfo
 
 from news_intel import db
-from news_intel.delivery.telegram import ChatNotAllowedError, TelegramSender
+from news_intel.delivery import weekly_delivery_repo
+from news_intel.delivery.telegram import ChatNotAllowedError, TelegramSender, chat_id_hash
 from news_intel.delivery.weekly_formatter import render_weekly, split_weekly
 from news_intel.event_repo import add_digest_events, create_digest, events_in_window
 from news_intel.jobs import job_runs
@@ -53,6 +54,8 @@ class WeeklySummary:
     skipped_lock: bool = False
     skipped_duplicate: bool = False
     week_label: str = ""
+    fail_closed: bool = False
+    fail_reason: str | None = None
 
 
 def week_window(now_pt: datetime) -> tuple[datetime, datetime]:
@@ -108,6 +111,7 @@ def run_weekly(
     chat_id: int | None = None,
     dry_run: bool = True,
     now: datetime | None = None,
+    resume_authorized: bool = False,
 ) -> WeeklySummary:
     now = now or datetime.now(UTC)
     tz = ZoneInfo(config.policy.timezone)
@@ -212,30 +216,128 @@ def run_weekly(
 
         parts = split_weekly(rendered_text, date_label, config.policy.digests.telegram_hard_limit_chars)
 
-        chat_suffix = ""
+        chat_suffix = chat_id_hash(chat_id) if chat_id is not None else ""
         sent = False
         sent_dry_run = True
-        if chat_id is not None:
-            from news_intel.delivery.telegram import chat_id_hash
-
-            chat_suffix = chat_id_hash(chat_id)
         idempotency_key = f"weekly:{week_label}:{chat_suffix or 'no-chat'}"
 
+        # 2026-08-17: fail closed on content/provenance BEFORE ever
+        # contacting Telegram (mirrors jobs/daily.py's production
+        # hardening) -- every part must be non-empty, real content, and
+        # within the hard Telegram limit (defense in depth on top of
+        # split_weekly's own targeting), and there must be at least one
+        # substantiated event/source-backed cluster behind the digest.
         if chat_id is not None:
+            max_chars = config.policy.digests.telegram_hard_limit_chars
+            if not selected_clusters:
+                reason = "no source-backed clusters selected for this week -- refusing to send an empty digest"
+                job_runs.finish(conn, run_id, "failed", {"fail_closed_reason": reason})
+                return WeeklySummary(
+                    idempotency_key=idempotency_key, sent_dry_run=True, sent=False, week_label=week_label,
+                    fail_closed=True, fail_reason=reason,
+                )
+            for i, part in enumerate(parts, start=1):
+                if not part.strip():
+                    reason = f"part {i}/{len(parts)} is empty"
+                elif len(part) > max_chars:
+                    reason = f"part {i}/{len(parts)} is {len(part)} chars, exceeds {max_chars}"
+                else:
+                    continue
+                job_runs.finish(conn, run_id, "failed", {"fail_closed_reason": reason})
+                return WeeklySummary(
+                    rendered_parts=parts, character_count=len(rendered_text), idempotency_key=idempotency_key,
+                    sent_dry_run=True, sent=False, week_label=week_label, fail_closed=True, fail_reason=reason,
+                )
+
+        if chat_id is not None:
+            chat_hash = chat_suffix
+            # Safe multipart delivery (2026-08-17): a PRIOR partial/failed
+            # logical delivery for this exact idempotency_key is never
+            # auto-resumed -- resuming requires the caller to explicitly
+            # pass resume_authorized=True (a separate, deliberate action,
+            # never triggered by an ordinary re-invocation of this job).
+            existing_delivery = conn.execute(
+                "SELECT id, status FROM weekly_deliveries WHERE idempotency_key = ?", (idempotency_key,)
+            ).fetchone()
+            if existing_delivery is not None and existing_delivery["status"] in (
+                weekly_delivery_repo.STATUS_PARTIAL, weekly_delivery_repo.STATUS_FAILED
+            ) and not resume_authorized:
+                reason = (
+                    f"a prior delivery attempt for {idempotency_key} is {existing_delivery['status']!r} -- "
+                    "not automatically retrying; explicit resume_authorized=True is required"
+                )
+                job_runs.finish(conn, run_id, "failed", {"fail_closed_reason": reason})
+                return WeeklySummary(
+                    rendered_parts=parts, character_count=len(rendered_text), idempotency_key=idempotency_key,
+                    sent_dry_run=True, sent=False, week_label=week_label, fail_closed=True, fail_reason=reason,
+                )
+
+            delivery_id = weekly_delivery_repo.get_or_create_delivery(
+                conn, idempotency_key=idempotency_key, chat_id_hash=chat_hash,
+                week_label=week_label, total_parts=len(parts),
+            )
             sender = TelegramSender(config.secrets.telegram_bot_token, config.secrets.allowed_chat_id_list)
             try:
                 any_sent = False
+                delivery_failed = False
                 for i, part in enumerate(parts, start=1):
+                    existing_part = weekly_delivery_repo.get_part(conn, delivery_id, i)
+                    if existing_part is not None and existing_part.status in (
+                        weekly_delivery_repo.PART_SENT, weekly_delivery_repo.PART_DRY_RUN
+                    ):
+                        # Never resend a successfully (or dry-run) sent part.
+                        any_sent = any_sent or existing_part.status == weekly_delivery_repo.PART_SENT
+                        continue
                     part_key = f"{idempotency_key}:{i}of{len(parts)}"
-                    result = asyncio.run(
-                        sender.send(
-                            conn, chat_id=chat_id, text=part, kind="weekly", idempotency_key=part_key,
-                            max_chars=config.policy.digests.telegram_hard_limit_chars, dry_run=dry_run,
+                    try:
+                        result = asyncio.run(
+                            sender.send(
+                                conn, chat_id=chat_id, text=part, kind="weekly", idempotency_key=part_key,
+                                max_chars=config.policy.digests.telegram_hard_limit_chars, dry_run=dry_run,
+                            )
                         )
+                    except ChatNotAllowedError:
+                        raise
+                    except Exception:  # noqa: BLE001
+                        # A part-level send failure (e.g. a genuine Telegram
+                        # API error) marks the logical delivery partial/
+                        # failed and stops -- no automatic retry of this or
+                        # any later part from within this invocation.
+                        weekly_delivery_repo.record_part_attempt(
+                            conn, delivery_id, i, text=part, status=weekly_delivery_repo.PART_FAILED
+                        )
+                        delivery_failed = True
+                        break
+                    part_status = (
+                        weekly_delivery_repo.PART_SENT if not result.dry_run else weekly_delivery_repo.PART_DRY_RUN
+                    )
+                    message_id = ",".join(result.message_ids) if result.message_ids else None
+                    weekly_delivery_repo.record_part_attempt(
+                        conn, delivery_id, i, text=part, status=part_status, telegram_message_id=message_id
                     )
                     any_sent = any_sent or not result.dry_run
                     sent_dry_run = result.dry_run
                 sent = any_sent
+
+                all_parts = weekly_delivery_repo.all_parts(conn, delivery_id)
+                if delivery_failed:
+                    weekly_delivery_repo.finalize_delivery(conn, delivery_id, weekly_delivery_repo.STATUS_PARTIAL)
+                elif all(p.status == weekly_delivery_repo.PART_SENT for p in all_parts):
+                    weekly_delivery_repo.finalize_delivery(conn, delivery_id, weekly_delivery_repo.STATUS_SENT)
+                elif all(
+                    p.status in (weekly_delivery_repo.PART_SENT, weekly_delivery_repo.PART_DRY_RUN)
+                    for p in all_parts
+                ):
+                    weekly_delivery_repo.finalize_delivery(conn, delivery_id, weekly_delivery_repo.STATUS_SENT)
+
+                if delivery_failed:
+                    reason = "one or more weekly delivery parts failed to send; logical delivery marked partial"
+                    job_runs.finish(conn, run_id, "failed", {"fail_closed_reason": reason})
+                    return WeeklySummary(
+                        rendered_parts=parts, character_count=len(rendered_text), idempotency_key=idempotency_key,
+                        sent_dry_run=True, sent=any_sent, week_label=week_label,
+                        fail_closed=True, fail_reason=reason,
+                    )
             except ChatNotAllowedError:
                 sent = False
                 sent_dry_run = True

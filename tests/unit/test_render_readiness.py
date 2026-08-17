@@ -85,3 +85,33 @@ def test_no_dangling_or_truncated_output():
 def test_is_render_ready_unchanged_by_this_repair():
     assert is_render_ready(_primary(), None) is True
     assert is_render_ready({"title": "", "excerpt": None}, None) is False
+
+
+def test_principal_entity_prefers_earliest_prominent_mention_over_alphabetical():
+    """Real defect found via the Aug 15 replay: extract_entities() returns
+    entities sorted ALPHABETICALLY, so entities[0] picked "IPO" over
+    "NVIDIA" for a story literally about Nvidia. The principal entity must
+    be whichever known entity is most prominent (earliest in the title),
+    not alphabetically first, and must never be a generic acronym like IPO/
+    CEO that is an event-type/role word, not a company/person/country."""
+    primary = {
+        "title": "Nvidia in talks to invest up to $3B in SoftBank-backed data center developer SB Energy "
+        "that aims to IPO soon",
+        "excerpt": "Nvidia is in talks to invest as much as $3 billion in SB Energy.",
+    }
+    result = why_it_matters(primary, None, "AI & Semiconductors", entities=["IPO", "NVIDIA", "SB Energy"])
+    assert "NVIDIA" in result
+    assert "IPO" not in result.split("Why it matters:")[1].split(" is ")[0].split(" ranks ")[0]
+
+
+def test_why_it_matters_possessive_phrasing_is_grammatical():
+    """Real defect found via the Aug 15 replay: "Xiao Hong's an acquisition"
+    -- the leading article must be dropped after a possessive."""
+    primary = {
+        "title": "CEO Xiao Hong unwinds Manus's $2B acquisition by Meta",
+        "excerpt": "Chief executive Xiao Hong plans to return to Singapore as AI company nears "
+        "resolution of Meta separation.",
+    }
+    result = why_it_matters(primary, None, "US / China / World", entities=["Xiao Hong"])
+    assert "'s an acquisition" not in result
+    assert "'s acquisition" in result

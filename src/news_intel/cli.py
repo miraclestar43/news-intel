@@ -13,6 +13,7 @@ from news_intel.jobs.collect import run_collect
 from news_intel.jobs.daily import run_daily
 from news_intel.jobs.daily_canary import run_daily_canary
 from news_intel.jobs.weekly import run_weekly
+from news_intel.jobs.weekly_production import run_weekly_production
 from news_intel.logging_setup import configure_logging, get_logger
 from news_intel.settings import (
     DEFAULT_ENV_FILE,
@@ -376,6 +377,39 @@ def production_daily(
     typer.echo(
         f"fail_closed={summary.fail_closed} sent={summary.sent} "
         f"top3={summary.top3_count} quick_briefs={summary.quick_brief_count} chars={summary.character_count}"
+    )
+    if summary.fail_closed:
+        typer.echo(f"fail_reason={summary.fail_reason}")
+    typer.echo(f"idempotency_key={summary.idempotency_key}")
+
+
+@production_app.command("weekly")
+def production_weekly() -> None:
+    """The production weekly entrypoint: always a real (non-dry-run) send,
+    Sunday-slot only. Rejects execution outside an explicitly valid Sunday
+    America/Los_Angeles window BEFORE any job-run/digest/delivery record is
+    created -- this is what keeps a `Persistent=true` timer, installed
+    after a missed Sunday slot, from firing a late catch-up send; see
+    jobs/weekly_production.py. Never use `pi-news digest weekly` (the
+    lower-level dry-run-capable command) as the production service."""
+    config, conn = _load()
+    try:
+        summary = run_weekly_production(config, conn)
+    finally:
+        conn.close()
+
+    if summary.skipped_late_catchup:
+        typer.echo(
+            f"production weekly: outside the valid Sunday America/Los_Angeles window at "
+            f"{summary.pt_window_checked_at} -- skipped_late_catchup, zero database writes, "
+            f"zero Telegram contact."
+        )
+        return
+
+    typer.echo(
+        f"week={summary.week_label} git_head={summary.git_head} fail_closed={summary.fail_closed} "
+        f"sent={summary.sent} trends={summary.trend_count} chars={summary.character_count} "
+        f"skipped_duplicate={summary.skipped_duplicate}"
     )
     if summary.fail_closed:
         typer.echo(f"fail_reason={summary.fail_reason}")

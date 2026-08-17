@@ -1,12 +1,14 @@
 [Unit]
-Description=pi-news-intel: weekly intelligence brief (Phase 3 — not yet implemented)
+Description=pi-news-intel: normal production weekly brief (Sunday synthesis)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=%h/pi-news-intel
-# Placeholder: `pi-news digest weekly` does not exist until Phase 3.
-# Do not enable this unit until that command ships and is reviewed.
-ExecStart=%h/pi-news-intel/.venv/bin/pi-news digest weekly --dry-run
+# Same protected environment-file mechanism as production daily -- this is
+# the ONLY other unit permitted to load the Telegram secret file.
+# pi-news-collect.service has no EnvironmentFile and never references it.
+EnvironmentFile=%h/pi-news-intel/.env
+ExecStart=%h/pi-news-intel/.venv/bin/pi-news production weekly
 TimeoutStartSec=280

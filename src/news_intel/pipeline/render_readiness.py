@@ -167,8 +167,34 @@ def is_render_ready(primary: dict, secondary: dict | None) -> bool:
     return best_available_summary(primary, secondary) is not None
 
 
-def _principal_entity(entities: list[str] | None) -> str | None:
-    return entities[0] if entities else None
+# pipeline/entities.py's extract_entities() returns entities SORTED
+# ALPHABETICALLY (fine for its own clustering/dedup use, where only set
+# membership matters) -- picking entities[0] directly would pick whichever
+# match is alphabetically first, not the most prominent one. Real
+# reproduction: "Nvidia in talks to invest up to $3B in ... that aims to
+# IPO soon" picked "IPO" over "NVIDIA" this way. _principal_entity instead
+# picks whichever candidate appears EARLIEST in the given text (title
+# preferred -- the most prominent position), skipping a small denylist of
+# generic acronyms/roles that the capitalized-sequence fallback in
+# entities.py sometimes catches but that are never themselves the subject
+# of a story (an event-type word, not a company/person/country name).
+_NON_ENTITY_ACRONYMS = frozenset({
+    "IPO", "CEO", "CFO", "CTO", "COO", "AI", "US", "UK", "EU", "UN", "GDP", "CPI",
+})
+
+
+def _principal_entity(entities: list[str] | None, text: str = "") -> str | None:
+    if not entities:
+        return None
+    candidates = [e for e in entities if e.upper() not in _NON_ENTITY_ACRONYMS] or list(entities)
+    if not text:
+        return candidates[0]
+
+    def _position(entity: str) -> int:
+        idx = text.find(entity)
+        return idx if idx != -1 else len(text)
+
+    return min(candidates, key=_position)
 
 
 def _event_type_label(lowered_text: str, labels: list[tuple[str, str]]) -> str | None:
@@ -197,11 +223,17 @@ def why_it_matters(
     context = _CATEGORY_CONTEXT_EN.get(category, "this coverage area")
     values = _parse_dollar_values(text)
     amount_clause = f" worth {format_dollar_value(max(values))}" if values else ""
-    entity = _principal_entity(entities)
+    entity = _principal_entity(entities, text)
     event_label = _event_type_label(lowered, _EVENT_TYPE_LABELS_EN)
 
     if entity and event_label:
-        return f"Why it matters: {entity}'s {event_label}{amount_clause} is a material development in {context}."
+        # Drop the leading article ("an acquisition" -> "acquisition") after
+        # a possessive -- "Entity's an acquisition" is not grammatical.
+        possessive_label = event_label.removeprefix("a ").removeprefix("an ")
+        return (
+            f"Why it matters: {entity}'s {possessive_label}{amount_clause} "
+            f"is a material development in {context}."
+        )
     if entity:
         return (
             f"Why it matters: this development involving {entity}{amount_clause} "
@@ -224,12 +256,13 @@ def chinese_takeaway(category: str, entities: list[str] | None = None, primary: 
     signal was extractable at all (e.g. `entities`/`primary` not supplied,
     or a story with genuinely no matched vocabulary)."""
     context = _CATEGORY_CONTEXT_ZH.get(category, "本次报道领域")
-    entity = _principal_entity(entities)
+    entity_text = _combined_text(primary, secondary) if primary is not None else ""
+    entity = _principal_entity(entities, entity_text)
 
     event_label_zh = None
     amount = None
     if primary is not None:
-        text = _combined_text(primary, secondary)
+        text = entity_text
         lowered = text.lower()
         event_label_en = _event_type_label(lowered, _EVENT_TYPE_LABELS_EN)
         event_label_zh = _EVENT_TYPE_LABELS_ZH.get(event_label_en) if event_label_en else None
