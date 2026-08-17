@@ -26,7 +26,7 @@ from tests.conftest import insert_source_row
 def _seed_event(
     conn, *, event_id, title, excerpt, category, now, source_id, tier=0,
     origin_family="example.test", source_name=None, canonical_url=None, origin_url=None,
-    origin_published_at=None,
+    origin_published_at=None, published_at=None,
 ):
     insert_source_row(conn, source_id, tier, name=source_name)
     conn.execute(
@@ -35,13 +35,22 @@ def _seed_event(
         (event_id, title, category, now.isoformat(), now.isoformat(), now.isoformat()),
     )
     url = canonical_url or f"https://{origin_family}/{event_id}"
+    # 2026-08-17 freshness repair: published_at now defaults to `now` (a
+    # realistic just-discovered aggregator timestamp) rather than being
+    # silently omitted -- pipeline/freshness.py's bounded_unverified gate
+    # requires a real aggregator published_at for any item whose origin_url
+    # is set but whose origin_published_at could not be verified; pass
+    # published_at=<some older datetime> explicitly to exercise a stale
+    # aggregator timestamp.
+    effective_published_at = published_at if published_at is not None else now
     cur = conn.execute(
         "INSERT INTO raw_items (source_id, external_id, canonical_url, url_hash, title, "
-        "normalized_title, summary_excerpt, language, fetched_at, content_hash, origin_family, origin_url, "
-        "origin_published_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, 'en', ?, ?, ?, ?, ?)",
+        "normalized_title, summary_excerpt, language, published_at, fetched_at, content_hash, origin_family, "
+        "origin_url, origin_published_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 'en', ?, ?, ?, ?, ?, ?)",
         (
-            source_id, event_id, url, event_id, title, title.lower(), excerpt, now.isoformat(), event_id,
+            source_id, event_id, url, event_id, title, title.lower(), excerpt,
+            effective_published_at.isoformat(), now.isoformat(), event_id,
             origin_family, origin_url,
             origin_published_at.isoformat() if origin_published_at else None,
         ),

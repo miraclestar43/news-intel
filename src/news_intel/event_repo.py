@@ -149,6 +149,7 @@ def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
                r.canonical_url AS url, r.origin_url AS origin_url, r.published_at AS published_at,
                r.origin_family AS origin_family, r.source_id AS source_id,
                r.origin_title AS origin_title, r.origin_published_at AS origin_published_at,
+               r.fetched_at AS fetched_at,
                s.name AS publisher, s.tier AS tier
         FROM event_sources es
         JOIN raw_items r ON r.id = es.raw_item_id
@@ -203,6 +204,7 @@ def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
                 "origin_title": r["origin_title"],
                 "origin_published_at": r["origin_published_at"],
                 "raw_title": r["title"],
+                "fetched_at": r["fetched_at"],
             }
         )
     return results
@@ -256,6 +258,10 @@ def event_as_digest_dict(conn: sqlite3.Connection, event_row: sqlite3.Row) -> di
         "significance": event_row["significance"],
         "user_relevance": event_row["user_relevance"],
         "market_impact": event_row["market_impact"],
+        # 2026-08-17: exposed so pipeline/freshness.py can gate a
+        # blocked-origin item's bounded_unverified state on the event's own
+        # ingestion recency, not just the aggregator's claimed pubDate.
+        "first_seen_at": event_row["first_seen_at"],
     }
 
 

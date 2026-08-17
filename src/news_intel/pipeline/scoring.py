@@ -19,6 +19,11 @@ _CATEGORY_LABELS = {
     "tech_platforms_datacenter": "Technology",
     "markets_macro_corporate": "Markets & Economy",
     "us_china_policy_geopolitics": "US / China / World",
+    # 2026-08-17 Politics/World classification repair: general world
+    # conflict/diplomacy (Middle East, Korean peninsula, Russia/Ukraine,
+    # major international bodies) that isn't China-specific -- see
+    # pipeline/relevance.py's world_politics_geopolitics bucket.
+    "world_politics_geopolitics": "Politics",
     "routine_politics_general": "Politics",
     "explicit_noise": "noise",
     "unclassified": "Unclassified",
@@ -110,7 +115,7 @@ def score_event(
     market_impact_base = 30.0
     if relevance.bucket in ("ai_semiconductor_export_controls", "markets_macro_corporate"):
         market_impact_base = 65.0
-    elif relevance.bucket == "us_china_policy_geopolitics":
+    elif relevance.bucket in ("us_china_policy_geopolitics", "world_politics_geopolitics"):
         market_impact_base = 50.0
     market_impact = max(0.0, min(100.0, market_impact_base))
 

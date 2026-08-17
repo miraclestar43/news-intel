@@ -102,8 +102,9 @@ def _render_top_story(index: int, story: Story) -> list[str]:
     summary = _best_available_summary(story)
     if summary:
         lines.append(_escape(summary))
-    lines.append(_escape(why_it_matters(story.primary, story.secondary, story.category)))
-    lines.append(_escape(chinese_takeaway(story.category)))
+    entities = story.primary.get("entities")
+    lines.append(_escape(why_it_matters(story.primary, story.secondary, story.category, entities)))
+    lines.append(_escape(chinese_takeaway(story.category, entities, story.primary, story.secondary)))
     if story.update_note:
         lines.append(_escape(story.update_note))
     source_line = _source_line(story)

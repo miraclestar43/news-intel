@@ -209,3 +209,94 @@ def test_bare_chips_word_does_not_match_chips_act_acronym():
 def test_chips_act_phrase_still_classifies_as_ai_semiconductor():
     result = _classify("Congress debates funding levels for the CHIPS Act semiconductor subsidy program")
     assert result.bucket == "ai_semiconductor_export_controls"
+
+# 2026-08-17 Politics/World classification repair (BBC audit: real Lebanon
+# strike and Korean-peninsula diplomacy candidates remained Unclassified,
+# since no bucket covered general world conflict/diplomacy outside a
+# China-specific lens). The exact headline wording below is a
+# representative reconstruction of that class of real BBC World story
+# (not a verbatim transcript of the audited items, which were not
+# preserved verbatim in this repo) -- the fix is general (country/actor
+# vocabulary + event-type/consequence gate), never a title-specific
+# Lebanon or Korea exception; see pipeline/relevance.py's
+# world_politics_geopolitics bucket and materiality.HIGH_IMPACT_TERMS.
+
+def test_lebanon_strike_classifies_as_world_politics():
+    result = _classify(
+        "Israeli airstrikes hit targets in southern Lebanon, killing several people, as tension with "
+        "Hezbollah escalates despite an earlier ceasefire agreement"
+    )
+    assert result.bucket == "world_politics_geopolitics"
+
+
+def test_korea_diplomacy_classifies_as_world_politics():
+    result = _classify(
+        "North Korea and South Korea agree to resume high-level talks in Seoul, in the first formal "
+        "negotiation between Pyongyang and the South in over a year"
+    )
+    assert result.bucket == "world_politics_geopolitics"
+
+
+def test_world_politics_bucket_maps_to_politics_category_label():
+    from news_intel.pipeline.scoring import _CATEGORY_LABELS
+
+    assert _CATEGORY_LABELS["world_politics_geopolitics"] == "Politics"
+
+
+def test_lebanon_mention_without_event_type_signal_does_not_qualify():
+    """The consequence gate: a bare country/actor mention with no
+    conflict/diplomacy/event-type signal (e.g. a soft tourism or lifestyle
+    story merely set in Lebanon) must still fail to classify as world
+    politics -- classification is never automatic from a country name
+    alone."""
+    result = _classify(
+        "A guide to the best beach restaurants in Beirut, Lebanon this summer season"
+    )
+    assert result.bucket != "world_politics_geopolitics"
+
+
+def test_korea_sports_story_without_event_type_signal_does_not_qualify():
+    result = _classify(
+        "South Korea's national football team wins friendly match ahead of Seoul home tournament"
+    )
+    assert result.bucket != "world_politics_geopolitics"
+
+
+def test_russia_ukraine_and_major_world_bodies_still_covered():
+    """At-minimum coverage check: Russia/Ukraine and European security via
+    a general negotiation/military signal (not just the pre-existing
+    "invasion"/"missile" geopolitics-group vocabulary)."""
+    result = _classify(
+        "NATO and European Union leaders hold summit talks on European security after Russia's "
+        "military operation near the Ukrainian border escalates further"
+    )
+    assert result.bucket in ("world_politics_geopolitics", "us_china_policy_geopolitics")
+
+
+def test_world_politics_classification_is_independent_of_final_selection_materiality():
+    """Classification alone must not force digest inclusion -- decision
+    value/materiality still separately governs selection (jobs/daily.py's
+    _has_material_consequence and daily_selection's own ranking, exercised
+    elsewhere); this only asserts that a qualifying world-politics event
+    produces a genuinely elevated (not automatically maxed-out) materiality
+    score, consistent with how every other bucket is scored."""
+    from news_intel.pipeline.materiality import compute_materiality
+
+    text = (
+        "Israeli airstrikes hit targets in southern Lebanon, killing several people, as tension with "
+        "Hezbollah escalates despite an earlier ceasefire agreement"
+    )
+    score = compute_materiality(text, "world_politics_geopolitics")
+    assert 0.0 < score < 100.0
+
+
+def test_coverage_tags_are_separate_from_primary_category():
+    """Multi-label coverage tags (RelevanceMatch.coverage_tags) are kept
+    separate from the single-valued primary display category (`bucket`)."""
+    result = _classify(
+        "Israeli airstrikes hit targets in southern Lebanon, killing several people, as tension with "
+        "Hezbollah escalates despite an earlier ceasefire agreement"
+    )
+    assert result.bucket == "world_politics_geopolitics"
+    assert isinstance(result.coverage_tags, list)
+    assert result.bucket in result.coverage_tags

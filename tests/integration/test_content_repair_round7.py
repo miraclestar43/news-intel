@@ -103,10 +103,10 @@ def test_unverified_origin_falls_back_to_existing_freshness_not_excluded(config,
     source that never attempts this fetch."""
     now = datetime(2026, 8, 15, 22, 0, tzinfo=UTC)
     fresh_no_origin = {"sources": [{"origin_published_at": None}]}
-    assert _is_fresh(fresh_no_origin, now) is True
+    assert _is_fresh(conn, fresh_no_origin, now) is True
 
     fresh_recent_origin = {"sources": [{"origin_published_at": (now - timedelta(hours=2)).isoformat()}]}
-    assert _is_fresh(fresh_recent_origin, now) is True
+    assert _is_fresh(conn, fresh_recent_origin, now) is True
 
     stale_origin = {"sources": [{"origin_published_at": (now - timedelta(days=5)).isoformat()}]}
-    assert _is_fresh(stale_origin, now) is False
+    assert _is_fresh(conn, stale_origin, now) is False

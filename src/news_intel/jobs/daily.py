@@ -27,6 +27,7 @@ from news_intel.jobs import job_runs
 from news_intel.llm.errors import LLMUnavailableError
 from news_intel.llm.provider import get_provider
 from news_intel.models import DailyDigestInput
+from news_intel.pipeline import freshness
 from news_intel.pipeline.daily_selection import SelectionResult, select_daily_stories
 from news_intel.pipeline.entities import known_entities
 from news_intel.pipeline.event_integrity import is_dashboard_like, is_low_consequence_event_type
@@ -97,19 +98,32 @@ def _has_material_consequence(item: dict) -> bool:
 # evidence of staleness.
 _STALE_ORIGIN_BUFFER = timedelta(hours=48)
 
+# 2026-08-17 freshness repair: the prior version of _is_fresh unconditionally
+# treated a blocked/unverifiable origin as fresh ("if not origin_published_at:
+# return True") -- exactly how an aggregator "republishing" a genuinely old,
+# paywalled article (with today's own roundup pubDate) could silently pass as
+# breaking news. Replaced with the explicit verified_fresh/verified_stale/
+# bounded_unverified/insufficient_freshness_evidence state machine in
+# pipeline/freshness.py -- see that module's docstring for the full
+# safeguard list bounded_unverified requires. This state is purely an
+# internal gate; never shown to the reader.
 
-def _is_fresh(item: dict, window_end: datetime) -> bool:
-    primary = item["sources"][0] if item.get("sources") else {}
-    origin_published_at = primary.get("origin_published_at")
-    if not origin_published_at:
-        return True
-    try:
-        origin_dt = datetime.fromisoformat(origin_published_at)
-    except ValueError:
-        return True
-    if origin_dt.tzinfo is None:
-        origin_dt = origin_dt.replace(tzinfo=UTC)
-    return origin_dt >= (window_end - _STALE_ORIGIN_BUFFER)
+
+def _is_fresh(conn: sqlite3.Connection, item: dict, window_end: datetime) -> bool:
+    first_seen_raw = item.get("first_seen_at")
+    first_seen_at = None
+    if first_seen_raw:
+        try:
+            first_seen_at = datetime.fromisoformat(first_seen_raw)
+        except ValueError:
+            first_seen_at = None
+        else:
+            if first_seen_at.tzinfo is None:
+                first_seen_at = first_seen_at.replace(tzinfo=UTC)
+    assessment = freshness.assess_freshness(
+        conn, item, window_end=window_end, event_first_seen_at=first_seen_at
+    )
+    return assessment.is_fresh
 
 
 # Cross-day novelty lookback (2026-08-12 repair): "at least the previous
@@ -206,7 +220,7 @@ def _select_events(conn: sqlite3.Connection, config: AppConfig, now: datetime) -
         and _has_human_readable_url(c)
         and _is_discrete_event(c)
         and _has_material_consequence(c)
-        and _is_fresh(c, now)
+        and _is_fresh(conn, c, now)
     ]
 
     generic_terms = set(config.topics.trend_identity.generic_anchor_terms)

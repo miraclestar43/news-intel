@@ -161,6 +161,62 @@ groups:
       - Middle East
       - Ukraine
 
+  # 2026-08-17 Politics/World classification repair: entirely additive --
+  # does NOT feed us_china_policy_geopolitics (see relevance.py's
+  # world_politics_geopolitics bucket, gated separately). Purely a vocabulary
+  # of countries/regions/capitals/governments/international organizations/
+  # geopolitical actors; a bare hit here is NOT sufficient to classify on
+  # its own -- classify_relevance also requires a materially consequential
+  # event-type signal (materiality.HIGH_IMPACT_TERMS) before this bucket
+  # fires, so a sports/entertainment/lifestyle story set in one of these
+  # places still fails the gate. Covers, at minimum: Middle East conflicts
+  # and diplomacy; the Korean peninsula; Russia/Ukraine and European
+  # security; major international bodies. China/Taiwan already has its own
+  # dedicated "china" group feeding us_china_policy_geopolitics.
+  world_politics:
+    weight: 1.00
+    terms_en:
+      - Lebanon
+      - Beirut
+      - Israel
+      - Israeli
+      - Gaza
+      - Hamas
+      - Hezbollah
+      - Iran
+      - Iranian
+      - Syria
+      - Syrian
+      - Yemen
+      - Houthi
+      - Saudi Arabia
+      - Gulf states
+      - North Korea
+      - South Korea
+      - Pyongyang
+      - Seoul
+      - DPRK
+      - Kim Jong Un
+      - Korean peninsula
+      - Russia
+      - Russian
+      - Kremlin
+      - Putin
+      - Zelensky
+      - European Union
+      - NATO
+      - United Nations
+      - UN Security Council
+      - European security
+      - White House
+      - State Department
+      - Pentagon
+      - Downing Street
+      - Kyiv
+      - Moscow
+      - Tehran
+      - Damascus
+
 noise_exclusions:
   - celebrity
   - entertainment

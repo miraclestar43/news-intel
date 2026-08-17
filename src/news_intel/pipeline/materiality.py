@@ -128,6 +128,13 @@ HIGH_IMPACT_TERMS: frozenset[str] = frozenset(
         "earthquake", "hurricane", "wildfire", "flood", "outbreak",
         "pandemic", "epidemic", "emergency", "casualties", "killed",
         "died", "explosion", "hack", "breach", "leak",
+        # 2026-08-17 Politics/World classification repair: event-type terms
+        # required alongside a country/actor hit -- see relevance.py's
+        # world_politics_geopolitics bucket.
+        "airstrike", "air strike", "military action", "military strike",
+        "negotiat", "peace talks", "diplomatic recognition", "diplomatic ties",
+        "treaty", "summit", "court rul", "leadership change",
+        "military operation", "troop", "offensive",
     }
 )
 
@@ -155,6 +162,7 @@ CATEGORY_MATERIALITY_BASE: dict[str, float] = {
     "ai_semiconductor_export_controls": 50.0,
     "markets_macro_corporate": 50.0,
     "us_china_policy_geopolitics": 50.0,
+    "world_politics_geopolitics": 50.0,
     "tech_platforms_datacenter": 40.0,
     "routine_politics_general": 40.0,
 }

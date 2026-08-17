@@ -50,6 +50,7 @@ relevance_multipliers:
   tech_platforms_datacenter: 1.20
   markets_macro_corporate: 1.15
   us_china_policy_geopolitics: 1.10
+  world_politics_geopolitics: 1.10
   unclassified: 0.0
   routine_politics_general: 0.70
   explicit_noise: 0.00
