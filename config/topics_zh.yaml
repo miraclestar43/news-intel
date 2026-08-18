@@ -1,0 +1,230 @@
+# Chinese-edition (zh_cn) discovery/relevance vocabulary (2026-08-17).
+#
+# Deliberately reuses the EXACT group keys pipeline/relevance.py's
+# _BUCKET_PRIORITY and _WORLD_POLITICS_GROUPS already expect (ai,
+# semiconductors, policy, macro_markets, china, world_politics,
+# geopolitics) -- classify_relevance() itself needed zero code changes for
+# Chinese content: pipeline/relevance.py's _term_matches() already treats
+# any non-ASCII (CJK) term as a plain substring match rather than a \b
+# word-boundary regex (word boundaries have no meaning for whitespace-free
+# Chinese text), which was already exercised by the pre-existing
+# "china"/"macro_markets" terms_zh entries in topics.yaml, just never
+# loaded as a full edition-scoped vocabulary before.
+#
+# The zh_cn edition is not a translation of en_global: this file's own
+# priorities are the "CHINESE EDITION PURPOSE" list -- AI/semiconductors/
+# computing/data centers/robotics; consequential Chinese industrial/tech
+# policy; Chinese macro/monetary/regulatory/market developments; US-China
+# tech/trade/sanctions/export-controls/diplomacy; major international
+# politics/conflict/elections/diplomacy/security; globally consequential
+# corporate transactions/earnings; major science/space/energy/supply-chain
+# developments.
+groups:
+  ai:
+    weight: 1.30
+    terms_zh:
+      - 人工智能
+      - 大模型
+      - 大语言模型
+      - 智能体
+      - 生成式人工智能
+      - 基础模型
+      - 推理芯片
+      - 训练算力
+      - 数据中心
+      - 机器人
+      - 具身智能
+      - 自动驾驶
+    terms_en:
+      - OpenAI
+      - ChatGPT
+      - GPT
+      - Anthropic
+      - Claude
+      - Gemini
+      - LLM
+      - AI Agent
+    entities: [OpenAI, ChatGPT, Anthropic, Google, Microsoft, Meta, NVIDIA]
+
+  semiconductors:
+    weight: 1.30
+    terms_zh:
+      - 半导体
+      - 芯片
+      - 晶圆
+      - 封装
+      - 光刻机
+      - 存储芯片
+      - 先进制程
+      - 代工厂
+      - 芯片法案
+    terms_en:
+      - NVIDIA
+      - TSMC
+      - ASML
+      - HBM
+      - EUV
+      - foundry
+    entities: [NVIDIA, AMD, Broadcom, Qualcomm, ARM, Intel, TSMC, SMIC, ASML, Huawei, SK Hynix, Micron]
+
+  policy:
+    weight: 1.10
+    terms_zh:
+      - 出口管制
+      - 实体清单
+      - 制裁
+      - 反垄断
+      - 数据安全
+      - 网络安全审查
+      - 关键信息基础设施
+      - 产业政策
+      - 十五五规划
+      - 五年规划
+    terms_en:
+      - export control
+      - entity list
+      - CHIPS Act
+
+  macro_markets:
+    weight: 1.15
+    terms_zh:
+      - 央行
+      - 中国人民银行
+      - 国家统计局
+      - 证监会
+      - 发改委
+      - 商务部
+      - 工信部
+      - 财政部
+      - 利率
+      - 降准
+      - 降息
+      - 通胀
+      - 通缩
+      - CPI
+      - PPI
+      - GDP
+      - 财报
+      - 营收
+      - 净利润
+      - 上市
+      - IPO
+      - 并购
+      - 收购
+      - 破产
+      - 裁员
+      - 融资
+      - 估值
+      - 成品油价格
+
+  china:
+    weight: 1.10
+    terms_zh:
+      - 中国
+      - 北京
+      - 台湾
+      - 香港
+      - 习近平
+      - 国务院
+      - 外交部
+      - 中共中央
+      - 中美关系
+      - 一带一路
+      - 中欧班列
+
+  world_politics:
+    weight: 1.00
+    terms_zh:
+      - 俄罗斯
+      - 乌克兰
+      - 普京
+      - 以色列
+      - 巴勒斯坦
+      - 加沙
+      - 黎巴嫩
+      - 伊朗
+      - 叙利亚
+      - 也门
+      - 朝鲜
+      - 韩国
+      - 首尔
+      - 平壤
+      - 联合国
+      - 北约
+      - 欧盟
+      - 白宫
+      - 五角大楼
+      - 华盛顿
+      - 莫斯科
+      - 基辅
+      - 德黑兰
+    terms_en:
+      - NATO
+      - Kremlin
+
+  geopolitics:
+    weight: 1.00
+    terms_zh:
+      - 停火
+      - 停战
+      - 军事行动
+      - 空袭
+      - 导弹
+      - 入侵
+      - 制裁
+      - 峰会
+      - 谈判
+      - 大选
+      - 选举
+
+noise_exclusions:
+  - 明星
+  - 娱乐
+  - 八卦
+  - 体育
+  - 球赛
+  - 优惠券
+  - 促销
+  - 折扣
+  - 传闻
+  - 星座
+  - 网红
+  - 段子
+
+# Contextual "关税" gate (mirrors trade_policy_context for tariff/关税):
+# bare mention alone never implies AI/semiconductor or elevated relevance.
+trade_policy_context:
+  anchor_terms_zh: [关税]
+  anchor_terms_en: [tariff, tariffs]
+  context_terms_en:
+    - import
+    - export
+    - customs
+    - section 301
+    - section 232
+    - trade war
+    - retaliatory
+    - sanction
+  ai_semiconductor_context_terms_en:
+    - semiconductor
+    - chip
+    - chips
+    - AI
+  negative_context_en: []
+
+trend_identity:
+  generic_anchor_terms:
+    - 人工智能
+    - 中国
+    - 政府
+    - 市场
+    - 报告
+    - 公司
+    - 科技
+    - 政策
+    - 数据
+    - OpenAI
+    - Anthropic
+    - NVIDIA
+    - 华为
+  topic_trigram_floor: 0.12

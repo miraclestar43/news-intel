@@ -13,7 +13,7 @@ from news_intel.pipeline.publisher_family import registrable_domain
 
 
 def qualified_events_since(
-    conn: sqlite3.Connection, *, window_start: datetime, min_score: float
+    conn: sqlite3.Connection, *, window_start: datetime, min_score: float, edition_id: str = "en_global"
 ) -> list[sqlite3.Row]:
     """`primary_origin_family` is the origin_family of the event's primary
     source (falling back to any attached source) — the unit that Phase 1
@@ -47,31 +47,40 @@ def qualified_events_since(
         FROM events e
         WHERE e.final_score >= ?
           AND COALESCE(e.content_changed_at, e.published_anchor_at) >= ?
+          AND e.edition_id = ?
           AND EXISTS (SELECT 1 FROM event_sources es2 WHERE es2.event_id = e.id)
         ORDER BY e.final_score DESC
         """,
-        (min_score, window_start.astimezone(UTC).isoformat()),
+        (min_score, window_start.astimezone(UTC).isoformat(), edition_id),
     ).fetchall()
 
 
 def events_in_window(
-    conn: sqlite3.Connection, *, window_start: datetime, window_end: datetime, min_score: float = 0.0
+    conn: sqlite3.Connection, *, window_start: datetime, window_end: datetime, min_score: float = 0.0,
+    edition_id: str = "en_global",
 ) -> list[sqlite3.Row]:
-    """Bounded [window_start, window_end) pull for the weekly brief (Phase
-    3) -- both the current and prior 7-day windows, and unlike
+    """Bounded [window_start, window_end) pull for the weekly/monthly brief
+    -- both the current and prior comparison windows, and unlike
     qualified_events_since, deliberately includes low-scoring/disputed
     events too (min_score defaults to 0) so noise/unresolved tracking has
     something to look at. Uses eligibility time, not ingestion time (see
-    qualified_events_since docstring / pipeline/time_semantics.py)."""
+    qualified_events_since docstring / pipeline/time_semantics.py).
+    edition_id scopes to that edition's own events only (2026-08-17
+    multi-edition architecture) -- a zh_cn weekly/monthly must never pull
+    in en_global events or vice versa."""
     return conn.execute(
         """
         SELECT * FROM events
         WHERE final_score >= ?
           AND COALESCE(content_changed_at, published_anchor_at) >= ?
           AND COALESCE(content_changed_at, published_anchor_at) < ?
+          AND edition_id = ?
         ORDER BY final_score DESC
         """,
-        (min_score, window_start.astimezone(UTC).isoformat(), window_end.astimezone(UTC).isoformat()),
+        (
+            min_score, window_start.astimezone(UTC).isoformat(), window_end.astimezone(UTC).isoformat(),
+            edition_id,
+        ),
     ).fetchall()
 
 
@@ -266,7 +275,8 @@ def event_as_digest_dict(conn: sqlite3.Connection, event_row: sqlite3.Row) -> di
 
 
 def recent_digest_events(
-    conn: sqlite3.Connection, *, since: datetime, until: datetime | None = None, kind: str = "daily"
+    conn: sqlite3.Connection, *, since: datetime, until: datetime | None = None, kind: str = "daily",
+    edition_id: str = "en_global",
 ) -> list[dict]:
     """Distinct events delivered in any `kind` digest with window_end >=
     `since` -- the cross-day novelty lookback pool (2026-08-12 content-
@@ -285,14 +295,18 @@ def recent_digest_events(
     them as repeats of themselves -- self-contamination, not a real
     novelty result. Defaults to None (no upper bound) only for callers that
     intentionally want the unbounded view."""
+    # edition_id filters on d.edition_id (the digest's own edition), not
+    # e.edition_id -- both are always equal in practice (a digest only ever
+    # references same-edition events), but the digest's is the
+    # authoritative one for "which edition delivered this."
     query = """
         SELECT DISTINCT e.*, d.window_end AS digest_window_end
         FROM digest_events de
         JOIN digests d ON d.id = de.digest_id
         JOIN events e ON e.id = de.event_id
-        WHERE d.kind = ? AND d.window_end >= ?
+        WHERE d.kind = ? AND d.window_end >= ? AND d.edition_id = ?
     """
-    params: list = [kind, since.isoformat()]
+    params: list = [kind, since.isoformat(), edition_id]
     if until is not None:
         query += " AND d.window_end <= ?"
         params.append(until.isoformat())
@@ -312,15 +326,19 @@ def record_digest(
     fallback_used: bool,
     event_ids_top3: list[str],
     event_ids_quick: list[str],
+    edition_id: str = "en_global",
 ) -> int:
     now = datetime.now(UTC).isoformat()
     cur = conn.execute(
         """
         INSERT INTO digests (kind, window_start, window_end, generation_state, rendered_text,
-            model_used, fallback_used, created_at)
-        VALUES (?, ?, ?, 'generated', ?, ?, ?, ?)
+            model_used, fallback_used, created_at, edition_id)
+        VALUES (?, ?, ?, 'generated', ?, ?, ?, ?, ?)
         """,
-        (kind, window_start.isoformat(), window_end.isoformat(), rendered_text, model_used, int(fallback_used), now),
+        (
+            kind, window_start.isoformat(), window_end.isoformat(), rendered_text, model_used, int(fallback_used),
+            now, edition_id,
+        ),
     )
     digest_id = cur.lastrowid
     for rank, event_id in enumerate(event_ids_top3, start=1):
@@ -345,6 +363,7 @@ def create_digest(
     rendered_text: str,
     model_used: str,
     fallback_used: bool,
+    edition_id: str = "en_global",
 ) -> int:
     """Generic digest-row creation for digests whose event references don't
     fit the daily job's fixed top3/quick_brief sections (e.g. weekly's
@@ -353,10 +372,13 @@ def create_digest(
     cur = conn.execute(
         """
         INSERT INTO digests (kind, window_start, window_end, generation_state, rendered_text,
-            model_used, fallback_used, created_at)
-        VALUES (?, ?, ?, 'generated', ?, ?, ?, ?)
+            model_used, fallback_used, created_at, edition_id)
+        VALUES (?, ?, ?, 'generated', ?, ?, ?, ?, ?)
         """,
-        (kind, window_start.isoformat(), window_end.isoformat(), rendered_text, model_used, int(fallback_used), now),
+        (
+            kind, window_start.isoformat(), window_end.isoformat(), rendered_text, model_used, int(fallback_used),
+            now, edition_id,
+        ),
     )
     return cur.lastrowid
 
@@ -369,11 +391,11 @@ def add_digest_events(conn: sqlite3.Connection, digest_id: int, event_ids: list[
         )
 
 
-def last_digest_window_end(conn: sqlite3.Connection, kind: str) -> datetime | None:
+def last_digest_window_end(conn: sqlite3.Connection, kind: str, edition_id: str = "en_global") -> datetime | None:
     row = conn.execute(
-        "SELECT window_end FROM digests WHERE kind = ? AND generation_state = 'generated' "
+        "SELECT window_end FROM digests WHERE kind = ? AND edition_id = ? AND generation_state = 'generated' "
         "ORDER BY created_at DESC LIMIT 1",
-        (kind,),
+        (kind, edition_id),
     ).fetchone()
     if not row:
         return None

@@ -15,7 +15,14 @@ wiring an equivalent compose_monthly path here would add an unexercised
 code path, not real behavior. delivery/monthly_formatter.py's
 render_monthly() is this module's single composition path, mirroring
 fallback_weekly_digest's shape (trend clusters, comparison, noise/signal,
-next-period calendar) directly."""
+next-period calendar) directly.
+
+Multi-edition (2026-08-18): edition-scoped exactly like jobs/weekly.py --
+own job lock (a zh_cn monthly failure cannot block or corrupt en_global's),
+own event window query, own idempotency-key namespace, own delivery-profile
+resolution. Safe multipart delivery reuses delivery/weekly_delivery_repo.py
+(kind='monthly') rather than a separate table -- see
+migrations/012_multi_edition.sql's rationale."""
 
 from __future__ import annotations
 
@@ -27,7 +34,7 @@ from datetime import time as dtime
 from zoneinfo import ZoneInfo
 
 from news_intel import db
-from news_intel.delivery import monthly_delivery_repo
+from news_intel.delivery import weekly_delivery_repo
 from news_intel.delivery.monthly_formatter import render_monthly, split_monthly
 from news_intel.delivery.telegram import ChatNotAllowedError, TelegramSender, chat_id_hash
 from news_intel.event_repo import add_digest_events, create_digest, events_in_window
@@ -108,11 +115,13 @@ def _titles_for_rows(rows: list[sqlite3.Row]) -> list[str]:
     return [r["primary_title"] for r in rows]
 
 
-def _find_existing_monthly_digest(conn: sqlite3.Connection, window_start: datetime, window_end: datetime):
+def _find_existing_monthly_digest(
+    conn: sqlite3.Connection, window_start: datetime, window_end: datetime, *, edition_id: str = "en_global"
+):
     return conn.execute(
-        "SELECT * FROM digests WHERE kind = 'monthly' AND window_start = ? AND window_end = ? "
+        "SELECT * FROM digests WHERE kind = 'monthly' AND edition_id = ? AND window_start = ? AND window_end = ? "
         "AND generation_state = 'generated' ORDER BY created_at DESC LIMIT 1",
-        (window_start.isoformat(), window_end.isoformat()),
+        (edition_id, window_start.isoformat(), window_end.isoformat()),
     ).fetchone()
 
 
@@ -130,8 +139,13 @@ def _trend_dict(conn: sqlite3.Connection, cluster: TrendCluster, status: str) ->
     }
 
 
-def _monthly_idempotency_key(month_label_key: str, chat_suffix: str) -> str:
-    return f"monthly:{month_label_key}:{chat_suffix or 'no-chat'}"
+def _monthly_idempotency_key(edition_id: str, month_label_key: str, chat_suffix: str) -> str:
+    """en_global keeps its pre-existing key format (no edition segment);
+    zh_cn gets the edition segment inserted -- same pattern and same
+    rationale as jobs/weekly.py's _weekly_idempotency_key."""
+    if edition_id == "en_global":
+        return f"monthly:{month_label_key}:{chat_suffix or 'no-chat'}"
+    return f"monthly:{edition_id}:{month_label_key}:{chat_suffix or 'no-chat'}"
 
 
 def run_monthly(
@@ -142,12 +156,18 @@ def run_monthly(
     dry_run: bool = True,
     now: datetime | None = None,
     resume_authorized: bool = False,
+    edition_id: str = "en_global",
 ) -> MonthlySummary:
     now = now or datetime.now(UTC)
-    tz = ZoneInfo(config.policy.timezone)
+    edition = config.editions.get(edition_id)
+    tz = ZoneInfo(edition.schedule.timezone)
     now_pt = now.astimezone(tz)
+    event_topics = config.topics_for(edition_id)
 
-    if not db.acquire_job_lock(conn, "monthly"):
+    # Edition-scoped job lock -- a zh_cn monthly run must never be blocked
+    # by (or block) an en_global monthly run, and vice versa.
+    lock_name = "monthly" if edition_id == "en_global" else f"monthly_{edition_id}"
+    if not db.acquire_job_lock(conn, lock_name):
         return MonthlySummary(skipped_lock=True)
 
     run_id = job_runs.start(conn, "monthly")
@@ -158,23 +178,28 @@ def run_monthly(
         month_label = _month_label(window_start)
         month_label_key = f"{window_start.year:04d}-{window_start.month:02d}"
 
-        existing = _find_existing_monthly_digest(conn, window_start, window_end)
+        existing = _find_existing_monthly_digest(conn, window_start, window_end, edition_id=edition_id)
         if existing is not None:
             parts = split_monthly(
-                existing["rendered_text"], month_label, config.policy.digests.telegram_hard_limit_chars
+                existing["rendered_text"], month_label, config.policy.digests.telegram_hard_limit_chars,
+                edition_id=edition_id,
             )
             return MonthlySummary(
                 rendered_parts=parts, character_count=len(existing["rendered_text"]),
                 model_used=existing["model_used"], fallback_used=bool(existing["fallback_used"]),
-                idempotency_key=_monthly_idempotency_key(month_label_key, "no-chat"), sent_dry_run=True,
+                idempotency_key=_monthly_idempotency_key(edition_id, month_label_key, "no-chat"), sent_dry_run=True,
                 sent=False, skipped_duplicate=True, month_label=month_label,
             )
 
-        known = known_entities(config.topics.groups)
-        current_events = events_in_window(conn, window_start=window_start, window_end=window_end)
-        prior_events = events_in_window(conn, window_start=prior_start, window_end=prior_end)
+        known = known_entities(event_topics.groups)
+        current_events = events_in_window(
+            conn, window_start=window_start, window_end=window_end, edition_id=edition_id
+        )
+        prior_events = events_in_window(
+            conn, window_start=prior_start, window_end=prior_end, edition_id=edition_id
+        )
 
-        trend_policy = config.topics.trend_identity
+        trend_policy = event_topics.trend_identity
         min_event_score = config.policy.scoring.thresholds.weekly_store
         current_clusters = build_trend_clusters(
             conn, current_events, known, policy=trend_policy, min_event_score=min_event_score
@@ -218,16 +243,20 @@ def run_monthly(
             "resolved_titles": [", ".join(c.key_entities) or c.category for c in comparison.resolved],
         }
 
-        rendered_text = render_monthly(month_label, trend_dicts, prior_summary, calendar_candidates)
+        rendered_text = render_monthly(
+            month_label, trend_dicts, prior_summary, calendar_candidates, edition_id=edition_id
+        )
         model_used = "none (deterministic fallback)"
         fallback_used = True
 
-        parts = split_monthly(rendered_text, month_label, config.policy.digests.telegram_hard_limit_chars)
+        parts = split_monthly(
+            rendered_text, month_label, config.policy.digests.telegram_hard_limit_chars, edition_id=edition_id
+        )
 
         chat_suffix = chat_id_hash(chat_id) if chat_id is not None else ""
         sent = False
         sent_dry_run = True
-        idempotency_key = _monthly_idempotency_key(month_label_key, chat_suffix)
+        idempotency_key = _monthly_idempotency_key(edition_id, month_label_key, chat_suffix)
 
         if chat_id is not None:
             max_chars = config.policy.digests.telegram_hard_limit_chars
@@ -254,10 +283,10 @@ def run_monthly(
         if chat_id is not None:
             chat_hash = chat_suffix
             existing_delivery = conn.execute(
-                "SELECT id, status FROM monthly_deliveries WHERE idempotency_key = ?", (idempotency_key,)
+                "SELECT id, status FROM weekly_deliveries WHERE idempotency_key = ?", (idempotency_key,)
             ).fetchone()
             if existing_delivery is not None and existing_delivery["status"] in (
-                monthly_delivery_repo.STATUS_PARTIAL, monthly_delivery_repo.STATUS_FAILED
+                weekly_delivery_repo.STATUS_PARTIAL, weekly_delivery_repo.STATUS_FAILED
             ) and not resume_authorized:
                 reason = (
                     f"a prior delivery attempt for {idempotency_key} is {existing_delivery['status']!r} -- "
@@ -269,20 +298,20 @@ def run_monthly(
                     sent_dry_run=True, sent=False, month_label=month_label, fail_closed=True, fail_reason=reason,
                 )
 
-            delivery_id = monthly_delivery_repo.get_or_create_delivery(
+            delivery_id = weekly_delivery_repo.get_or_create_delivery(
                 conn, idempotency_key=idempotency_key, chat_id_hash=chat_hash,
-                month_label=month_label, total_parts=len(parts),
+                period_label=month_label_key, total_parts=len(parts), edition_id=edition_id, kind="monthly",
             )
             sender = TelegramSender(config.secrets.telegram_bot_token, config.secrets.allowed_chat_id_list)
             try:
                 any_sent = False
                 delivery_failed = False
                 for i, part in enumerate(parts, start=1):
-                    existing_part = monthly_delivery_repo.get_part(conn, delivery_id, i)
+                    existing_part = weekly_delivery_repo.get_part(conn, delivery_id, i)
                     if existing_part is not None and existing_part.status in (
-                        monthly_delivery_repo.PART_SENT, monthly_delivery_repo.PART_DRY_RUN
+                        weekly_delivery_repo.PART_SENT, weekly_delivery_repo.PART_DRY_RUN
                     ):
-                        any_sent = any_sent or existing_part.status == monthly_delivery_repo.PART_SENT
+                        any_sent = any_sent or existing_part.status == weekly_delivery_repo.PART_SENT
                         continue
                     part_key = f"{idempotency_key}:{i}of{len(parts)}"
                     try:
@@ -295,33 +324,33 @@ def run_monthly(
                     except ChatNotAllowedError:
                         raise
                     except Exception:  # noqa: BLE001
-                        monthly_delivery_repo.record_part_attempt(
-                            conn, delivery_id, i, text=part, status=monthly_delivery_repo.PART_FAILED
+                        weekly_delivery_repo.record_part_attempt(
+                            conn, delivery_id, i, text=part, status=weekly_delivery_repo.PART_FAILED
                         )
                         delivery_failed = True
                         break
                     part_status = (
-                        monthly_delivery_repo.PART_SENT if not result.dry_run
-                        else monthly_delivery_repo.PART_DRY_RUN
+                        weekly_delivery_repo.PART_SENT if not result.dry_run
+                        else weekly_delivery_repo.PART_DRY_RUN
                     )
                     message_id = ",".join(result.message_ids) if result.message_ids else None
-                    monthly_delivery_repo.record_part_attempt(
+                    weekly_delivery_repo.record_part_attempt(
                         conn, delivery_id, i, text=part, status=part_status, telegram_message_id=message_id
                     )
                     any_sent = any_sent or not result.dry_run
                     sent_dry_run = result.dry_run
                 sent = any_sent
 
-                all_parts = monthly_delivery_repo.all_parts(conn, delivery_id)
+                all_parts = weekly_delivery_repo.all_parts(conn, delivery_id)
                 if delivery_failed:
-                    monthly_delivery_repo.finalize_delivery(conn, delivery_id, monthly_delivery_repo.STATUS_PARTIAL)
-                elif all(p.status == monthly_delivery_repo.PART_SENT for p in all_parts):
-                    monthly_delivery_repo.finalize_delivery(conn, delivery_id, monthly_delivery_repo.STATUS_SENT)
+                    weekly_delivery_repo.finalize_delivery(conn, delivery_id, weekly_delivery_repo.STATUS_PARTIAL)
+                elif all(p.status == weekly_delivery_repo.PART_SENT for p in all_parts):
+                    weekly_delivery_repo.finalize_delivery(conn, delivery_id, weekly_delivery_repo.STATUS_SENT)
                 elif all(
-                    p.status in (monthly_delivery_repo.PART_SENT, monthly_delivery_repo.PART_DRY_RUN)
+                    p.status in (weekly_delivery_repo.PART_SENT, weekly_delivery_repo.PART_DRY_RUN)
                     for p in all_parts
                 ):
-                    monthly_delivery_repo.finalize_delivery(conn, delivery_id, monthly_delivery_repo.STATUS_SENT)
+                    weekly_delivery_repo.finalize_delivery(conn, delivery_id, weekly_delivery_repo.STATUS_SENT)
 
                 if delivery_failed:
                     reason = "one or more monthly delivery parts failed to send; logical delivery marked partial"
@@ -338,6 +367,7 @@ def run_monthly(
         digest_id = create_digest(
             conn, kind="monthly", window_start=window_start, window_end=window_end,
             rendered_text=rendered_text, model_used=model_used, fallback_used=fallback_used,
+            edition_id=edition_id,
         )
         for cluster in selected_clusters:
             section = cluster.category if cluster.category in _SECTION_CATEGORIES else "other"
@@ -356,4 +386,4 @@ def run_monthly(
         job_runs.finish(conn, run_id, "failed", {"error": str(exc)})
         raise
     finally:
-        db.release_job_lock(conn, "monthly")
+        db.release_job_lock(conn, lock_name)

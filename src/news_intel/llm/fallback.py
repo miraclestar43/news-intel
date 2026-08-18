@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 
+from news_intel.delivery.weekly_formatter import _weekly_header
 from news_intel.models import DailyDigestInput, DigestOutput, EventEnrichment, EventInput, WeeklyDigestInput
 
 FALLBACK_NOTICE = "This brief uses rule-ranked source summaries."
@@ -96,14 +97,26 @@ WEEKLY_FALLBACK_NOTICE = (
 )
 
 
-def fallback_weekly_digest(inputs: WeeklyDigestInput, week_label: str) -> DigestOutput:
+def fallback_weekly_digest(inputs: WeeklyDigestInput, week_label: str, edition_id: str = "en_global") -> DigestOutput:
     """Deterministic weekly brief: no narrative synthesis capability without
     an LLM, but every section is still populated from stored trend clusters,
-    comparisons, and calendar rows -- never blocks the Sunday send."""
+    comparisons, and calendar rows -- never blocks the Sunday send.
+
+    2026-08-17: already partially bilingual before this repair (the "本周
+    结论" summary-bullet section is Chinese-language connecting prose
+    synthesized from counts, unconditionally, for BOTH editions) --
+    edition_id here only swaps the reader-facing bracket header
+    ([GLOBAL WEEKLY]/[中文周报]); the trend titles/content driving every
+    section are already in the event's own source language, since zh_cn
+    events are clustered from zh_cn's own Chinese sources. Disclosed
+    simplification: the section labels themselves (AI & SEMICONDUCTORS,
+    MARKETS & ECONOMY, ...) stay English scaffolding for both editions in
+    this rollout -- not yet fully localized for zh_cn."""
     trends = inputs.events
     summary = inputs.prior_week_summary
 
-    lines = [f"Weekly Intelligence Brief — {week_label}", "", WEEKLY_FALLBACK_NOTICE, ""]
+    header = _weekly_header(week_label, edition_id)
+    lines = [header, "", WEEKLY_FALLBACK_NOTICE, ""]
 
     lines.append("本周结论")
     new_count = sum(1 for t in trends if t.get("status") == "new")

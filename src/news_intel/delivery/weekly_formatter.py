@@ -5,9 +5,16 @@ from __future__ import annotations
 
 from news_intel.delivery.splitter import label_parts, split_at_sections
 
+_EDITION_WEEKLY_LABELS = {"en_global": "[GLOBAL WEEKLY]", "zh_cn": "[中文周报]"}
 
-def render_weekly(week_label: str, structured: dict) -> str:
-    lines = [f"Weekly Intelligence Brief — {week_label}", ""]
+
+def _weekly_header(week_label: str, edition_id: str) -> str:
+    prefix = _EDITION_WEEKLY_LABELS.get(edition_id, "[GLOBAL WEEKLY]")
+    return f"{prefix} Weekly Intelligence Brief — {week_label}"
+
+
+def render_weekly(week_label: str, structured: dict, edition_id: str = "en_global") -> str:
+    lines = [_weekly_header(week_label, edition_id), ""]
 
     synthesis = structured.get("chinese_synthesis", [])
     if synthesis:
@@ -55,7 +62,7 @@ def render_weekly(week_label: str, structured: dict) -> str:
     return "\n".join(lines)
 
 
-def split_weekly(rendered_text: str, week_label: str, max_chars: int) -> list[str]:
+def split_weekly(rendered_text: str, week_label: str, max_chars: int, edition_id: str = "en_global") -> list[str]:
     """At most two Telegram messages, labeled (1/2) and (2/2), splitting at
     the template's own natural boundary (design doc section 4.3) rather than
     a generic size-based cut. Falls back to the generic section splitter if
@@ -64,7 +71,7 @@ def split_weekly(rendered_text: str, week_label: str, max_chars: int) -> list[st
     if len(rendered_text) <= max_chars:
         return [rendered_text]
 
-    header_line = f"Weekly Intelligence Brief — {week_label}"
+    header_line = _weekly_header(week_label, edition_id)
     marker = "\nMARKETS & ECONOMY"
     idx = rendered_text.find(marker)
     if idx == -1:

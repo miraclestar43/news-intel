@@ -1,0 +1,15 @@
+# Delivery profiles (2026-08-17): separates WHICH bot/chat a delivery goes
+# to from WHICH content edition it carries. Both editions use the "default"
+# profile in this rollout -- the existing production bot and recipient
+# (@star_daily_news_bot) -- by explicit instruction. No token, chat ID, or
+# other secret is stored here; bot_profile_id/recipient_profile_id are
+# informational labels resolved (today) to the single existing Secrets()
+# (telegram_bot_token/allowed_chat_id_list). A future edition-specific
+# bot/chat requires a new profile entry here plus a corresponding secrets
+# source -- the data model (deliveries.delivery_profile_id,
+# EditionEntry.delivery_profile_id) already supports it with no migration.
+profiles:
+  - id: default
+    bot_profile_id: star_daily_news_bot
+    recipient_profile_id: default
+    note: "current production bot/recipient, shared by en_global and zh_cn in this rollout"
