@@ -60,6 +60,7 @@ from dataclasses import dataclass, field
 from news_intel.pipeline.publisher_family import publisher_family_of_url
 from news_intel.pipeline.render_readiness import is_render_ready
 from news_intel.pipeline.story_identity import detect_material_update, same_event_story
+from news_intel.pipeline.zh_render_readiness import is_render_ready_zh
 from news_intel.settings import AlertTriggersConfig
 
 MAX_TOP_STORIES = 3
@@ -137,6 +138,13 @@ class Story:
 
     @property
     def render_ready(self) -> bool:
+        # 2026-08-17 multi-edition architecture: dispatches on the event's
+        # own edition_id (event_repo.event_as_digest_dict) -- zh_cn text has
+        # no [.!?] sentence-ending punctuation, so applying the English
+        # extractor to it would wrongly treat every genuine Chinese story
+        # as render-unready and silently empty out the zh_cn digest.
+        if self.primary.get("edition_id") == "zh_cn":
+            return is_render_ready_zh(self.primary, self.secondary)
         return is_render_ready(self.primary, self.secondary)
 
 

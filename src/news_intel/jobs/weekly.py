@@ -82,11 +82,13 @@ def _titles_for_rows(rows: list[sqlite3.Row]) -> list[str]:
     return [r["primary_title"] for r in rows]
 
 
-def _find_existing_weekly_digest(conn: sqlite3.Connection, window_start: datetime, window_end: datetime):
+def _find_existing_weekly_digest(
+    conn: sqlite3.Connection, window_start: datetime, window_end: datetime, *, edition_id: str = "en_global"
+):
     return conn.execute(
-        "SELECT * FROM digests WHERE kind = 'weekly' AND window_start = ? AND window_end = ? "
+        "SELECT * FROM digests WHERE kind = 'weekly' AND edition_id = ? AND window_start = ? AND window_end = ? "
         "AND generation_state = 'generated' ORDER BY created_at DESC LIMIT 1",
-        (window_start.isoformat(), window_end.isoformat()),
+        (edition_id, window_start.isoformat(), window_end.isoformat()),
     ).fetchone()
 
 
@@ -104,6 +106,18 @@ def _trend_dict(conn: sqlite3.Connection, cluster: TrendCluster, status: str) ->
     }
 
 
+def _weekly_idempotency_key(edition_id: str, week_label: str, chat_suffix: str) -> str:
+    """2026-08-17 multi-edition architecture: en_global keeps its
+    PRE-EXISTING key format (no edition segment) so already-created dates'
+    idempotency behavior is unchanged -- a new zh_cn key includes the
+    edition explicitly (weekly:zh_cn:<ISO-week>:<hash>) so an English and a
+    Chinese delivery can never collide merely because they share a
+    bot/recipient, per this round's explicit instruction."""
+    if edition_id == "en_global":
+        return f"weekly:{week_label}:{chat_suffix or 'no-chat'}"
+    return f"weekly:{edition_id}:{week_label}:{chat_suffix or 'no-chat'}"
+
+
 def run_weekly(
     config: AppConfig,
     conn: sqlite3.Connection,
@@ -112,12 +126,19 @@ def run_weekly(
     dry_run: bool = True,
     now: datetime | None = None,
     resume_authorized: bool = False,
+    edition_id: str = "en_global",
 ) -> WeeklySummary:
     now = now or datetime.now(UTC)
-    tz = ZoneInfo(config.policy.timezone)
+    edition = config.editions.get(edition_id)
+    tz = ZoneInfo(edition.schedule.timezone)
     now_pt = now.astimezone(tz)
+    event_topics = config.topics_for(edition_id)
 
-    if not db.acquire_job_lock(conn, "weekly"):
+    # 2026-08-17: edition-scoped job lock -- a zh_cn weekly run must never
+    # be blocked by (or block) an en_global weekly run, and vice versa;
+    # "a failure in zh_cn must not abort or corrupt en_global."
+    lock_name = "weekly" if edition_id == "en_global" else f"weekly_{edition_id}"
+    if not db.acquire_job_lock(conn, lock_name):
         return WeeklySummary(skipped_lock=True)
 
     run_id = job_runs.start(conn, "weekly")
@@ -129,23 +150,29 @@ def run_weekly(
         week_label = f"{iso_year}-W{iso_week:02d}"
         date_label = f"{window_start.strftime('%b %-d')}–{(window_end - timedelta(days=1)).strftime('%b %-d')}"
 
-        existing = _find_existing_weekly_digest(conn, window_start, window_end)
+        existing = _find_existing_weekly_digest(conn, window_start, window_end, edition_id=edition_id)
         if existing is not None:
             parts = split_weekly(
-                existing["rendered_text"], date_label, config.policy.digests.telegram_hard_limit_chars
+                existing["rendered_text"], date_label, config.policy.digests.telegram_hard_limit_chars,
+                edition_id=edition_id,
             )
             return WeeklySummary(
                 rendered_parts=parts, character_count=len(existing["rendered_text"]),
                 model_used=existing["model_used"], fallback_used=bool(existing["fallback_used"]),
-                idempotency_key=f"weekly:{week_label}:no-chat", sent_dry_run=True, sent=False,
+                idempotency_key=_weekly_idempotency_key(edition_id, week_label, "no-chat"),
+                sent_dry_run=True, sent=False,
                 skipped_duplicate=True, week_label=week_label,
             )
 
-        known = known_entities(config.topics.groups)
-        current_events = events_in_window(conn, window_start=window_start, window_end=window_end)
-        prior_events = events_in_window(conn, window_start=prior_start, window_end=prior_end)
+        known = known_entities(event_topics.groups)
+        current_events = events_in_window(
+            conn, window_start=window_start, window_end=window_end, edition_id=edition_id
+        )
+        prior_events = events_in_window(
+            conn, window_start=prior_start, window_end=prior_end, edition_id=edition_id
+        )
 
-        trend_policy = config.topics.trend_identity
+        trend_policy = event_topics.trend_identity
         min_event_score = config.policy.scoring.thresholds.weekly_store
         # Comparison (new/continuing/resolved) runs against the *full*
         # eligible cluster set so a genuinely continuing trend is never
@@ -207,19 +234,21 @@ def run_weekly(
         fallback_used = False
         try:
             output = provider.compose_weekly(digest_input)
-            rendered_text = render_weekly(date_label, output.structured)
+            rendered_text = render_weekly(date_label, output.structured, edition_id=edition_id)
             model_used = getattr(provider, "model", "llm")
         except LLMUnavailableError:
-            fallback_output = fallback_weekly_digest(digest_input, date_label)
+            fallback_output = fallback_weekly_digest(digest_input, date_label, edition_id=edition_id)
             rendered_text = fallback_output.rendered_text
             fallback_used = True
 
-        parts = split_weekly(rendered_text, date_label, config.policy.digests.telegram_hard_limit_chars)
+        parts = split_weekly(
+            rendered_text, date_label, config.policy.digests.telegram_hard_limit_chars, edition_id=edition_id
+        )
 
         chat_suffix = chat_id_hash(chat_id) if chat_id is not None else ""
         sent = False
         sent_dry_run = True
-        idempotency_key = f"weekly:{week_label}:{chat_suffix or 'no-chat'}"
+        idempotency_key = _weekly_idempotency_key(edition_id, week_label, chat_suffix)
 
         # 2026-08-17: fail closed on content/provenance BEFORE ever
         # contacting Telegram (mirrors jobs/daily.py's production
@@ -274,7 +303,7 @@ def run_weekly(
 
             delivery_id = weekly_delivery_repo.get_or_create_delivery(
                 conn, idempotency_key=idempotency_key, chat_id_hash=chat_hash,
-                week_label=week_label, total_parts=len(parts),
+                period_label=week_label, total_parts=len(parts), edition_id=edition_id, kind="weekly",
             )
             sender = TelegramSender(config.secrets.telegram_bot_token, config.secrets.allowed_chat_id_list)
             try:
@@ -345,6 +374,7 @@ def run_weekly(
         digest_id = create_digest(
             conn, kind="weekly", window_start=window_start, window_end=window_end,
             rendered_text=rendered_text, model_used=model_used, fallback_used=fallback_used,
+            edition_id=edition_id,
         )
         for cluster in selected_clusters:
             section = cluster.category if cluster.category in _SECTION_CATEGORIES else "other"
@@ -363,4 +393,4 @@ def run_weekly(
         job_runs.finish(conn, run_id, "failed", {"error": str(exc)})
         raise
     finally:
-        db.release_job_lock(conn, "weekly")
+        db.release_job_lock(conn, lock_name)

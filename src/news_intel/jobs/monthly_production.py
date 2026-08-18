@@ -60,13 +60,14 @@ class MonthlyProductionSummary(MonthlySummary):
 
 
 def run_monthly_production(
-    config: AppConfig, conn: sqlite3.Connection, *, now: datetime | None = None
+    config: AppConfig, conn: sqlite3.Connection, *, now: datetime | None = None, edition_id: str = "en_global"
 ) -> MonthlyProductionSummary:
     now = now or datetime.now(UTC)
-    tz = ZoneInfo(config.policy.timezone)
+    edition = config.editions.get(edition_id)
+    tz = ZoneInfo(edition.schedule.timezone)
     now_pt = now.astimezone(tz)
 
-    if not _is_valid_monthly_window(now_pt):
+    if not _is_valid_monthly_window(now_pt, edition.schedule.monthly_hour):
         # Deliberately BEFORE any job_runs.start()/DB write of any kind --
         # a late/Persistent catch-up firing must leave zero trace besides
         # this in-memory result.
@@ -83,9 +84,9 @@ def run_monthly_production(
         )
     chat_id = allowed[0]
 
-    result = run_monthly(config, conn, chat_id=chat_id, dry_run=False, now=now)
+    result = run_monthly(config, conn, chat_id=chat_id, dry_run=False, now=now, edition_id=edition_id)
 
-    run_id = job_runs.start(conn, "monthly_production")
+    run_id = job_runs.start(conn, "monthly_production", edition_id=edition_id)
     job_runs.finish(
         conn, run_id, "failed" if result.fail_closed else "success",
         {

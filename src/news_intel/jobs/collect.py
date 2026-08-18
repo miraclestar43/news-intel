@@ -68,7 +68,18 @@ def run_collect(config: AppConfig, conn, *, now: datetime | None = None) -> Coll
 
     run_id = job_runs.start(conn, "collect")
     summary = CollectSummary()
-    known = known_entities(config.topics.groups)
+    # 2026-08-17 multi-edition architecture: known-entity vocabulary is
+    # resolved PER SOURCE's own edition (config.topics_for), cached by
+    # edition_id so it's computed once per edition, not once per source.
+    # A source with no editions configured (should not happen -- every
+    # SourceEntry defaults to ["en_global"]) falls back to en_global.
+    known_by_edition: dict[str, set[str]] = {}
+
+    def _known_for(edition_id: str) -> set[str]:
+        if edition_id not in known_by_edition:
+            known_by_edition[edition_id] = known_entities(config.topics_for(edition_id).groups)
+        return known_by_edition[edition_id]
+
     weights = config.policy.scoring.weights.model_dump()
     thresholds = config.policy.scoring.thresholds
 
@@ -104,10 +115,19 @@ def run_collect(config: AppConfig, conn, *, now: datetime | None = None) -> Coll
                 record_scheduled_events(conn, entry.id, outcome.items, now=now)
                 continue
 
+            # A source belongs to one edition in every current config entry
+            # (the field is a list -- "do not force every source to belong
+            # to exactly one" -- but this rollout's mapping is 1:1); the
+            # first configured edition is this source's items' edition.
+            source_edition_id = entry.editions[0] if entry.editions else "en_global"
+            known = _known_for(source_edition_id)
+            source_topics = config.topics_for(source_edition_id)
+
             for item in outcome.items:
                 summary.fetched_items += 1
                 normalized = normalize(
-                    item, excerpt_max_chars=config.policy.storage.raw_excerpt_max_chars, now=now
+                    item, excerpt_max_chars=config.policy.storage.raw_excerpt_max_chars, now=now,
+                    edition_id=source_edition_id,
                 )
                 upsert = upsert_raw_item(conn, normalized)
 
@@ -135,7 +155,7 @@ def run_collect(config: AppConfig, conn, *, now: datetime | None = None) -> Coll
                     event_id, is_new = find_or_create_event(
                         conn, normalized, upsert.raw_item_id, config.policy.dedupe, known,
                         now=now, time_policy=config.policy.time_semantics,
-                        legal_notice_policy=config.topics.legal_notice_boilerplate,
+                        legal_notice_policy=source_topics.legal_notice_boilerplate,
                     )
                     if is_new:
                         summary.new_events += 1

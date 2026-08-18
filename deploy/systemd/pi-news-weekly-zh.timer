@@ -1,0 +1,17 @@
+[Unit]
+Description=pi-news-intel: zh_cn weekly brief, Sun 07:00 America/Los_Angeles (DST-aware)
+
+[Timer]
+OnCalendar=Sun *-*-* 07:00:00 America/Los_Angeles
+# Persistent=true is required (task spec), but the production weekly
+# entrypoint itself (jobs/weekly_production.py's _is_valid_weekly_window,
+# edition-aware since the multi-edition reapplication) independently
+# rejects execution outside an explicitly valid Sunday Pacific window
+# BEFORE any job-run/digest/delivery record is created -- this is what
+# actually prevents a late catch-up firing from producing a delayed send.
+# Never rely on systemd timer behavior alone for this protection.
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,28 @@
+[Unit]
+Description=pi-news-intel: zh_cn daily brief, Mon-Sat 07:00 America/Los_Angeles (DST-aware)
+
+[Timer]
+# Timezone-aware directly, NOT a fixed-UTC OnCalendar like the EXISTING
+# en_global daily timer's 05:00 UTC expression -- that expression is
+# deliberately left untouched (retaining the existing, already-vetted
+# English daily schedule per instruction), but this brand-new zh_cn timer
+# is built correctly from the start: systemd resolves "America/Los_Angeles"
+# against the correct DST offset at each firing, so 07:00 PT (22:00 Beijing
+# in PDT, 23:00 Beijing in PST) stays correct across both the Nov 2026
+# fall-back and any future spring-forward transition with no manual
+# adjustment -- never a hardcoded Beijing-time assumption.
+OnCalendar=Mon..Sat *-*-* 07:00:00 America/Los_Angeles
+# Persistent=false, matching the EXISTING en_global daily timer's own
+# deliberate choice (see pi-news-daily.timer as actually installed in
+# production) -- daily lacks the tight explicit time-window late-catch-up
+# guard that jobs/weekly_production.py and jobs/monthly_production.py have
+# (a Sunday-only or first-Monday-only slot, where firing on the WRONG DAY
+# is unacceptable); a daily brief re-attempted a few hours late on the
+# SAME Pacific date is the existing accepted risk profile for en_global,
+# applied consistently here rather than inventing a different policy for
+# zh_cn's otherwise-identical daily cadence.
+Persistent=false
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

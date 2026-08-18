@@ -88,8 +88,14 @@ def score_event(
     # (see its docstring) so a vocabulary term appearing only in
     # background/excerpt text can't hijack the category of a story the
     # title itself is not about.
+    # 2026-08-17 multi-edition architecture: each event's OWN edition_id
+    # (set once at creation time by pipeline/cluster.py, from the
+    # discovering source's configured edition) picks its vocabulary --
+    # never config.topics directly, which is always en_global's. zh_cn
+    # events classify against config/topics_zh.yaml.
+    event_topics = config.topics_for(event["edition_id"])
     relevance = classify_relevance(
-        combined_text, config.topics, config.policy.relevance_multipliers, title=event["primary_title"]
+        combined_text, event_topics, config.policy.relevance_multipliers, title=event["primary_title"]
     )
     conn.execute(
         "UPDATE events SET category = ? WHERE id = ?",

@@ -29,11 +29,20 @@ def _next_event_id(conn: sqlite3.Connection, day: datetime) -> str:
     return f"{prefix}{seq:04d}"
 
 
-def _candidate_events(conn: sqlite3.Connection, window_hours: int, *, now: datetime) -> list[sqlite3.Row]:
+def _candidate_events(
+    conn: sqlite3.Connection, window_hours: int, *, now: datetime, edition_id: str
+) -> list[sqlite3.Row]:
+    """2026-08-17 multi-edition architecture: scoped to the SAME edition as
+    the item being clustered -- an English and a Chinese raw_item
+    describing the same real-world development must never merge into one
+    event row (they belong to different editions' own independent
+    selection/scoring/novelty pipelines; see migration 012's docstring).
+    This is the actual mechanism that makes cross-edition event identity
+    impossible, not just a convention."""
     return conn.execute(
-        "SELECT * FROM events WHERE status = 'developing' "
+        "SELECT * FROM events WHERE status = 'developing' AND edition_id = ? "
         "AND julianday(?) - julianday(last_updated_at) <= ? ",
-        (now.isoformat(), window_hours / 24.0),
+        (edition_id, now.isoformat(), window_hours / 24.0),
     ).fetchall()
 
 
@@ -70,7 +79,9 @@ def find_or_create_event(
     item_identity = extract_product_identity(item_text)
 
     best_match: sqlite3.Row | None = None
-    for candidate in _candidate_events(conn, dedupe_policy.candidate_window_hours, now=now):
+    for candidate in _candidate_events(
+        conn, dedupe_policy.candidate_window_hours, now=now, edition_id=item.edition_id
+    ):
         cand_entities = json.loads(candidate["entities_json"] or "[]")
 
         if item_is_boilerplate:
@@ -113,8 +124,8 @@ def find_or_create_event(
         """
         INSERT INTO events (
             id, primary_title, status, confirmation_state,
-            first_seen_at, last_updated_at, published_anchor_at, archive_only, entities_json
-        ) VALUES (?, ?, 'developing', 'unverified', ?, ?, ?, ?, ?)
+            first_seen_at, last_updated_at, published_anchor_at, archive_only, entities_json, edition_id
+        ) VALUES (?, ?, 'developing', 'unverified', ?, ?, ?, ?, ?, ?)
         """,
         (
             event_id,
@@ -124,6 +135,7 @@ def find_or_create_event(
             anchor.published_anchor_at.isoformat() if anchor.published_anchor_at else None,
             int(anchor.archive_only),
             json.dumps(item_entities, ensure_ascii=False),
+            item.edition_id,
         ),
     )
     _attach_source(conn, event_id, raw_item_id, is_primary=True)

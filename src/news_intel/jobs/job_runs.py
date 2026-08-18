@@ -5,11 +5,11 @@ import sqlite3
 from datetime import UTC, datetime
 
 
-def start(conn: sqlite3.Connection, job_name: str) -> int:
+def start(conn: sqlite3.Connection, job_name: str, edition_id: str | None = None) -> int:
     now = datetime.now(UTC).isoformat()
     cur = conn.execute(
-        "INSERT INTO job_runs (job_name, started_at, status) VALUES (?, ?, 'running')",
-        (job_name, now),
+        "INSERT INTO job_runs (job_name, started_at, status, edition_id) VALUES (?, ?, 'running', ?)",
+        (job_name, now, edition_id),
     )
     return cur.lastrowid
 

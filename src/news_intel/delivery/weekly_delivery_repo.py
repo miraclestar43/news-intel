@@ -42,12 +42,26 @@ class PartRecord:
 
 
 def get_or_create_delivery(
-    conn: sqlite3.Connection, *, idempotency_key: str, chat_id_hash: str, week_label: str, total_parts: int
+    conn: sqlite3.Connection,
+    *,
+    idempotency_key: str,
+    chat_id_hash: str,
+    period_label: str,
+    total_parts: int,
+    edition_id: str = "en_global",
+    kind: str = "weekly",
+    delivery_profile_id: str = "default",
 ) -> int:
     """Idempotent: a repeated call with the same idempotency_key returns
     the SAME logical delivery id rather than creating a duplicate row --
     this is what makes "repeated invocation must not duplicate part one or
-    part two" hold at the logical-delivery level, not just per-part."""
+    part two" hold at the logical-delivery level, not just per-part.
+    `period_label` is an ISO week ("2026-W33") for kind='weekly' or a
+    calendar month ("2026-08") for kind='monthly' -- this table (and
+    `weekly_delivery_parts`) is shared by both digest kinds and both
+    editions (2026-08-17 multi-edition architecture), despite the
+    `weekly_`-prefixed table names, which are kept as a naming legacy from
+    when only weekly existed."""
     existing = conn.execute(
         "SELECT id FROM weekly_deliveries WHERE idempotency_key = ?", (idempotency_key,)
     ).fetchone()
@@ -55,9 +69,13 @@ def get_or_create_delivery(
         return existing["id"]
     now = datetime.now(UTC).isoformat()
     cur = conn.execute(
-        "INSERT INTO weekly_deliveries (idempotency_key, chat_id_hash, week_label, total_parts, status, "
-        "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (idempotency_key, chat_id_hash, week_label, total_parts, STATUS_PENDING, now, now),
+        "INSERT INTO weekly_deliveries (idempotency_key, chat_id_hash, period_label, total_parts, status, "
+        "created_at, updated_at, edition_id, kind, delivery_profile_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            idempotency_key, chat_id_hash, period_label, total_parts, STATUS_PENDING, now, now,
+            edition_id, kind, delivery_profile_id,
+        ),
     )
     return cur.lastrowid
 

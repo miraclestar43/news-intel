@@ -62,8 +62,8 @@ def _insert_new(conn: sqlite3.Connection, item: NormalizedItem) -> int | None:
         INSERT INTO raw_items (
             source_id, external_id, canonical_url, url_hash, title, normalized_title,
             summary_excerpt, language, published_at, fetched_at, content_hash,
-            origin_family, origin_url, origin_title, origin_published_at, metadata_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            origin_family, origin_url, origin_title, origin_published_at, edition_id, metadata_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(source_id, external_id) DO NOTHING
         """,
         (
@@ -82,6 +82,7 @@ def _insert_new(conn: sqlite3.Connection, item: NormalizedItem) -> int | None:
             item.origin_url,
             item.origin_title,
             item.origin_published_at.isoformat() if item.origin_published_at else None,
+            item.edition_id,
             json.dumps(item.metadata, ensure_ascii=False),
         ),
     )

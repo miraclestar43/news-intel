@@ -198,6 +198,10 @@ def is_render_ready(primary: dict, secondary: dict | None) -> bool:
 # of a story (an event-type word, not a company/person/country name).
 _NON_ENTITY_ACRONYMS = frozenset({
     "IPO", "CEO", "CFO", "CTO", "COO", "AI", "US", "UK", "EU", "UN", "GDP", "CPI",
+    # 2026-08-18: "ASP" (Average Selling Price) added after a real zh_cn
+    # replay picked it as the principal entity for a NAND-market report --
+    # a generic finance acronym, never itself a story's subject.
+    "ASP", "YOY", "QOQ", "ROI",
 })
 
 # 2026-08-18 defect: pipeline/entities.py's shared extraction (tuned for

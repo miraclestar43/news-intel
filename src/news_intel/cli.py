@@ -148,6 +148,8 @@ def collect(dry_run: bool = typer.Option(True, help="Preview only; roll back all
     )
 
 
+_EDITION_OPTION = typer.Option("en_global", help="Edition id: en_global or zh_cn (config/editions.yaml).")
+
 digest_app = typer.Typer(help="Digest generation commands")
 app.add_typer(digest_app, name="digest")
 
@@ -156,19 +158,20 @@ app.add_typer(digest_app, name="digest")
 def digest_daily(
     dry_run: bool = typer.Option(True, help="Preview only; do not persist the digest or send Telegram."),
     chat_id: int = typer.Option(None, help="Telegram chat id to send to (must be in the allowlist)."),
+    edition: str = _EDITION_OPTION,
 ) -> None:
     """Generate (and optionally send) the daily brief."""
     config, conn = _load()
     try:
         if dry_run:
             with db.rollback_only(conn):
-                summary = run_daily(config, conn, chat_id=chat_id, dry_run=True)
+                summary = run_daily(config, conn, chat_id=chat_id, dry_run=True, edition_id=edition)
         else:
-            summary = run_daily(config, conn, chat_id=chat_id, dry_run=False)
+            summary = run_daily(config, conn, chat_id=chat_id, dry_run=False, edition_id=edition)
     finally:
         conn.close()
 
-    typer.echo(f"model_used={summary.model_used} fallback_used={summary.fallback_used}")
+    typer.echo(f"edition={edition} model_used={summary.model_used} fallback_used={summary.fallback_used}")
     typer.echo(f"top3={summary.top3_count} quick_briefs={summary.quick_brief_count} chars={summary.character_count}")
     typer.echo(f"idempotency_key={summary.idempotency_key} sent={summary.sent} sent_dry_run={summary.sent_dry_run}")
     typer.echo("\n--- rendered brief ---\n")
@@ -179,19 +182,23 @@ def digest_daily(
 def digest_weekly(
     dry_run: bool = typer.Option(True, help="Preview only; do not persist the digest or send Telegram."),
     chat_id: int = typer.Option(None, help="Telegram chat id to send to (must be in the allowlist)."),
+    edition: str = _EDITION_OPTION,
 ) -> None:
     """Generate (and optionally send) the Sunday weekly brief."""
     config, conn = _load()
     try:
         if dry_run:
             with db.rollback_only(conn):
-                summary = run_weekly(config, conn, chat_id=chat_id, dry_run=True)
+                summary = run_weekly(config, conn, chat_id=chat_id, dry_run=True, edition_id=edition)
         else:
-            summary = run_weekly(config, conn, chat_id=chat_id, dry_run=False)
+            summary = run_weekly(config, conn, chat_id=chat_id, dry_run=False, edition_id=edition)
     finally:
         conn.close()
 
-    typer.echo(f"week={summary.week_label} model_used={summary.model_used} fallback_used={summary.fallback_used}")
+    typer.echo(
+        f"edition={edition} week={summary.week_label} model_used={summary.model_used} "
+        f"fallback_used={summary.fallback_used}"
+    )
     typer.echo(
         f"trends={summary.trend_count} chars={summary.character_count} "
         f"skipped_duplicate={summary.skipped_duplicate}"
@@ -206,19 +213,23 @@ def digest_weekly(
 def digest_monthly(
     dry_run: bool = typer.Option(True, help="Preview only; do not persist the digest or send Telegram."),
     chat_id: int = typer.Option(None, help="Telegram chat id to send to (must be in the allowlist)."),
+    edition: str = _EDITION_OPTION,
 ) -> None:
     """Generate (and optionally send) the first-Monday monthly brief."""
     config, conn = _load()
     try:
         if dry_run:
             with db.rollback_only(conn):
-                summary = run_monthly(config, conn, chat_id=chat_id, dry_run=True)
+                summary = run_monthly(config, conn, chat_id=chat_id, dry_run=True, edition_id=edition)
         else:
-            summary = run_monthly(config, conn, chat_id=chat_id, dry_run=False)
+            summary = run_monthly(config, conn, chat_id=chat_id, dry_run=False, edition_id=edition)
     finally:
         conn.close()
 
-    typer.echo(f"month={summary.month_label} model_used={summary.model_used} fallback_used={summary.fallback_used}")
+    typer.echo(
+        f"edition={edition} month={summary.month_label} model_used={summary.model_used} "
+        f"fallback_used={summary.fallback_used}"
+    )
     typer.echo(
         f"trends={summary.trend_count} chars={summary.character_count} "
         f"skipped_duplicate={summary.skipped_duplicate}"
@@ -381,6 +392,7 @@ def production_daily(
         help="First Pacific date eligible for a real production send, YYYY-MM-DD. Any invocation on an "
         "earlier Pacific date is skipped as a safety net -- no Telegram contact.",
     ),
+    edition: str = _EDITION_OPTION,
 ) -> None:
     """The production daily entrypoint: always a real (non-dry-run) send.
     Fail-closed checks (allowlist cardinality, event category/URL mapping,
@@ -389,22 +401,24 @@ def production_daily(
     config, conn = _load()
     try:
         now = datetime.now(UTC)
-        pt_today = now.astimezone(ZoneInfo(config.policy.timezone)).date()
+        edition_cfg = config.editions.get(edition)
+        pt_today = now.astimezone(ZoneInfo(edition_cfg.schedule.timezone)).date()
         start = date.fromisoformat(start_date)
         if pt_today < start:
             typer.echo(
-                f"production: pt_date={pt_today} is before start_date={start} -- skipping, no Telegram contact."
+                f"production: edition={edition} pt_date={pt_today} is before start_date={start} -- "
+                f"skipping, no Telegram contact."
             )
             return
 
         allowed = config.secrets.allowed_chat_id_list
         chat_id = allowed[0] if len(allowed) == 1 else -1
-        summary = run_daily(config, conn, chat_id=chat_id, dry_run=False, now=now)
+        summary = run_daily(config, conn, chat_id=chat_id, dry_run=False, now=now, edition_id=edition)
     finally:
         conn.close()
 
     typer.echo(
-        f"fail_closed={summary.fail_closed} sent={summary.sent} "
+        f"edition={edition} fail_closed={summary.fail_closed} sent={summary.sent} "
         f"top3={summary.top3_count} quick_briefs={summary.quick_brief_count} chars={summary.character_count}"
     )
     if summary.fail_closed:
@@ -413,7 +427,7 @@ def production_daily(
 
 
 @production_app.command("weekly")
-def production_weekly() -> None:
+def production_weekly(edition: str = _EDITION_OPTION) -> None:
     """The production weekly entrypoint: always a real (non-dry-run) send,
     Sunday-slot only. Rejects execution outside an explicitly valid Sunday
     America/Los_Angeles window BEFORE any job-run/digest/delivery record is
@@ -423,22 +437,22 @@ def production_weekly() -> None:
     lower-level dry-run-capable command) as the production service."""
     config, conn = _load()
     try:
-        summary = run_weekly_production(config, conn)
+        summary = run_weekly_production(config, conn, edition_id=edition)
     finally:
         conn.close()
 
     if summary.skipped_late_catchup:
         typer.echo(
-            f"production weekly: outside the valid Sunday America/Los_Angeles window at "
+            f"production weekly: edition={edition} outside the valid Sunday America/Los_Angeles window at "
             f"{summary.pt_window_checked_at} -- skipped_late_catchup, zero database writes, "
             f"zero Telegram contact."
         )
         return
 
     typer.echo(
-        f"week={summary.week_label} git_head={summary.git_head} fail_closed={summary.fail_closed} "
-        f"sent={summary.sent} trends={summary.trend_count} chars={summary.character_count} "
-        f"skipped_duplicate={summary.skipped_duplicate}"
+        f"edition={edition} week={summary.week_label} git_head={summary.git_head} "
+        f"fail_closed={summary.fail_closed} sent={summary.sent} trends={summary.trend_count} "
+        f"chars={summary.character_count} skipped_duplicate={summary.skipped_duplicate}"
     )
     if summary.fail_closed:
         typer.echo(f"fail_reason={summary.fail_reason}")
@@ -446,7 +460,7 @@ def production_weekly() -> None:
 
 
 @production_app.command("monthly")
-def production_monthly() -> None:
+def production_monthly(edition: str = _EDITION_OPTION) -> None:
     """The production monthly entrypoint: always a real (non-dry-run) send,
     first-Monday-of-month slot only. Rejects execution outside an explicitly
     valid first-Monday America/Los_Angeles window BEFORE any job-run/digest/
@@ -457,22 +471,22 @@ def production_monthly() -> None:
     the production service."""
     config, conn = _load()
     try:
-        summary = run_monthly_production(config, conn)
+        summary = run_monthly_production(config, conn, edition_id=edition)
     finally:
         conn.close()
 
     if summary.skipped_late_catchup:
         typer.echo(
-            f"production monthly: outside the valid first-Monday America/Los_Angeles window at "
-            f"{summary.pt_window_checked_at} -- skipped_late_catchup, zero database writes, "
+            f"production monthly: edition={edition} outside the valid first-Monday America/Los_Angeles "
+            f"window at {summary.pt_window_checked_at} -- skipped_late_catchup, zero database writes, "
             f"zero Telegram contact."
         )
         return
 
     typer.echo(
-        f"month={summary.month_label} git_head={summary.git_head} fail_closed={summary.fail_closed} "
-        f"sent={summary.sent} trends={summary.trend_count} chars={summary.character_count} "
-        f"skipped_duplicate={summary.skipped_duplicate}"
+        f"edition={edition} month={summary.month_label} git_head={summary.git_head} "
+        f"fail_closed={summary.fail_closed} sent={summary.sent} trends={summary.trend_count} "
+        f"chars={summary.character_count} skipped_duplicate={summary.skipped_duplicate}"
     )
     if summary.fail_closed:
         typer.echo(f"fail_reason={summary.fail_reason}")

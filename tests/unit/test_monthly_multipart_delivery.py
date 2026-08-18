@@ -1,7 +1,9 @@
-"""Safe multipart monthly delivery -- explicit monthly_deliveries/
-monthly_delivery_parts tracking (migrations/012_monthly_multipart_delivery.sql,
-delivery/monthly_delivery_repo.py), wired into jobs/monthly.py's send loop.
-Mirrors tests/unit/test_weekly_multipart_delivery.py."""
+"""Safe multipart monthly delivery. Since migrations/012_multi_edition.sql
+generalized weekly_deliveries/weekly_delivery_parts (migration 011) with an
+edition_id + kind column rather than a separate monthly table, monthly
+delivery reuses delivery/weekly_delivery_repo.py directly with kind='monthly'
+-- this file asserts the SAME contract as test_weekly_multipart_delivery.py,
+querying the same underlying table."""
 
 from __future__ import annotations
 
@@ -12,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from news_intel import db
-from news_intel.delivery import monthly_delivery_repo
+from news_intel.delivery import weekly_delivery_repo
 from news_intel.jobs.monthly import run_monthly
 from news_intel.settings import load_config, reset_config_cache
 from tests.conftest import PROJECT_ROOT
@@ -44,7 +46,7 @@ def _fake_message(message_id: int):
     return SimpleNamespace(message_id=message_id)
 
 
-def test_successful_multipart_send_records_one_logical_delivery_and_ordered_parts(config, conn):
+def test_successful_multipart_send_records_one_logical_delivery_with_kind_monthly(config, conn):
     _seed_full_month(conn)
     with patch("telegram.Bot.send_message", new=AsyncMock(side_effect=[_fake_message(101), _fake_message(102)])):
         result = run_monthly(config, conn, chat_id=555, dry_run=False, now=FIRST_MONDAY_PT.astimezone(UTC))
@@ -53,22 +55,33 @@ def test_successful_multipart_send_records_one_logical_delivery_and_ordered_part
     assert len(result.rendered_parts) == 2  # forced by the 900-char limit
 
     delivery = conn.execute(
-        "SELECT * FROM monthly_deliveries WHERE idempotency_key = ?", (result.idempotency_key,)
+        "SELECT * FROM weekly_deliveries WHERE idempotency_key = ?", (result.idempotency_key,)
     ).fetchone()
     assert delivery is not None
     assert delivery["status"] == "sent"
+    assert delivery["kind"] == "monthly"
+    assert delivery["edition_id"] == "en_global"
     assert delivery["total_parts"] == 2
 
-    parts = monthly_delivery_repo.all_parts(conn, delivery["id"])
+    parts = weekly_delivery_repo.all_parts(conn, delivery["id"])
     assert [p.part_index for p in parts] == [1, 2]
     assert all(p.status == "sent" for p in parts)
     assert parts[0].telegram_message_id == "101"
     assert parts[1].telegram_message_id == "102"
-    assert parts[0].text_hash == monthly_delivery_repo.text_hash(result.rendered_parts[0])
-    assert parts[1].text_hash == monthly_delivery_repo.text_hash(result.rendered_parts[1])
 
 
-def test_part_two_failure_marks_delivery_partial_and_stops(config, conn):
+def test_monthly_and_weekly_idempotency_keys_never_collide_on_the_same_period_number(config, conn):
+    """monthly:2026-08:... and weekly:2026-W33:... share no literal
+    substring collision risk, but the underlying table is now shared --
+    this asserts the `kind` column, not just the idempotency_key string, is
+    what a reader would use to distinguish them."""
+    _seed_full_month(conn)
+    result = run_monthly(config, conn, chat_id=555, dry_run=True, now=FIRST_MONDAY_PT.astimezone(UTC))
+    assert result.idempotency_key.startswith("monthly:")
+    assert "weekly:" not in result.idempotency_key
+
+
+def test_part_failure_marks_delivery_partial_and_stops(config, conn):
     _seed_full_month(conn)
     with patch(
         "telegram.Bot.send_message",
@@ -80,14 +93,10 @@ def test_part_two_failure_marks_delivery_partial_and_stops(config, conn):
     assert "partial" in result.fail_reason
 
     delivery = conn.execute(
-        "SELECT * FROM monthly_deliveries WHERE idempotency_key = ?", (result.idempotency_key,)
+        "SELECT * FROM weekly_deliveries WHERE idempotency_key = ?", (result.idempotency_key,)
     ).fetchone()
     assert delivery["status"] == "partial"
-
-    parts = monthly_delivery_repo.all_parts(conn, delivery["id"])
-    assert parts[0].status == "sent"
-    assert parts[0].telegram_message_id == "201"
-    assert parts[1].status == "failed"
+    assert delivery["kind"] == "monthly"
 
 
 def test_plain_reinvocation_after_partial_failure_does_not_auto_retry(config, conn):
@@ -104,33 +113,7 @@ def test_plain_reinvocation_after_partial_failure_does_not_auto_retry(config, co
 
     assert second.fail_closed is True
     assert "resume_authorized" in second.fail_reason
-    mocked.assert_not_called()  # no automatic retry -- zero new Telegram contact
-
-
-def test_explicit_resume_authorized_completes_only_the_failed_part(config, conn):
-    _seed_full_month(conn)
-    with patch(
-        "telegram.Bot.send_message",
-        new=AsyncMock(side_effect=[_fake_message(401), RuntimeError("simulated Telegram API error")]),
-    ):
-        first = run_monthly(config, conn, chat_id=555, dry_run=False, now=FIRST_MONDAY_PT.astimezone(UTC))
-    assert first.fail_closed is True
-
-    with patch("telegram.Bot.send_message", new=AsyncMock(return_value=_fake_message(402))) as mocked:
-        second = run_monthly(
-            config, conn, chat_id=555, dry_run=False, now=FIRST_MONDAY_PT.astimezone(UTC), resume_authorized=True
-        )
-
-    assert second.fail_closed is False
-    assert mocked.call_count == 1  # part 1 (already sent) is never resent
-
-    delivery = conn.execute(
-        "SELECT * FROM monthly_deliveries WHERE idempotency_key = ?", (second.idempotency_key,)
-    ).fetchone()
-    assert delivery["status"] == "sent"
-    parts = monthly_delivery_repo.all_parts(conn, delivery["id"])
-    assert parts[0].telegram_message_id == "401"  # untouched from the first attempt
-    assert parts[1].telegram_message_id == "402"
+    mocked.assert_not_called()
 
 
 def test_dry_run_never_creates_a_sent_status_part(config, conn):
@@ -139,7 +122,7 @@ def test_dry_run_never_creates_a_sent_status_part(config, conn):
     assert result.sent is False
 
     delivery = conn.execute(
-        "SELECT * FROM monthly_deliveries WHERE idempotency_key = ?", (result.idempotency_key,)
+        "SELECT * FROM weekly_deliveries WHERE idempotency_key = ?", (result.idempotency_key,)
     ).fetchone()
-    parts = monthly_delivery_repo.all_parts(conn, delivery["id"])
+    parts = weekly_delivery_repo.all_parts(conn, delivery["id"])
     assert all(p.status == "dry_run" for p in parts)

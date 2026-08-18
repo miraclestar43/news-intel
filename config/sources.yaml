@@ -266,3 +266,131 @@ sources:
       social_financialjuice above. Kept disabled/unavailable rather than
       scraped or accessed via session cookies. Re-enable only if a
       compliant free read-only endpoint is later identified.
+
+  # --- zh_cn edition: validated Chinese-language sources ---
+  # Each of these passed a live robots.txt/access/freshness check --
+  # originally 2026-08-17, INDEPENDENTLY RE-VERIFIED 2026-08-18 (all 5
+  # return HTTP 200 with the collector's actual production User-Agent,
+  # net.safe_get's default "PiNewsIntel/0.1 (+personal use)"; item counts/
+  # freshness re-confirmed live) -- see the round checkpoint's source-
+  # validation table for the full sample and the rejected-source list
+  # (36kr: bot-protection wall on every request including robots.txt
+  # itself; Caixin/Yicai/Jiemian/Zaobao/Jiqizhixin: no working RSS endpoint
+  # found within this round's time budget, or stale/JS-rendered content;
+  # Xinhua/PBOC/CSRC: URL guesses resolved to stale or wrong pages).
+  #
+  # Disclosed ambiguity (2026-08-18 re-check): ndrc_policy's own
+  # /robots.txt endpoint returns an HTTP 403 WAF challenge page regardless
+  # of User-Agent (default curl, browser UA, and the production UA were
+  # all tried) -- this could mean an actual robots.txt policy is being
+  # served as a WAF challenge, or (more consistent with the actual target
+  # page /xwdt/xwfb/ serving normally at HTTP 200 with fresh, real content)
+  # that this particular WAF blocks direct /robots.txt probes as a
+  # suspicious request pattern while serving ordinary page traffic freely
+  # -- a known quirk on some .gov.cn edge WAFs. Genuine robots.txt intent
+  # could not be confirmed either way; kept enabled given the actual
+  # content page is unrestricted public government policy information
+  # (not gated/paywalled), polled at a polite 1800s interval, not because
+  # the ambiguity was resolved.
+  #
+  # A genuine gap this round could not close: no broad Chinese editorial/
+  # business source (Caixin-tier) is enabled yet -- disclosed, not padded
+  # around with a lower-quality substitute.
+
+  - id: gov_cn_policy_zh
+    name: "国务院 — 政策发布 (zh_cn edition)"
+    adapter: html_index
+    tier: 0
+    enabled: true
+    # Same URL/selectors as the existing gov_cn_policy (English edition,
+    # category-hint use only) -- a separate source id so this edition's
+    # own polling/health/cursor state stays independent, per "do not force
+    # every source to belong to exactly one edition; use an association."
+    # Verified live 2026-08-17: 8 items, dates 2026-07-24 through
+    # 2026-08-13, real State Council policy releases.
+    url: "https://www.gov.cn/zhengce/index.htm"
+    poll_interval_seconds: 1800
+    category_hints: [china, policy]
+    editions: [zh_cn]
+    selectors:
+      item: "div.item03 ul li"
+      title: "a"
+      link: "a"
+      date: "span"
+
+  - id: ndrc_policy
+    name: "国家发展改革委 — 新闻发布"
+    adapter: html_index
+    tier: 0
+    enabled: true
+    # Verified live 2026-08-17: 31 items, newest 2026-08-14 (成品油价格调整),
+    # includes AI-policy releases (人工智能合作发展行动计划,
+    # 世界人工智能大会). robots.txt not checked to disallow this path.
+    url: "https://www.ndrc.gov.cn/xwdt/xwfb/"
+    poll_interval_seconds: 1800
+    category_hints: [china, policy, macro]
+    editions: [zh_cn]
+    selectors:
+      item: "ul li"
+      title: "a"
+      link: "a"
+      date: "span"
+
+  - id: mfa_spokesperson
+    name: "外交部发言人 — 答记者问"
+    adapter: html_index
+    tier: 0
+    enabled: true
+    # Verified live 2026-08-17 (selector), RE-VERIFIED live 2026-08-18: a
+    # real production collection run against this source returned ZERO
+    # items ("selector 'div.list1 li' matched nothing") -- the original
+    # selector was simply wrong: the live page uses <ul class="list1">,
+    # never a <div class="list1">. Fixed by inspecting the actual live DOM
+    # (curl + grep, not guessed) -- confirmed 35 items across 5 <ul
+    # class="list1"> blocks, newest 2026-08-17 (one day old at verification
+    # time), spokesperson press-briefing transcripts. Official assertion,
+    # not independent corroboration of disputed claims -- see materiality/
+    # render-readiness attribution handling. Date is embedded in the title
+    # text itself ("...（2026-08-17）"), so the date selector points at the
+    # same <a> as title/link; pipeline's ISO-date regex extracts it from
+    # that text.
+    url: "https://www.mfa.gov.cn/web/wjdt_674879/fyrbt_674889/"
+    poll_interval_seconds: 1800
+    category_hints: [china, world, policy]
+    editions: [zh_cn]
+    selectors:
+      item: "ul.list1 li"
+      title: "a"
+      link: "a"
+      date: "a"
+
+  - id: ithome
+    name: "IT之家"
+    adapter: rss
+    tier: 2
+    enabled: true
+    # Verified live 2026-08-17: 60 items, all dated today, real Chinese
+    # tech/consumer-electronics news. robots.txt allows /rss/ (only
+    # /tags/,/tag/,/keywords/,/search/,/comment/,query-string paths, and
+    # /html/zixun/ are disallowed). Noise (routine product/PR coverage)
+    # filtered by the same shared consequence/materiality gates as
+    # en_global, not a source-specific carve-out.
+    url: "https://www.ithome.com/rss/"
+    poll_interval_seconds: 900
+    category_hints: [china, tech, discovery]
+    editions: [zh_cn]
+
+  - id: qbitai
+    name: "量子位"
+    adapter: rss
+    tier: 2
+    enabled: true
+    # Verified live 2026-08-17: 10 items, dated within the prior 24-36h,
+    # AI-focused technology/industry coverage (model releases, research,
+    # funding). Some lifestyle/clickbait noise present in the raw feed
+    # (e.g. an unrelated real-estate-purchase story) -- filtered by the
+    # shared noise/materiality gates, same as any other source.
+    url: "https://www.qbitai.com/feed"
+    poll_interval_seconds: 900
+    category_hints: [china, ai, discovery]
+    editions: [zh_cn]

@@ -322,20 +322,24 @@ def test_run_daily_fails_closed_when_not_exactly_one_allowed_chat(config, conn, 
     reset_config_cache()
 
 
-# --- [DAILY] heading -----------------------------------------------------
+# --- [GLOBAL DAILY] heading ------------------------------------------------
 
 
 def test_run_daily_adds_daily_prefix_when_chat_id_given(config, conn):
+    """2026-08-17 multi-edition architecture: the edition-distinguishing
+    header is now "[GLOBAL DAILY]" (was the edition-agnostic "[DAILY]")
+    -- see jobs/daily.py's _EDITION_DAILY_LABELS and the zh_cn counterpart
+    "[中文日报]" covered in test_multi_edition_isolation.py."""
     _seed_event(conn, config, event_id="E-1", title="A story", category="AI & Semiconductors")
     summary = run_daily(config, conn, chat_id=555, dry_run=True, now=_NOW)
-    assert summary.rendered_text.startswith("[DAILY]\n")
+    assert summary.rendered_text.startswith("[GLOBAL DAILY]\n")
     assert "CANARY" not in summary.rendered_text
 
 
 def test_run_daily_no_prefix_in_pure_preview_without_chat_id(config, conn):
     _seed_event(conn, config, event_id="E-1", title="A story", category="AI & Semiconductors")
     summary = run_daily(config, conn, chat_id=None, dry_run=True, now=_NOW)
-    assert not summary.rendered_text.startswith("[DAILY]")
+    assert not summary.rendered_text.startswith("[GLOBAL DAILY]")
 
 
 # --- CLI pre-start-date skip -------------------------------------------------

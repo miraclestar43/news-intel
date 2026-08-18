@@ -68,6 +68,7 @@ class NormalizedItem:
         "origin_url",
         "origin_title",
         "origin_published_at",
+        "edition_id",
         "metadata",
     )
 
@@ -76,7 +77,9 @@ class NormalizedItem:
             setattr(self, slot, kwargs[slot])
 
 
-def normalize(item: CollectedItem, *, excerpt_max_chars: int, now: datetime | None = None) -> NormalizedItem:
+def normalize(
+    item: CollectedItem, *, excerpt_max_chars: int, now: datetime | None = None, edition_id: str = "en_global"
+) -> NormalizedItem:
     canonical = canonicalize_url(item.canonical_url)
     norm_title = normalize_title(item.title)
     excerpt = (item.summary_excerpt or "")[:excerpt_max_chars] or None
@@ -96,5 +99,6 @@ def normalize(item: CollectedItem, *, excerpt_max_chars: int, now: datetime | No
         origin_url=item.origin_url,
         origin_title=item.origin_title,
         origin_published_at=item.origin_published_at,
+        edition_id=edition_id,
         metadata=item.metadata,
     )

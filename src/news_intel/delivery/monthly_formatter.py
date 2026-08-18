@@ -16,23 +16,39 @@ MONTHLY_FALLBACK_NOTICE = (
     "trend clusters instead of narrative synthesis."
 )
 
-
-def _monthly_header(month_label: str) -> str:
-    return f"Monthly Intelligence Brief — {month_label}"
+_EDITION_MONTHLY_LABELS = {"en_global": "[GLOBAL MONTHLY]", "zh_cn": "[中文月报]"}
 
 
-def render_monthly(month_label: str, trends: list[dict], prior_summary: dict, calendar_candidates: list[dict]) -> str:
-    lines = [_monthly_header(month_label), "", MONTHLY_FALLBACK_NOTICE, ""]
+def _monthly_header(month_label: str, edition_id: str = "en_global") -> str:
+    prefix = _EDITION_MONTHLY_LABELS.get(edition_id, "[GLOBAL MONTHLY]")
+    return f"{prefix} Monthly Intelligence Brief — {month_label}"
+
+
+def render_monthly(
+    month_label: str, trends: list[dict], prior_summary: dict, calendar_candidates: list[dict],
+    edition_id: str = "en_global",
+) -> str:
+    lines = [_monthly_header(month_label, edition_id), "", MONTHLY_FALLBACK_NOTICE, ""]
 
     new_count = sum(1 for t in trends if t.get("status") == "new")
     continuing_count = sum(1 for t in trends if t.get("status") == "continuing")
     resolved_count = len(prior_summary.get("resolved_titles", []))
-    lines.append("THIS MONTH'S CONCLUSIONS")
-    lines.append(f"• {len(trends)} trends identified this month ({new_count} new).")
-    lines.append(f"• {continuing_count} continuing, {resolved_count} resolved/cooled since last month.")
-    signal_n = len(prior_summary.get("signal_titles", []))
-    noise_n = len(prior_summary.get("noise_titles", []))
-    lines.append(f"• {signal_n} signal events, {noise_n} noise/unconfirmed.")
+    # Disclosed simplification (2026-08-18, matches weekly's own): section
+    # labels below stay English scaffolding for zh_cn in this rollout --
+    # only the header prefix and this conclusions line are localized. The
+    # SUBSTANCE (trend titles) is genuinely Chinese either way, since zh_cn
+    # trends are built from zh_cn's own sources.
+    if edition_id == "zh_cn":
+        lines.append("本月结论")
+        lines.append(f"• 本月共识别 {len(trends)} 个趋势，其中 {new_count} 个为新趋势。")
+        lines.append(f"• {continuing_count} 个趋势持续，{resolved_count} 个上月趋势已解决或降温。")
+    else:
+        lines.append("THIS MONTH'S CONCLUSIONS")
+        lines.append(f"• {len(trends)} trends identified this month ({new_count} new).")
+        lines.append(f"• {continuing_count} continuing, {resolved_count} resolved/cooled since last month.")
+        signal_n = len(prior_summary.get("signal_titles", []))
+        noise_n = len(prior_summary.get("noise_titles", []))
+        lines.append(f"• {signal_n} signal events, {noise_n} noise/unconfirmed.")
     lines.append("")
 
     lines.append("WHAT MATERIALLY CHANGED THIS MONTH")
@@ -86,14 +102,14 @@ def render_monthly(month_label: str, trends: list[dict], prior_summary: dict, ca
     return "\n".join(lines)
 
 
-def split_monthly(rendered_text: str, month_label: str, max_chars: int) -> list[str]:
+def split_monthly(rendered_text: str, month_label: str, max_chars: int, edition_id: str = "en_global") -> list[str]:
     """At most two Telegram messages, same "split at the template's own
     natural boundary" approach as delivery/weekly_formatter.py's
     split_weekly."""
     if len(rendered_text) <= max_chars:
         return [rendered_text]
 
-    header_line = _monthly_header(month_label)
+    header_line = _monthly_header(month_label, edition_id)
     marker = "\nMARKETS & ECONOMY"
     idx = rendered_text.find(marker)
     if idx == -1:

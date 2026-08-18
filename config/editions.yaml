@@ -1,0 +1,31 @@
+# Multi-edition configuration (2026-08-17). All schedule times are
+# America/Los_Angeles local time -- systemd timers (deploy/systemd/) and
+# the application-level late-catch-up guards (jobs/*_production.py) both
+# resolve DST against this same authoritative Pacific-time intent, never a
+# fixed UTC offset.
+editions:
+  - id: en_global
+    language: en
+    label_daily: "[GLOBAL DAILY]"
+    label_weekly: "[GLOBAL WEEKLY]"
+    label_monthly: "[GLOBAL MONTHLY]"
+    topics_file: topics.yaml
+    delivery_profile_id: default
+    schedule:
+      timezone: America/Los_Angeles
+      daily_hour: 22
+      weekly_hour: 22
+      monthly_hour: 22
+
+  - id: zh_cn
+    language: zh
+    label_daily: "[中文日报]"
+    label_weekly: "[中文周报]"
+    label_monthly: "[中文月报]"
+    topics_file: topics_zh.yaml
+    delivery_profile_id: default
+    schedule:
+      timezone: America/Los_Angeles
+      daily_hour: 7
+      weekly_hour: 7
+      monthly_hour: 7

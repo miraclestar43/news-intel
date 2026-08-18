@@ -50,10 +50,10 @@ _WEEKLY_WINDOW_TOLERANCE = timedelta(hours=2)
 _WEEKLY_TARGET_HOUR = 22
 
 
-def _is_valid_weekly_window(now_pt: datetime) -> bool:
+def _is_valid_weekly_window(now_pt: datetime, target_hour: int = _WEEKLY_TARGET_HOUR) -> bool:
     if now_pt.weekday() != 6:  # Sunday
         return False
-    target = now_pt.replace(hour=_WEEKLY_TARGET_HOUR, minute=0, second=0, microsecond=0)
+    target = now_pt.replace(hour=target_hour, minute=0, second=0, microsecond=0)
     return abs(now_pt - target) <= _WEEKLY_WINDOW_TOLERANCE
 
 
@@ -76,13 +76,14 @@ class WeeklyProductionSummary(WeeklySummary):
 
 
 def run_weekly_production(
-    config: AppConfig, conn: sqlite3.Connection, *, now: datetime | None = None
+    config: AppConfig, conn: sqlite3.Connection, *, now: datetime | None = None, edition_id: str = "en_global"
 ) -> WeeklyProductionSummary:
     now = now or datetime.now(UTC)
-    tz = ZoneInfo(config.policy.timezone)
+    edition = config.editions.get(edition_id)
+    tz = ZoneInfo(edition.schedule.timezone)
     now_pt = now.astimezone(tz)
 
-    if not _is_valid_weekly_window(now_pt):
+    if not _is_valid_weekly_window(now_pt, edition.schedule.weekly_hour):
         # Deliberately BEFORE any job_runs.start()/DB write of any kind --
         # a late/Persistent catch-up firing must leave zero trace besides
         # this in-memory result.
@@ -112,13 +113,13 @@ def run_weekly_production(
     # part, etc.) runs INSIDE run_weekly() itself, before its send loop --
     # see jobs/weekly.py's fail_closed handling -- so it is guaranteed to
     # run before any Telegram contact, not after.
-    result = run_weekly(config, conn, chat_id=chat_id, dry_run=False, now=now)
+    result = run_weekly(config, conn, chat_id=chat_id, dry_run=False, now=now, edition_id=edition_id)
 
     # run_weekly() already ran its own job_runs.start()/finish() pair; this
     # is a second, clearly-labeled production-envelope record so "was this
     # a genuine production invocation, and what code was deployed" is
     # answerable without cross-referencing job_name="weekly" rows.
-    run_id = job_runs.start(conn, "weekly_production")
+    run_id = job_runs.start(conn, "weekly_production", edition_id=edition_id)
     job_runs.finish(
         conn, run_id, "failed" if result.fail_closed else "success",
         {

@@ -195,6 +195,13 @@ class SourceEntry(BaseModel):
     selectors: dict[str, str] | None = None
     requires_identifying_user_agent: bool = False
     note: str | None = None
+    # 2026-08-17 multi-edition architecture: which edition(s) this source's
+    # collected items belong to (config/editions.yaml's edition IDs). A
+    # source is not forced into exactly one -- this is a list -- but every
+    # source currently configured belongs to exactly one in practice.
+    # Defaults to ["en_global"] so every pre-existing entry (all English
+    # production sources) needs no change at all.
+    editions: list[str] = Field(default_factory=lambda: ["en_global"])
 
 
 class SourcesConfig(BaseModel):
@@ -268,6 +275,78 @@ class AlertTriggersConfig(BaseModel):
     triggers: list[AlertTriggerEntry]
 
 
+# 2026-08-17 multi-edition architecture -----------------------------------
+
+
+class EditionScheduleConfig(BaseModel):
+    """All schedule semantics are America/Los_Angeles-anchored -- never a
+    fixed UTC offset (systemd's own OnCalendar resolves the DST-correct
+    instant; this is the authoritative *intent* the application-level
+    late-catch-up guards in jobs/*_production.py check against)."""
+
+    timezone: str = "America/Los_Angeles"
+    daily_hour: int = 22
+    weekly_hour: int = 22
+    monthly_hour: int = 22
+
+
+class EditionEntry(BaseModel):
+    id: str
+    language: str
+    label_daily: str
+    label_weekly: str
+    label_monthly: str
+    topics_file: str
+    delivery_profile_id: str = "default"
+    schedule: EditionScheduleConfig = Field(default_factory=EditionScheduleConfig)
+
+
+class EditionsConfig(BaseModel):
+    editions: list[EditionEntry]
+
+    @field_validator("editions")
+    @classmethod
+    def _unique_ids(cls, v: list[EditionEntry]) -> list[EditionEntry]:
+        ids = [e.id for e in v]
+        dupes = {i for i in ids if ids.count(i) > 1}
+        if dupes:
+            raise ValueError(f"duplicate edition ids: {dupes}")
+        return v
+
+    def get(self, edition_id: str) -> EditionEntry:
+        for e in self.editions:
+            if e.id == edition_id:
+                return e
+        raise KeyError(f"unknown edition_id {edition_id!r}")
+
+
+class DeliveryProfileEntry(BaseModel):
+    """Separates WHICH bot/chat a delivery goes to from WHICH content
+    edition it carries. `bot_profile_id`/`recipient_profile_id` are
+    informational labels only in this rollout -- every profile resolves to
+    the SAME existing protected Secrets() (telegram_bot_token/
+    allowed_chat_id_list), since both editions use the current production
+    bot and recipient (@star_daily_news_bot) by explicit instruction this
+    round. A future edition-specific bot/chat needs a new profile entry
+    here plus a corresponding secrets source -- no migration, since
+    deliveries.delivery_profile_id already exists."""
+
+    id: str
+    bot_profile_id: str
+    recipient_profile_id: str
+    note: str | None = None
+
+
+class DeliveryProfilesConfig(BaseModel):
+    profiles: list[DeliveryProfileEntry]
+
+    def get(self, profile_id: str) -> DeliveryProfileEntry:
+        for p in self.profiles:
+            if p.id == profile_id:
+                return p
+        raise KeyError(f"unknown delivery_profile_id {profile_id!r}")
+
+
 def _load_yaml(path: Path) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"missing required config file: {path}")
@@ -283,8 +362,18 @@ class AppConfig(BaseModel):
     secrets: Secrets
     config_dir: Path
     data_dir: Path
+    editions: EditionsConfig
+    delivery_profiles: DeliveryProfilesConfig
+    # 2026-08-17: per-edition TopicsConfig, keyed by edition_id -- en_global
+    # keeps using `topics` above unchanged (identical object, same cached
+    # config file) for every existing call site; zh_cn (and any future
+    # edition) gets its own vocabulary file (EditionEntry.topics_file).
+    topics_by_edition: dict[str, TopicsConfig] = Field(default_factory=dict)
 
     model_config = {"arbitrary_types_allowed": True}
+
+    def topics_for(self, edition_id: str) -> TopicsConfig:
+        return self.topics_by_edition.get(edition_id, self.topics)
 
 
 @lru_cache
@@ -299,6 +388,35 @@ def load_config(config_dir: Path | None = None, data_dir: Path | None = None) ->
     alert_triggers = AlertTriggersConfig.model_validate(_load_yaml(config_dir / "alert_triggers.yaml"))
     secrets = Secrets()
 
+    editions_path = config_dir / "editions.yaml"
+    if editions_path.exists():
+        editions = EditionsConfig.model_validate(_load_yaml(editions_path))
+    else:
+        editions = EditionsConfig(
+            editions=[
+                EditionEntry(
+                    id="en_global", language="en", label_daily="[GLOBAL DAILY]",
+                    label_weekly="[GLOBAL WEEKLY]", label_monthly="[GLOBAL MONTHLY]", topics_file="topics.yaml",
+                )
+            ]
+        )
+
+    profiles_path = config_dir / "delivery_profiles.yaml"
+    if profiles_path.exists():
+        delivery_profiles = DeliveryProfilesConfig.model_validate(_load_yaml(profiles_path))
+    else:
+        delivery_profiles = DeliveryProfilesConfig(
+            profiles=[DeliveryProfileEntry(id="default", bot_profile_id="default", recipient_profile_id="default")]
+        )
+
+    topics_by_edition: dict[str, TopicsConfig] = {}
+    for edition in editions.editions:
+        topics_file_path = config_dir / edition.topics_file
+        if topics_file_path == (config_dir / "topics.yaml"):
+            topics_by_edition[edition.id] = topics
+        else:
+            topics_by_edition[edition.id] = TopicsConfig.model_validate(_load_yaml(topics_file_path))
+
     return AppConfig(
         policy=policy,
         sources=sources,
@@ -307,6 +425,9 @@ def load_config(config_dir: Path | None = None, data_dir: Path | None = None) ->
         secrets=secrets,
         config_dir=config_dir,
         data_dir=data_dir,
+        editions=editions,
+        delivery_profiles=delivery_profiles,
+        topics_by_edition=topics_by_edition,
     )
 
 
