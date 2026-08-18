@@ -6,7 +6,11 @@ extractable, and must never invent a fact not present in the source text."""
 
 from __future__ import annotations
 
-from news_intel.pipeline.zh_render_readiness import is_render_ready_zh, what_happened_zh, why_it_matters_zh
+from news_intel.pipeline.zh_render_readiness import (
+    is_render_ready_zh,
+    what_happened_zh,
+    why_it_matters_zh,
+)
 
 
 def _primary(**overrides) -> dict:
@@ -90,3 +94,48 @@ def test_why_it_matters_zh_never_fabricates_an_amount_not_in_source_text():
     primary = {"title": "标题", "excerpt": "商务部新闻发言人表示，将对相关企业实施新一轮出口管制。"}
     result = why_it_matters_zh(primary, None, "US / China / World", entities=None)
     assert "金额" not in result
+
+
+# 2026-08-18: real defects found via an actual live-collection replay
+# against the validated zh_cn sources (not a synthetic fixture) --
+# a NAND-market report's excerpt embedded English chart captions
+# ("Top Five NAND Flash Brands Rises", "Says TrendForce"), and entities[0]
+# (alphabetically-sorted) picked a generic finance acronym / a garbled
+# multi-word caption fragment over the genuine subject.
+def test_why_it_matters_zh_prefers_single_word_entity_over_garbled_caption_fragment():
+    entities = [
+        "ASP", "Brands Rises", "Combined Revenue", "Micron", "Micron Moves Up",
+        "NAND", "Says TrendForce", "Third Place", "Top Five NAND Flash",
+    ]
+    primary = {
+        "title": "TrendForce：五大海外 NAND 闪存原厂 2026Q2 合计营收环比 +77%",
+        "excerpt": "五大海外 NAND 闪存原厂 2026Q2 合计营收达 688.7 亿美元，环比增幅高达 77.0%。"
+        "其中美光 NAND 营收环比增幅达 99.2%，几乎实现单季度翻倍。",
+    }
+    result = why_it_matters_zh(primary, None, "Markets & Economy", entities=entities)
+    assert "Micron" in result or "NAND" in result
+    assert "ASP" not in result
+    assert "Brands Rises" not in result
+    assert "Says TrendForce" not in result
+    assert "Top Five NAND Flash" not in result
+
+
+def test_what_happened_zh_rejects_an_unpunctuated_teaser_fragment_as_not_render_ready():
+    """A bare RSS teaser hook with no terminal punctuation at all
+    ("回头看，A社就这样完成了反超") must not pass as a genuine "what
+    happened" summary merely by clearing a low character-count floor --
+    it never actually states what happened (no entity, no amount, no
+    action)."""
+    primary = {"title": "650亿美元！IPO前夕，Anthropic营收底牌曝光", "excerpt": "回头看，A社就这样完成了反超"}
+    assert is_render_ready_zh(primary) is False
+    assert what_happened_zh(primary) is None
+
+
+def test_what_happened_zh_still_accepts_a_genuinely_substantive_unpunctuated_fallback():
+    """Non-regression: the raised floor must not reject a genuinely
+    substantive fragment merely for lacking terminal punctuation."""
+    primary = {
+        "title": "标题",
+        "excerpt": "商务部新闻发言人今日就近期贸易摩擦相关问题作出正式回应并公布具体应对措施安排",
+    }
+    assert is_render_ready_zh(primary) is True

@@ -18,6 +18,7 @@ the combined source text, and is not a claim of genuine editorial analysis
 from __future__ import annotations
 
 from news_intel.pipeline.materiality import format_dollar_value, parse_current_dollar_values
+from news_intel.pipeline.render_readiness import _NON_ENTITY_ACRONYMS
 from news_intel.pipeline.zh_text import (
     format_zh_amount,
     parse_zh_amounts,
@@ -25,7 +26,15 @@ from news_intel.pipeline.zh_text import (
     zh_sentences,
 )
 
-_FALLBACK_MIN_CHARS = 10
+# 2026-08-18 repair: found via a real live-collection replay -- a qbitai
+# RSS excerpt was just a one-line teaser with no terminal punctuation at
+# all ("回头看，A社就这样完成了反超", 13 chars, no 。！？；), which cleared
+# the original 10-char floor and was accepted as a genuine "what happened"
+# summary despite reading as an incomplete, uninformative fragment (never
+# actually stating what happened -- no entity, no amount, no action).
+# Raised to a length more consistent with a genuinely complete Chinese
+# clause (subject + verb + object) rather than a bare teaser hook.
+_FALLBACK_MIN_CHARS = 30
 
 _CATEGORY_CONTEXT_ZH = {
     "AI & Semiconductors": "AI/半导体产业格局",
@@ -121,6 +130,37 @@ def _event_type_label_zh(text: str) -> str | None:
     return None
 
 
+# 2026-08-18 repair: found via a real live-collection replay -- entities[0]
+# picked "ASP" (a generic finance acronym, alphabetically first) over the
+# story's genuine subject ("NAND"/"Micron") for a NAND-market report whose
+# excerpt embedded English chart captions ("Top Five NAND Flash Brands
+# Rises", "Says TrendForce"). pipeline/entities.py's capitalized-sequence
+# fallback is far noisier against Chinese text (which routinely embeds
+# English chart labels/captions) than against English prose -- filters out
+# the same acronym denylist render_readiness.py's English path already
+# uses, plus multi-word (3+) candidates, which are reliably garbled
+# caption fragments rather than genuine multi-word entity names.
+def _principal_entity_zh(entities: list[str] | None) -> str | None:
+    if not entities:
+        return None
+    # Single-word candidates only: real multi-word entity names DO exist
+    # ("SK Hynix"), but pipeline/entities.py's capitalized-sequence
+    # fallback against Chinese text (which routinely embeds English chart
+    # captions/labels) produces far more 2-4-word GARBLED fragments
+    # ("Brands Rises", "Says TrendForce", "Top Five NAND Flash") than
+    # genuine multi-word names -- verified via a real live-collection
+    # replay where a 2-word fragment ("Brands Rises") still won after an
+    # earlier <=2-word filter. Single-word-only is a stricter but safer
+    # bar for THIS fallback-heavy path than render_readiness.py's English
+    # equivalent needs, since English text doesn't have this embedded-
+    # caption noise problem.
+    candidates = [
+        e for e in entities
+        if e.upper() not in _NON_ENTITY_ACRONYMS and " " not in e
+    ]
+    return candidates[0] if candidates else entities[0]
+
+
 def why_it_matters_zh(
     primary: dict, secondary: dict | None, category: str, entities: list[str] | None = None
 ) -> str:
@@ -141,7 +181,7 @@ def why_it_matters_zh(
         dollar_values = parse_current_dollar_values(text)
         if dollar_values:
             amount_clause = f"，金额约{format_dollar_value(max(dollar_values))}"
-    entity = entities[0] if entities else None
+    entity = _principal_entity_zh(entities)
     event_label = _event_type_label_zh(text)
 
     if entity and event_label:
