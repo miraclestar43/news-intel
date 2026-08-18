@@ -265,3 +265,26 @@ def test_generic_economic_word_alone_does_not_merge_unrelated_stories():
         ],
     )
     assert same_event_story(smic, bls, generic_terms=_GENERIC_TERMS) is False
+
+
+def test_shared_place_name_alone_does_not_merge_unrelated_stories():
+    """Real defect found via the Aug 15 replay: a Manus/Meta acquisition
+    story ("CEO Xiao Hong plans to return to Singapore") and an unrelated
+    Shein Hong Kong IPO story ("Singapore-based Shein") were judged the
+    "same event" purely because both mention Singapore -- same_event_story
+    then attached the Shein article as the Manus story's "secondary
+    source," leaking Shein's $25B/$40B figures into a why-it-matters line
+    about a $2B Meta deal. A shared city/country name is scene-setting, not
+    a shared distinctive entity -- same root cause as the "Demand" defect
+    above, different word category."""
+    manus = _item(
+        "China plans to soon lift a travel ban on Manus founders as the company unwinds its $2B "
+        "acquisition by Meta; CEO Xiao Hong plans to return to Singapore", "US / China / World",
+        entities=["CEO Xiao Hong", "Financial Times", "Meta", "Xiao Hong", "Zijing Wu"],
+    )
+    shein = _item(
+        "Singapore-based Shein is aiming to hit a ~$25B valuation in its Hong Kong IPO, down from "
+        "its $30B-$40B goal earlier in August after investor meetings", "US / China / World",
+        entities=["Hong Kong IPO"],
+    )
+    assert same_event_story(manus, shein, generic_terms=_GENERIC_TERMS) is False

@@ -121,6 +121,27 @@ _CORPORATE_SUFFIX_TERMS = frozenset(
     {"PBC", "INC", "LLC", "CORP", "LTD", "PLC", "NV", "SA", "AG", "CO"}
 )
 
+# 2026-08-18 defect found via the Aug 15 replay: a major city/country name
+# mentioned only incidentally (a CEO "plans to return to Singapore") merged
+# a Manus/Meta acquisition story with a completely unrelated Shein Hong
+# Kong IPO story ("Singapore-based Shein") into the same "event" -- purely
+# because both texts happened to mention Singapore, same_event_story's
+# single-shared-material-token rule then attached the Shein article as this
+# Manus story's "secondary source," leaking Shein's $25B/$40B figures into
+# a why-it-matters line about a $2B Meta deal. Same root cause and same
+# fix pattern as _GENERIC_ECONOMIC_TERMS/_CORPORATE_SUFFIX_TERMS above: a
+# place name that merely sets the scene is not a shared distinctive entity
+# -- two stories about the SAME event/company/deal are expected to share
+# an actual company/person/product name, not just a country or city.
+_GENERIC_PLACE_TERMS = frozenset(
+    {
+        "Singapore", "London", "Beijing", "Shanghai", "Shenzhen", "Hong", "Kong", "Tokyo",
+        "Seoul", "Berlin", "Paris", "Dubai", "Zurich", "Geneva", "Mumbai", "Delhi",
+        "Sydney", "Toronto", "Chicago", "Boston", "Seattle", "Austin", "Dublin",
+        "Amsterdam", "Frankfurt", "Brussels", "Vienna", "Madrid", "Rome", "Milan",
+    }
+)
+
 
 _WORD_SPLIT_RE = re.compile(r"[^A-Za-z0-9]+")
 
@@ -168,6 +189,7 @@ def _material_tokens(item: dict, generic_terms: set[str]) -> set[str]:
         and t.upper() not in _MACRO_ACRONYM_TERMS
         and t.upper() not in _CORPORATE_SUFFIX_TERMS
         and t not in _GENERIC_ECONOMIC_TERMS
+        and t not in _GENERIC_PLACE_TERMS
         and t.lower() not in lowered_generic
         and t.lower() not in publisher_words
     }
