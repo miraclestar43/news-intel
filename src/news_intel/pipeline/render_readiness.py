@@ -190,8 +190,10 @@ def _principal_entity(entities: list[str] | None, text: str = "") -> str | None:
     if not text:
         return candidates[0]
 
+    lowered_text = text.lower()
+
     def _position(entity: str) -> int:
-        idx = text.find(entity)
+        idx = lowered_text.find(entity.lower())
         return idx if idx != -1 else len(text)
 
     return min(candidates, key=_position)
