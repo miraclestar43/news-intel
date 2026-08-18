@@ -138,3 +138,14 @@ def test_dollar_magnitude_bonus_scoring_is_unaffected_by_baseline_exclusion():
 
     text = "Shein is aiming to hit a ~$25B valuation, down from its $30B-$40B goal earlier in August."
     assert dollar_magnitude_bonus(text) == 40.0  # top band, driven by the $40B figure
+
+
+def test_dollar_magnitude_bonus_recognizes_chinese_unit_amounts():
+    """A Chinese-unit magnitude (万/亿/万亿) earns the same banded bonus as
+    an equivalent-size $ figure -- zh_cn content has no $ sign at all."""
+    from news_intel.pipeline.materiality import dollar_magnitude_bonus
+
+    zh_text = "该公司完成了115亿美元的融资交易。"  # ~$11.5 billion financing deal
+    en_equivalent = "The company completed an $11.5 billion financing deal."
+    assert dollar_magnitude_bonus(zh_text) == dollar_magnitude_bonus(en_equivalent)
+    assert dollar_magnitude_bonus(zh_text) > 0.0

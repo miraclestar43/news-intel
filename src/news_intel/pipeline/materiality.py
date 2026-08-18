@@ -26,6 +26,8 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
+from news_intel.pipeline.zh_text import parse_zh_amounts
+
 # Dollar-figure magnitude, captured with its numeric value and unit so the
 # bonus can scale with actual SIZE, not just presence (2026-08-13 fix: a
 # website's "$100/day" running cost and a "$6 billion" acquisition
@@ -122,7 +124,13 @@ def format_dollar_value(value: float) -> str:
 
 
 def dollar_magnitude_bonus(text: str) -> float:
-    values = _parse_dollar_values(text)
+    # 2026-08-18 zh_cn: a Chinese-unit magnitude (万/亿/万亿, e.g. "115亿美元")
+    # earns the same banded bonus as an equivalent-size $ figure -- reuses
+    # pipeline/zh_text.parse_zh_amounts (already returns the absolute
+    # numeric value in the same units as _parse_dollar_values, so the same
+    # bands apply directly). English text with no Chinese-unit amounts is
+    # completely unaffected (parse_zh_amounts returns an empty list).
+    values = _parse_dollar_values(text) + parse_zh_amounts(text)
     if not values:
         return 0.0
     largest = max(values)
