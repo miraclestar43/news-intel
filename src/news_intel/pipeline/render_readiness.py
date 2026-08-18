@@ -36,7 +36,10 @@ when one was extracted, never fall back to a bare category label alone."""
 
 from __future__ import annotations
 
-from news_intel.pipeline.materiality import _parse_dollar_values, format_dollar_value
+import re
+
+from news_intel.pipeline.citation import strip_title_preamble
+from news_intel.pipeline.materiality import format_dollar_value, parse_current_dollar_values
 from news_intel.pipeline.summary_quality import best_available_summary
 
 # HIGH_IMPACT_TERMS itself lives in materiality.py; the event-type labels
@@ -197,11 +200,67 @@ _NON_ENTITY_ACRONYMS = frozenset({
     "IPO", "CEO", "CFO", "CTO", "COO", "AI", "US", "UK", "EU", "UN", "GDP", "CPI",
 })
 
+# 2026-08-18 defect: pipeline/entities.py's shared extraction (tuned for
+# trend-cluster anchor precision, see its own module docstring) rejects a
+# single Title-Case word as a candidate entity unless it's ALL-CAPS or
+# contains a digit/hyphen -- correct for avoiding sentence-starter false
+# positives ("Fine", "Building") in clustering, but it also silently drops
+# genuine single-word company names ("Crusoe", "Shein") that aren't in the
+# known-vocabulary list, letting an incidental multi-word capitalized
+# phrase (a journalist byline, "Wall Street", "Hong Kong IPO") win the
+# earliest-position tiebreak instead of the story's actual subject.
+# Reproduction: the Aug 17 Crusoe/Shein IPO stories named "Alan Neuhauser"/
+# "Hong Kong IPO" as the principal entity. Composition only needs recall
+# here, never clustering precision, so this supplements (never replaces)
+# the caller-supplied entities list with the FIRST capitalized word of the
+# (aggregator-preamble-stripped) title -- English headlines are
+# overwhelmingly subject-first ("Crusoe is in IPO talks...", "Shein is
+# aiming to hit..."), a general pattern, not a per-story exception.
+_TITLE_LEAD_STOPWORDS = frozenset({
+    "The", "A", "An", "New", "Report", "Reports", "Reportedly", "Officials", "Company",
+    "Companies", "Exclusive", "Breaking", "Analysis", "Update", "According",
+    # Nationality/demonym adjectives: grammatically modifiers ("Israeli
+    # airstrikes hit...", "Chinese regulators fine...") that are never
+    # themselves the subject entity being modified -- excluding them is a
+    # general linguistic category, not a per-story carve-out. Caught by a
+    # Lebanon/Israel regression test where "Israeli" (position 0) beat the
+    # real supplied entity "Lebanon" purely on earliest-position ordering.
+    "Israeli", "Chinese", "American", "Russian", "British", "French", "German",
+    "Iranian", "Korean", "Japanese", "Indian", "European", "Ukrainian", "Palestinian",
+    "Saudi", "Turkish", "Mexican", "Canadian", "Australian", "Brazilian", "Egyptian",
+    "Syrian", "Lebanese", "Pakistani", "Indonesian", "Vietnamese", "Taiwanese",
+})
+_TITLE_LEAD_WORD_RE = re.compile(r"[A-Z][a-zA-Z0-9&.]*")
+# A "<Place>-based"/"-backed"/"-owned" prefix is the same grammatical
+# pattern as a demonym adjective ("Singapore-based Shein", "Beijing-backed
+# fund", "US-owned subsidiary") -- an origin/ownership modifier, never the
+# entity itself. General hyphenated-modifier suffix list, not tied to any
+# specific place name.
+_TITLE_LEAD_MODIFIER_SUFFIXES = ("-based", "-owned", "-backed", "-led", "-founded", "-listed", "-headquartered")
 
-def _principal_entity(entities: list[str] | None, text: str = "") -> str | None:
-    if not entities:
+
+def _title_lead_entity(title: str | None) -> str | None:
+    stripped = strip_title_preamble(title or "").strip()
+    for match in _TITLE_LEAD_WORD_RE.finditer(stripped):
+        candidate = match.group(0)
+        tail = stripped[match.end() : match.end() + 20].lower()
+        if any(tail.startswith(suffix) for suffix in _TITLE_LEAD_MODIFIER_SUFFIXES):
+            continue  # an origin/ownership modifier, not the entity it describes
+        if candidate.upper() in _NON_ENTITY_ACRONYMS or candidate in _TITLE_LEAD_STOPWORDS:
+            continue
+        return candidate
+    return None
+
+
+def _principal_entity(entities: list[str] | None, text: str = "", title: str | None = None) -> str | None:
+    candidates = [e for e in (entities or []) if e.upper() not in _NON_ENTITY_ACRONYMS]
+    lead = _title_lead_entity(title)
+    if lead and lead not in candidates:
+        candidates.append(lead)
+    if not candidates:
+        candidates = list(entities) if entities else ([lead] if lead else [])
+    if not candidates:
         return None
-    candidates = [e for e in entities if e.upper() not in _NON_ENTITY_ACRONYMS] or list(entities)
     if not text:
         return candidates[0]
 
@@ -238,9 +297,9 @@ def why_it_matters(
     text = _combined_text(primary, secondary)
     lowered = text.lower()
     context = _CATEGORY_CONTEXT_EN.get(category, "this coverage area")
-    values = _parse_dollar_values(text)
+    values = parse_current_dollar_values(text)
     amount_clause = f" worth {format_dollar_value(max(values))}" if values else ""
-    entity = _principal_entity(entities, text)
+    entity = _principal_entity(entities, text, title=primary.get("title"))
     event_label = _event_type_label(lowered, _EVENT_TYPE_LABELS_EN)
 
     if entity and event_label:
@@ -274,7 +333,8 @@ def chinese_takeaway(category: str, entities: list[str] | None = None, primary: 
     or a story with genuinely no matched vocabulary)."""
     context = _CATEGORY_CONTEXT_ZH.get(category, "本次报道领域")
     entity_text = _combined_text(primary, secondary) if primary is not None else ""
-    entity = _principal_entity(entities, entity_text)
+    title = primary.get("title") if primary is not None else None
+    entity = _principal_entity(entities, entity_text, title=title)
 
     event_label_zh = None
     amount = None
@@ -283,7 +343,7 @@ def chinese_takeaway(category: str, entities: list[str] | None = None, primary: 
         lowered = text.lower()
         event_label_en = _event_type_label(lowered, _EVENT_TYPE_LABELS_EN)
         event_label_zh = _EVENT_TYPE_LABELS_ZH.get(event_label_en) if event_label_en else None
-        values = _parse_dollar_values(text)
+        values = parse_current_dollar_values(text)
         if values:
             amount = format_dollar_value(max(values))
 

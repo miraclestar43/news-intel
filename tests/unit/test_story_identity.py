@@ -219,6 +219,30 @@ def test_new_dollar_value_formatted_with_unit_not_bare_digits():
     assert "$700,000,000" not in result.note
 
 
+def test_comparison_baseline_figure_restated_in_candidate_is_not_new_figures():
+    """2026-08-18 numeric-role repair: a real Aug 17 defect -- the candidate
+    restates the prior's own $30B-$40B figure only as a "down from"
+    comparison baseline for its new $25B current target. Only $25B is
+    genuinely new; $30B/$40B must not be reported as "new figures" merely
+    because that specific value wasn't literally present in the prior
+    telling's own text."""
+    config = load_config()
+    known = known_entities(config.topics.groups)
+    prior = _item(
+        "Shein said to target $30B-$40B valuation in planned Hong Kong IPO", "US / China / World",
+        excerpt="Shein is reportedly targeting a valuation of $30 billion to $40 billion in its planned IPO.",
+    )
+    candidate = _item(
+        "Shein is aiming to hit a ~$25B valuation in its Hong Kong IPO, down from its $30B-$40B goal "
+        "earlier in August after investor meetings", "US / China / World",
+        excerpt="Shein is eyeing a company valuation of around $25 billion in its Hong Kong IPO.",
+    )
+    result = detect_material_update(candidate, prior, known_entities=known, alert_triggers=config.alert_triggers)
+    assert result.is_update is True
+    assert "$25 billion" in result.note
+    assert "$40 billion" not in result.note
+    assert "$30 billion" not in result.note
+
 
 def test_generic_economic_word_alone_does_not_merge_unrelated_stories():
     """2026-08-15 defect (found during the Aug 14 as-of replay): "Demand"

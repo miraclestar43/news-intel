@@ -4,7 +4,7 @@ and must not structurally cap single-source non-AI stories."""
 
 from __future__ import annotations
 
-from news_intel.pipeline.materiality import compute_materiality
+from news_intel.pipeline.materiality import compute_materiality, parse_current_dollar_values
 
 
 def test_routine_vendor_announcement_scores_lower_than_magnitude_deal():
@@ -93,3 +93,48 @@ def test_abbreviated_dollar_units_are_parsed():
     abbreviated = compute_materiality("Nebius reports revenue of $575M this quarter.", bucket)
     baseline = compute_materiality("Nebius reports steady revenue this quarter.", bucket)
     assert abbreviated > baseline
+
+
+# 2026-08-18 numeric-role repair: parse_current_dollar_values excludes a
+# figure the text itself frames as a historical/comparison baseline
+# ("down from", "up from", "compared to", "versus") -- real defect found
+# via the Aug 17 replay, where a why-it-matters line anchored on the
+# discarded $40B ceiling instead of the actual current $25B target.
+def test_parse_current_dollar_values_excludes_down_from_baseline():
+    text = "Shein is aiming to hit a ~$25B valuation, down from its $30B-$40B goal earlier in August."
+    assert parse_current_dollar_values(text) == [25_000_000_000.0]
+
+
+def test_parse_current_dollar_values_excludes_up_from_baseline():
+    text = "Anthropic's revenue run rate reached $65B by the end of July, up from $47B in May and $9B in late 2025."
+    assert parse_current_dollar_values(text) == [65_000_000_000.0]
+
+
+def test_parse_current_dollar_values_keeps_a_later_unrelated_restatement():
+    """A baseline marker earlier in the text must not blanket-exclude a
+    later, unrelated repetition of the actual current figure -- the
+    exclusion is a bounded lookback window, not "anywhere earlier"."""
+    text = (
+        "Shein is aiming to hit a ~$25B valuation, down from its $30B-$40B goal earlier in August "
+        "after investor meetings. Online fast-fashion retailer Shein is eyeing a company valuation "
+        "of around $25 billion in its Hong Kong IPO."
+    )
+    values = parse_current_dollar_values(text)
+    assert 25_000_000_000.0 in values
+    assert 40_000_000_000.0 not in values
+    assert 30_000_000_000.0 not in values
+
+
+def test_parse_current_dollar_values_with_no_baseline_marker_keeps_everything():
+    text = "Crusoe's $3B pre-IPO fundraise is set to value it at $35B."
+    assert set(parse_current_dollar_values(text)) == {3_000_000_000.0, 35_000_000_000.0}
+
+
+def test_dollar_magnitude_bonus_scoring_is_unaffected_by_baseline_exclusion():
+    """Scoring deliberately keeps using the raw maximum -- a story
+    mentioning $40B anywhere is materially significant for ranking
+    purposes regardless of which figure is "current"."""
+    from news_intel.pipeline.materiality import dollar_magnitude_bonus
+
+    text = "Shein is aiming to hit a ~$25B valuation, down from its $30B-$40B goal earlier in August."
+    assert dollar_magnitude_bonus(text) == 40.0  # top band, driven by the $40B figure

@@ -126,3 +126,68 @@ def test_why_it_matters_possessive_phrasing_is_grammatical():
     result = why_it_matters(primary, None, "US / China / World", entities=["Xiao Hong"])
     assert "'s an acquisition" not in result
     assert "'s acquisition" in result
+
+
+# 2026-08-18 real defect found via the Aug 17 production replay: a company
+# name unrecognized by the known-entity vocabulary (e.g. "Crusoe") is
+# filtered out by pipeline/entities.py's single-Title-Case-word rule, so
+# `entities` contained only a byline/attribution/generic phrase -- the
+# rendered TOP story named "Alan Neuhauser" (the journalist) instead of the
+# company the story is actually about, or fell all the way through to the
+# bare category template.
+def test_why_it_matters_names_unrecognized_company_over_byline_attribution():
+    primary = {
+        "title": "Sources: Crusoe is in IPO talks with at least four Wall Street banks, including "
+        "JPMorgan, which is advising on its $3B pre-IPO fundraise set to value it at $35B "
+        "(Alan Neuhauser/Axios)",
+        "excerpt": "Alan Neuhauser / Axios : Sources: Crusoe is in IPO talks with at least four Wall "
+        "Street banks — Crusoe, a data center developer and power supplier, is in IPO talks with at "
+        "least four Wall Street banks, Axios Pro has learned.",
+    }
+    result = why_it_matters(
+        primary, None, "AI & Semiconductors", entities=["Alan Neuhauser", "Axios Pro", "IPO", "Wall Street"]
+    )
+    assert "Crusoe" in result
+    assert "Alan Neuhauser" not in result
+    assert "$35" in result or "35 billion" in result
+
+
+def test_why_it_matters_skips_place_based_modifier_to_find_the_real_subject():
+    """"Singapore-based Shein" -- the origin modifier must not itself be
+    picked as the entity; "Shein" (immediately after it) is the subject."""
+    primary = {
+        "title": "Sources: Singapore-based Shein is aiming to hit a ~$25B valuation in its Hong Kong "
+        "IPO, down from its $30B-$40B goal earlier in August after investor meetings (Reuters)",
+        "excerpt": "Reuters : Sources: Singapore-based Shein is aiming to hit a ~$25B valuation — Online "
+        "fast-fashion retailer Shein is eyeing a company valuation of around $25 billion in its Hong Kong IPO.",
+    }
+    result = why_it_matters(primary, None, "US / China / World", entities=["Hong Kong IPO"])
+    assert "Shein" in result
+    assert "Singapore" not in result.split("Why it matters:")[1].split(" is ")[0].split(" ranks ")[0]
+
+
+def test_why_it_matters_anchors_on_current_value_not_a_comparison_baseline():
+    """Real defect found via the Aug 17 replay: "down from its $30B-$40B
+    goal" -- the generated line anchored on $40B (the discarded earlier
+    ceiling) instead of the actual current $25B figure. max() over every
+    dollar figure in the text is wrong; the figure must be role-aware."""
+    primary = {
+        "title": "Shein is aiming to hit a ~$25B valuation in its Hong Kong IPO, down from its "
+        "$30B-$40B goal earlier in August after investor meetings",
+        "excerpt": "Shein is eyeing a company valuation of around $25 billion in its Hong Kong IPO.",
+    }
+    result = why_it_matters(primary, None, "US / China / World", entities=["Shein"])
+    assert "$25" in result or "25 billion" in result
+    assert "$40" not in result and "40 billion" not in result
+
+
+def test_why_it_matters_anchors_on_current_value_with_up_from_phrasing():
+    primary = {
+        "title": "Anthropic's revenue run rate reached $65B by the end of July, up from $47B in May "
+        "and $9B in late 2025",
+        "excerpt": "Anthropic PBC is on track to generate annualized revenue of more than $65 billion.",
+    }
+    result = why_it_matters(primary, None, "AI & Semiconductors", entities=["Anthropic"])
+    assert "$65" in result or "65 billion" in result
+    assert "$47" not in result and "47 billion" not in result
+    assert "$9 billion" not in result

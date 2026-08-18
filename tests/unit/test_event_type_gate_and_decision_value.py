@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from news_intel.pipeline.daily_selection import _decision_value
 from news_intel.pipeline.event_integrity import (
+    is_corporate_vision_content_without_event,
     is_individual_enforcement_without_consequence,
     is_low_consequence_event_type,
     is_routine_tutorial_or_promotional_content,
@@ -85,3 +86,36 @@ def test_decision_value_falls_back_to_final_score_without_decomposition():
     market_impact still get a sensible ranking key."""
     item = {"final_score": 42.0}
     assert _decision_value(item) == 42.0
+
+
+# 2026-08-18 repair: a first-party corporate newsroom essay ("Securing the
+# Infrastructure of Intelligence" -- pure industry-positioning language,
+# no transaction/figure/dated action) was selected as a MORE item with
+# nothing behind the headline but a slogan and a link. General vision-
+# language + absence-of-event-verb logic, not a per-publisher exclusion.
+_VISION_ESSAY_TITLE = "Securing the Infrastructure of Intelligence"
+_VISION_ESSAY_EXCERPT = (
+    "AI factories are the defining infrastructure of the AI era—where compute transforms energy and "
+    "data into intelligence that powers every business, industry and country. In the AI economy, "
+    "compute is revenue. AI factories require a full stack of critical resources: advanced chips, "
+    "packaging, memory, and networking – as well as land, power and shell."
+)
+
+
+def test_corporate_vision_essay_with_no_concrete_event_fails_the_gate():
+    assert is_corporate_vision_content_without_event(_VISION_ESSAY_TITLE, _VISION_ESSAY_EXCERPT) is True
+    assert is_low_consequence_event_type(_VISION_ESSAY_TITLE, _VISION_ESSAY_EXCERPT) is True
+
+
+def test_vision_language_with_a_genuine_announced_deal_is_not_excluded():
+    """General event-type logic, not a title-specific carve-out: vision
+    language accompanying an actual announced action/figure is not routine."""
+    title = "Powering the next era of AI infrastructure"
+    excerpt = "The company announced a $4 billion agreement to build new data centers with a named partner."
+    assert is_corporate_vision_content_without_event(title, excerpt) is False
+
+
+def test_ordinary_news_without_vision_language_is_unaffected():
+    title = "Fed holds rates steady amid market volatility"
+    excerpt = "The Federal Reserve held interest rates steady, surprising some market participants."
+    assert is_corporate_vision_content_without_event(title, excerpt) is False

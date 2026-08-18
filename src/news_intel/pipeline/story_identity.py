@@ -49,7 +49,7 @@ from datetime import datetime
 from news_intel.models import ConfirmationState
 from news_intel.pipeline.entities import extract_entities
 from news_intel.pipeline.material_facts import MaterialFactSnapshot, build_snapshot
-from news_intel.pipeline.materiality import _parse_dollar_values, format_dollar_value
+from news_intel.pipeline.materiality import format_dollar_value, parse_current_dollar_values
 from news_intel.pipeline.normalize import normalize_title
 from news_intel.pipeline.similarity import trigram_jaccard
 from news_intel.settings import AlertTriggersConfig
@@ -326,14 +326,17 @@ def detect_material_update(
     prior_text_lower = prior_text.lower()
 
     reasons: list[str] = []
-    # Compares actual parsed dollar VALUES (materiality._parse_dollar_values,
+    # Compares actual parsed dollar VALUES (materiality.parse_current_dollar_values,
     # unit-aware: "$60B" and "$60 billion" both parse to 6e10), not
     # material_facts.py's own raw-string amount field -- that field's own
     # regex only recognizes spelled-out units, so an abbreviated "$60B"
     # loses its unit entirely and would otherwise be reported as a bare,
     # meaningless "new figure ($60)" even when $60B was already known from
-    # the prior telling.
-    new_dollar_values = set(_parse_dollar_values(cand_text)) - set(_parse_dollar_values(prior_text))
+    # the prior telling. Uses the baseline-aware parser (2026-08-18), not
+    # the raw one: a figure either text frames as a historical/comparison
+    # baseline ("down from its $30B-$40B goal") is old information being
+    # restated for context, never a genuinely new fact worth flagging.
+    new_dollar_values = set(parse_current_dollar_values(cand_text)) - set(parse_current_dollar_values(prior_text))
     if new_dollar_values:
         formatted = ", ".join(format_dollar_value(v) for v in sorted(new_dollar_values, reverse=True)[:3])
         reasons.append(f"new figures ({formatted})")

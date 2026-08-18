@@ -70,6 +70,43 @@ def _parse_dollar_values(text: str) -> list[float]:
     return values
 
 
+# 2026-08-18 numeric-role repair: a figure the text itself frames as a
+# historical/comparison baseline ("~$25B valuation ... down from its
+# $30B-$40B goal", "$65B ... up from $47B in May") is not the story's
+# CURRENT headline value -- reproduction: the Shein why-it-matters line
+# anchored on $40B (the discarded earlier range ceiling) instead of the
+# actual $25B current target, and "Update since prior coverage" flagged
+# $40B/$30B as "new figures" even though the article itself presents them
+# as old numbers being superseded. A dollar mention is excluded as a
+# baseline only when a comparison marker appears within a short lookback
+# window immediately before it -- bounded (not "anywhere earlier in the
+# text") so an unrelated, later restatement of the actual current figure
+# (e.g. the same $25B repeated in a trailing sentence) is never caught by
+# an earlier, unrelated "down from" clause. Deliberately NOT used by
+# dollar_magnitude_bonus/scoring: a story mentioning $40B anywhere is
+# materially significant for ranking purposes regardless of which figure
+# is "current" -- this is a composition/novelty-display concern only.
+_DOLLAR_BASELINE_MARKERS = ("down from", "up from", "compared to", "compared with", "versus", "vs.")
+_DOLLAR_BASELINE_LOOKBACK_CHARS = 50
+
+
+def parse_current_dollar_values(text: str) -> list[float]:
+    """Like _parse_dollar_values, but excludes figures the text frames as a
+    historical/comparison baseline rather than the story's current value."""
+    values: list[float] = []
+    for match in _DOLLAR_RE.finditer(text):
+        try:
+            amount = float(match.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        window_start = max(0, match.start() - _DOLLAR_BASELINE_LOOKBACK_CHARS)
+        preceding = text[window_start : match.start()].lower()
+        if any(marker in preceding for marker in _DOLLAR_BASELINE_MARKERS):
+            continue
+        values.append(amount * _UNIT_MULTIPLIERS.get((match.group(2) or "").lower(), 1))
+    return values
+
+
 def format_dollar_value(value: float) -> str:
     """Renders a parsed dollar amount back into the same human/Telegram-
     readable "$X billion/million" form a reader would recognize, rather than

@@ -156,14 +156,58 @@ def is_individual_enforcement_without_consequence(title: str, excerpt: str | Non
     return not _has_material_consequence_signal(text, lowered)
 
 
+# 2026-08-18 event-type/consequence gate: first-party corporate "why our
+# category matters" vision/mission-statement prose -- industry-positioning
+# essay language with no single dated, verifiable action -- is not itself a
+# news event, unlike an actual announced deal, launch, or result.
+# Reproduction: a corporate newsroom post ("AI factories are the defining
+# infrastructure of the AI era ... powers every business, industry and
+# country ... require a full stack of critical resources") was selected as
+# a MORE item with nothing behind the headline but a slogan and a link --
+# no transaction, figure, or dated action a reader could verify. General
+# vision-language + absence-of-event-verb logic only, never a title- or
+# publisher-specific exclusion.
+_THOUGHT_LEADERSHIP_TERMS = frozenset(
+    {
+        "defining infrastructure", "the future of", "powers every business", "powers every industry",
+        "full stack of", "reimagining", "redefining", "the new era of", "shaping the future",
+        "at the heart of", "the backbone of", "unlocking the potential", "our vision for",
+        "the next frontier", "powering the next",
+    }
+)
+_CONCRETE_EVENT_VERB_TERMS = frozenset(
+    {
+        "announc", "launch", "unveil", "acqui", "merger", "merges", "invest", "raise", "raised",
+        "signs", "signed", "agreement", "partnership with", "reported", "files", "filed",
+        "opens", "opened", "completed", "wins", "won", "appoint", "resign", "layoff", "recall",
+        "sues", "settlement", "ruling", "approve", "reject", "ban ", "sanction", "tariff",
+    }
+)
+
+
+def is_corporate_vision_content_without_event(title: str, excerpt: str | None) -> bool:
+    """True if this reads as first-party industry-positioning/mission prose
+    with no independently material consequence and no concrete dated
+    action verb attached -- see module-level rationale above."""
+    text = f"{title or ''} {excerpt or ''}"
+    lowered = text.lower()
+    if not any(term in lowered for term in _THOUGHT_LEADERSHIP_TERMS):
+        return False
+    if _has_material_consequence_signal(text, lowered):
+        return False
+    return not any(term in lowered for term in _CONCRETE_EVENT_VERB_TERMS)
+
+
 def is_low_consequence_event_type(title: str, excerpt: str | None) -> bool:
     """Combined event-type/consequence gate (stage 2 of selection): true if
     this candidate is a normally non-material event type -- recognition/
-    award/ranking, tutorial/promotional content, or individual-employee
-    enforcement -- with no independently material consequence attached.
-    General event-type logic only; never a title-specific exclusion."""
+    award/ranking, tutorial/promotional content, individual-employee
+    enforcement, or corporate vision/mission-statement prose -- with no
+    independently material consequence attached. General event-type logic
+    only; never a title-specific exclusion."""
     return (
         is_unqualified_recognition_story(title, excerpt)
         or is_routine_tutorial_or_promotional_content(title, excerpt)
         or is_individual_enforcement_without_consequence(title, excerpt)
+        or is_corporate_vision_content_without_event(title, excerpt)
     )
