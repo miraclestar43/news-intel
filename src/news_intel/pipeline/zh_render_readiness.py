@@ -1,0 +1,159 @@
+"""Chinese-edition (zh_cn) render-readiness and summary composition
+(2026-08-17), the native-Chinese counterpart to pipeline/render_readiness.py.
+
+The zh_cn edition is NOT a translation of en_global (see config/topics_zh.yaml's
+docstring): a zh_cn event is clustered and scored entirely from Chinese-
+language sources, so its own title/excerpt are already Chinese -- this
+module's job is to extract a genuine "what happened" sentence and compose a
+story-specific "why it matters" line FROM that Chinese text, using
+pipeline/zh_text.py's Chinese-aware sentence splitting/preamble stripping/
+amount parsing instead of the English module's [.!?]/\\b/$ assumptions.
+
+Same floor as render_readiness.py: deterministic, template-based synthesis
+of already-verified structured facts (principal entity, detected event/
+action type, parsed 万/亿-magnitude) -- never invents a fact not already in
+the combined source text, and is not a claim of genuine editorial analysis
+(no LLM configured in this deployment)."""
+
+from __future__ import annotations
+
+from news_intel.pipeline.materiality import format_dollar_value, parse_current_dollar_values
+from news_intel.pipeline.zh_text import (
+    format_zh_amount,
+    parse_zh_amounts,
+    strip_zh_preamble,
+    zh_sentences,
+)
+
+_FALLBACK_MIN_CHARS = 10
+
+_CATEGORY_CONTEXT_ZH = {
+    "AI & Semiconductors": "AI/半导体产业格局",
+    "Markets & Economy": "企业财务或宏观经济",
+    "Politics": "国内政策",
+    "US / China / World": "中美关系或全球局势",
+    "Technology": "科技行业",
+}
+
+# Same curated event-type label list as render_readiness.py's
+# _EVENT_TYPE_LABELS_EN, in Chinese, matched directly against Chinese text
+# (no word-boundary regex needed -- these are all multi-character phrases,
+# which cannot false-positive-match inside an unrelated word the way a
+# single Latin acronym could).
+_EVENT_TYPE_LABELS_ZH: list[tuple[str, str]] = [
+    ("收购", "收购交易"),
+    ("并购", "并购交易"),
+    ("财报", "财报业绩"),
+    ("营收", "营收业绩"),
+    ("裁员", "裁员"),
+    ("破产", "破产"),
+    ("制裁", "制裁行动"),
+    ("关税", "关税措施"),
+    ("出口管制", "出口管制行动"),
+    ("实体清单", "出口管制清单"),
+    ("诉讼", "诉讼"),
+    ("起诉", "诉讼"),
+    ("和解", "法律和解"),
+    ("罚款", "监管罚款"),
+    ("调查", "监管调查"),
+    ("反垄断", "反垄断行动"),
+    ("监管", "监管行动"),
+    ("停火", "停火进展"),
+    ("停战", "停战"),
+    ("军事行动", "军事行动"),
+    ("空袭", "军事行动"),
+    ("入侵", "军事冲突进展"),
+    ("谈判", "谈判"),
+    ("峰会", "外交峰会"),
+    ("大选", "选举进展"),
+    ("选举", "选举进展"),
+    ("裁决", "法院裁决"),
+    ("辞职", "领导层辞职"),
+    ("降息", "货币政策行动"),
+    ("降准", "货币政策行动"),
+    ("加息", "货币政策行动"),
+    ("通胀", "通胀数据"),
+    ("召回", "产品召回"),
+    ("黑客", "安全漏洞"),
+    ("泄露", "安全漏洞"),
+    ("上市", "上市/IPO"),
+    ("融资", "融资"),
+]
+
+
+def what_happened_zh(primary: dict, secondary: dict | None = None) -> str | None:
+    """The Chinese-aware equivalent of summary_quality.best_available_summary:
+    tries the primary source's excerpt first (a real, punctuation-terminated
+    Chinese sentence, or -- when none is punctuated -- the preamble-stripped
+    remainder verbatim, same "genuine unaltered text, not a truncated
+    fragment" floor as the English fallback clause), then the linked
+    secondary source."""
+    for source in (primary, secondary):
+        if not source:
+            continue
+        excerpt = source.get("excerpt")
+        if not excerpt:
+            continue
+        sentences = zh_sentences(excerpt)
+        if sentences:
+            return "".join(sentences) if len(sentences) == 1 else " ".join(sentences)
+        fallback = strip_zh_preamble(excerpt).strip()
+        if len(fallback) >= _FALLBACK_MIN_CHARS:
+            return fallback if fallback[-1] in "。！？；" else fallback + "。"
+    return None
+
+
+def is_render_ready_zh(primary: dict, secondary: dict | None = None) -> bool:
+    return what_happened_zh(primary, secondary) is not None
+
+
+def _combined_text(primary: dict, secondary: dict | None) -> str:
+    parts = [f"{primary.get('title', '')} {primary.get('excerpt', '') or ''}"]
+    if secondary:
+        parts.append(f"{secondary.get('title', '')} {secondary.get('excerpt', '') or ''}")
+    return " ".join(parts)
+
+
+def _event_type_label_zh(text: str) -> str | None:
+    for term, label in _EVENT_TYPE_LABELS_ZH:
+        if term in text:
+            return label
+    return None
+
+
+def why_it_matters_zh(
+    primary: dict, secondary: dict | None, category: str, entities: list[str] | None = None
+) -> str:
+    """Story-specific Chinese rationale -- principal entity + detected
+    event/action type + parsed 万/亿 magnitude, composed directly in
+    Chinese (not a translation of the English why_it_matters). Never a
+    bare category-only template when an entity or event type was
+    extractable."""
+    text = _combined_text(primary, secondary)
+    context = _CATEGORY_CONTEXT_ZH.get(category, "本次报道领域")
+    # Chinese-unit amounts (万/亿/万亿) plus role-aware $ figures -- zh_cn
+    # sources routinely mix Chinese and English/dollar amounts in the same
+    # story (e.g. a Chinese article quoting a USD deal size verbatim); zh
+    # amounts take priority (native to the story) when both are present.
+    zh_values = parse_zh_amounts(text)
+    amount_clause = f"，金额约{format_zh_amount(max(zh_values))}" if zh_values else ""
+    if not amount_clause:
+        dollar_values = parse_current_dollar_values(text)
+        if dollar_values:
+            amount_clause = f"，金额约{format_dollar_value(max(dollar_values))}"
+    entity = entities[0] if entities else None
+    event_label = _event_type_label_zh(text)
+
+    if entity and event_label:
+        return f"看点：{entity}{event_label}{amount_clause}，属{context}重要动态。"
+    if entity:
+        return f"看点：{entity}相关动态{amount_clause}，属{context}重要发展。"
+    if event_label:
+        return f"看点：{context}领域{event_label}{amount_clause}。"
+    if amount_clause:
+        # 2026-08-18 repair: an amount-only signal (no entity/event-type
+        # match) was previously silently discarded -- mirrors
+        # render_readiness.py's English "if values:" amount-only tier so a
+        # real extracted structured fact is never dropped from the floor.
+        return f"看点：{context}领域一项重要动态{amount_clause}。"
+    return f"看点：{context}的重要动态。"

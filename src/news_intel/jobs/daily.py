@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 from news_intel import db
 from news_intel.delivery.daily_production_formatter import render_production_daily
+from news_intel.delivery.daily_production_formatter_zh import render_production_daily_zh
 from news_intel.delivery.formatter import render_daily
 from news_intel.delivery.telegram import ChatNotAllowedError, TelegramSender, mark_attempting
 from news_intel.event_repo import (
@@ -46,6 +47,18 @@ _EXCLUDED_CATEGORIES = {"noise", "Unclassified", "uncategorized", None}
 # already store real article URLs in practice; this is a defensive,
 # explicit qualification gate, not a behavior change for real data.
 _MACHINE_FEED_SUFFIXES = (".ics", ".json", ".xml", ".rss")
+
+_EDITION_DAILY_LABELS = {"en_global": "[GLOBAL DAILY]", "zh_cn": "[中文日报]"}
+
+
+def _daily_idempotency_key(edition_id: str, date_iso: str, chat_suffix: str) -> str:
+    """en_global keeps its pre-existing key format (no edition segment, so
+    already-created dates' idempotency is unchanged); zh_cn includes the
+    edition explicitly so an English and a Chinese delivery can never
+    collide merely because they share a bot/recipient."""
+    if edition_id == "en_global":
+        return f"daily:{date_iso}:{chat_suffix or 'no-chat'}"
+    return f"daily:{edition_id}:{date_iso}:{chat_suffix or 'no-chat'}"
 
 
 def _has_human_readable_url(item: dict) -> bool:
@@ -200,7 +213,9 @@ class DailySummary:
     fail_reason: str | None = None
 
 
-def _select_events(conn: sqlite3.Connection, config: AppConfig, now: datetime) -> tuple[datetime, SelectionResult]:
+def _select_events(
+    conn: sqlite3.Connection, config: AppConfig, now: datetime, *, edition_id: str = "en_global"
+) -> tuple[datetime, SelectionResult]:
     """Selection order: (0) cross-day novelty -- drop a candidate matching
     an already-delivered story from the last ~week of daily digests unless
     it carries a proven material update; (1) qualification
@@ -209,10 +224,22 @@ def _select_events(conn: sqlite3.Connection, config: AppConfig, now: datetime) -
     here rather than only checked after the fact); (2)-(4) story-family
     dedup, cross-category coverage, and capped score-based fill all happen
     inside select_daily_stories(). Never lowers the qualification threshold
-    and never pads a category with an unqualified candidate."""
+    and never pads a category with an unqualified candidate.
+
+    Multi-edition: every DB read here is scoped to `edition_id` --
+    qualified_events_since, last_digest_window_end, recent_digest_events
+    all filter on that edition's own rows only, and generic_terms/
+    known_entities come from that edition's own vocabulary
+    (config.topics_for). A zh_cn run can never see en_global's candidates,
+    prior-coverage novelty history, or window boundaries, and vice versa --
+    this is what makes "cross-edition novelty must never suppress an event
+    merely because the other edition reported it" true by construction,
+    not just by convention."""
     thresholds = config.policy.scoring.thresholds
-    window_start = last_digest_window_end(conn, "daily") or (now - timedelta(hours=24))
-    qualified_rows = qualified_events_since(conn, window_start=window_start, min_score=thresholds.daily_quick_brief)
+    window_start = last_digest_window_end(conn, "daily", edition_id=edition_id) or (now - timedelta(hours=24))
+    qualified_rows = qualified_events_since(
+        conn, window_start=window_start, min_score=thresholds.daily_quick_brief, edition_id=edition_id
+    )
 
     candidates = [event_as_digest_dict(conn, r) for r in qualified_rows]
     candidates = [
@@ -224,10 +251,12 @@ def _select_events(conn: sqlite3.Connection, config: AppConfig, now: datetime) -
         and _is_fresh(conn, c, now)
     ]
 
-    generic_terms = set(config.topics.trend_identity.generic_anchor_terms)
-    entities_vocab = known_entities(config.topics.groups)
+    event_topics = config.topics_for(edition_id)
+    generic_terms = set(event_topics.trend_identity.generic_anchor_terms)
+    entities_vocab = known_entities(event_topics.groups)
     prior_stories = recent_digest_events(
-        conn, since=now - timedelta(days=_NOVELTY_LOOKBACK_DAYS), until=window_start, kind="daily"
+        conn, since=now - timedelta(days=_NOVELTY_LOOKBACK_DAYS), until=window_start, kind="daily",
+        edition_id=edition_id,
     )
     result = select_daily_stories(
         candidates,
@@ -246,10 +275,12 @@ def run_daily(
     chat_id: int | None = None,
     dry_run: bool = True,
     now: datetime | None = None,
+    edition_id: str = "en_global",
 ) -> DailySummary:
     now = now or datetime.now(UTC)
+    edition = config.editions.get(edition_id)
 
-    now_pt_date = now.astimezone(ZoneInfo(config.policy.timezone)).date()
+    now_pt_date = now.astimezone(ZoneInfo(edition.schedule.timezone)).date()
     pt_weekday = now_pt_date.weekday()
     if pt_weekday == 6:  # Sunday: the weekly brief replaces the daily send entirely
         return DailySummary(
@@ -260,17 +291,20 @@ def run_daily(
             "", 0, 0, 0, False, "", "", True, False, skipped_monthly_slot=True
         )
 
-    if not db.acquire_job_lock(conn, "daily"):
+    # Edition-scoped job lock -- a zh_cn daily run must never be blocked by
+    # (or block) an en_global daily run, and vice versa.
+    lock_name = "daily" if edition_id == "en_global" else f"daily_{edition_id}"
+    if not db.acquire_job_lock(conn, lock_name):
         return DailySummary("", 0, 0, 0, False, "", "", True, False, skipped_lock=True)
 
     run_id = job_runs.start(conn, "daily")
     try:
-        window_start, selection = _select_events(conn, config, now)
+        window_start, selection = _select_events(conn, config, now, edition_id=edition_id)
         top3 = [s.primary for s in selection.top_stories]
         quick = [s.primary for s in selection.more_to_know]
         calendar_items = _tomorrow_calendar_items(conn, config, now)
 
-        pt_now = now.astimezone(ZoneInfo(config.policy.timezone))
+        pt_now = now.astimezone(ZoneInfo(edition.schedule.timezone))
         date_label = pt_now.strftime("%b %-d")
         date_iso = pt_now.strftime("%Y-%m-%d")
 
@@ -279,7 +313,7 @@ def run_daily(
             from news_intel.delivery.telegram import chat_id_hash
 
             chat_suffix = chat_id_hash(chat_id)
-        idempotency_key = f"daily:{date_iso}:{chat_suffix or 'no-chat'}"
+        idempotency_key = _daily_idempotency_key(edition_id, date_iso, chat_suffix)
 
         # Production hardening: whenever a chat_id is supplied (delivery is
         # actually being contemplated -- dry-run or real), fail closed on an
@@ -330,13 +364,21 @@ def run_daily(
             body = render_daily(date_label, output.structured)
             model_used = getattr(provider, "model", "llm")
         except LLMUnavailableError:
-            body = render_production_daily(selection, date_label, calendar_items)
+            # Multi-edition: selection/ranking/render-readiness are fully
+            # shared core (identical SelectionResult either way) -- only
+            # the renderer differs.
+            if edition_id == "zh_cn":
+                body = render_production_daily_zh(selection, date_label, calendar_items)
+            else:
+                body = render_production_daily(selection, date_label, calendar_items)
             fallback_used = True
 
         # Production heading: only stamped when delivery is being
         # contemplated (chat_id given) -- a pure content-only preview
-        # (chat_id=None) stays unprefixed.
-        rendered_text = f"[DAILY]\n{body}" if chat_id is not None else body
+        # (chat_id=None) stays unprefixed. Edition-distinct reader-facing
+        # header ([GLOBAL DAILY]/[中文日报]).
+        header = _EDITION_DAILY_LABELS.get(edition_id, "[GLOBAL DAILY]")
+        rendered_text = f"{header}\n{body}" if chat_id is not None else body
 
         if chat_id is not None:
             max_chars = config.policy.digests.telegram_hard_limit_chars
@@ -397,6 +439,7 @@ def run_daily(
             fallback_used=fallback_used,
             event_ids_top3=[t["event_id"] for t in top3],
             event_ids_quick=[q["event_id"] for q in quick],
+            edition_id=edition_id,
         )
 
         job_runs.finish(
@@ -421,4 +464,4 @@ def run_daily(
         job_runs.finish(conn, run_id, "failed", {"error": str(exc)})
         raise
     finally:
-        db.release_job_lock(conn, "daily")
+        db.release_job_lock(conn, lock_name)

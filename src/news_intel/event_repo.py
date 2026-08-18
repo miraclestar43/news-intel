@@ -271,6 +271,13 @@ def event_as_digest_dict(conn: sqlite3.Connection, event_row: sqlite3.Row) -> di
         # blocked-origin item's bounded_unverified state on the event's own
         # ingestion recency, not just the aggregator's claimed pubDate.
         "first_seen_at": event_row["first_seen_at"],
+        # 2026-08-17 multi-edition architecture: exposed so
+        # pipeline/daily_selection.py's render-readiness gate can dispatch
+        # to the correct (English vs Chinese) summary-extraction logic --
+        # zh_cn text has no [.!?] sentence-ending punctuation, so applying
+        # the English extractor to it would wrongly treat every genuine
+        # Chinese story as render-unready.
+        "edition_id": event_row["edition_id"] if "edition_id" in event_row.keys() else "en_global",
     }
 
 
