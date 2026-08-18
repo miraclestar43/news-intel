@@ -16,6 +16,7 @@ from news_intel.adapters.base import CollectedItem
 from news_intel.jobs.daily import _daily_idempotency_key, run_daily
 from news_intel.jobs.monthly import _monthly_idempotency_key
 from news_intel.jobs.weekly import _weekly_idempotency_key
+from news_intel.jobs.weekly_production import _is_valid_weekly_window
 from news_intel.pipeline.cluster import find_or_create_event
 from news_intel.pipeline.confirmation import update_confirmation_state
 from news_intel.pipeline.dedupe import upsert_raw_item
@@ -260,6 +261,47 @@ def test_en_global_daily_succeeds_after_a_zh_cn_failure_in_the_same_session(conf
     summary = run_daily(config, conn, chat_id=None, dry_run=True, now=_NOW, edition_id="en_global")
     assert summary.fail_closed is False
     assert "A story unaffected by the prior zh_cn failure" in summary.rendered_text
+
+
+# --- zh_cn schedule / DST -------------------------------------------------
+
+
+def test_zh_cn_weekly_07_00_pt_window_valid_across_spring_forward_dst():
+    """zh_cn's weekly_hour=7 (config/editions.yaml) must resolve correctly
+    on both sides of a DST transition, same as en_global's 22:00 slot
+    already does -- 2026-03-01 is the Sunday before spring-forward
+    (2026-03-08)."""
+    from datetime import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    pt = ZoneInfo("America/Los_Angeles")
+    sunday_before_spring_forward = dt(2026, 3, 1, 7, 0, tzinfo=pt)
+    assert _is_valid_weekly_window(sunday_before_spring_forward, target_hour=7) is True
+    assert sunday_before_spring_forward.utcoffset().total_seconds() / 3600 == -8.0
+
+
+def test_zh_cn_weekly_07_00_pt_window_valid_across_fall_back_dst():
+    """2026-11-01 is fall-back day itself (Sunday) -- 07:00 PT must still
+    resolve correctly even on the transition day."""
+    from datetime import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    pt = ZoneInfo("America/Los_Angeles")
+    fall_back_sunday = dt(2026, 11, 1, 7, 0, tzinfo=pt)
+    assert _is_valid_weekly_window(fall_back_sunday, target_hour=7) is True
+
+
+def test_zh_cn_and_en_global_weekly_hours_are_independently_configured():
+    en_hour = None
+    zh_hour = None
+    from news_intel.settings import load_config as _load_config
+
+    cfg = _load_config()
+    en_hour = cfg.editions.get("en_global").schedule.weekly_hour
+    zh_hour = cfg.editions.get("zh_cn").schedule.weekly_hour
+    assert en_hour == 22
+    assert zh_hour == 7
+    assert en_hour != zh_hour
 
 
 # --- backward-compatible migration of pre-existing English rows -------------
