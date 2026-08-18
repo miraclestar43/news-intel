@@ -1,0 +1,18 @@
+[Unit]
+Description=pi-news-intel: normal production Chinese (zh_cn) daily brief
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/pi-news-intel
+# Same protected environment-file mechanism as production daily/weekly/
+# monthly -- this is the ONLY other unit permitted to load the Telegram
+# secret file. pi-news-collect.service has no EnvironmentFile and never
+# references it. Both editions resolve to the SAME existing bot/recipient
+# in this rollout (config/delivery_profiles.yaml's "default" profile) --
+# this is not a separate bot/token.
+EnvironmentFile=%h/pi-news-intel/.env
+Environment=PRODUCTION_START_DATE=2026-08-19
+ExecStart=%h/pi-news-intel/.venv/bin/pi-news production daily --edition zh_cn
+TimeoutStartSec=280
