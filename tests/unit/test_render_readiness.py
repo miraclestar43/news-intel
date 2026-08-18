@@ -33,6 +33,17 @@ def test_why_it_matters_includes_dollar_amount_when_present():
     assert "$8" in result or "8" in result
 
 
+def test_why_it_matters_names_missile_event_type():
+    """Matches materiality.HIGH_IMPACT_TERMS' missile/drone/attack addition
+    (Aug 15 replay gap) -- the event-type label side of the same fix."""
+    primary = {
+        "title": "North Korea launches a new ballistic missile over the Sea of Japan",
+        "excerpt": "North Korea launched a ballistic missile, prompting an emergency response from Japan.",
+    }
+    result = why_it_matters(primary, None, "Politics", entities=["North Korea"])
+    assert "missile" in result.lower()
+
+
 def test_chinese_takeaway_names_entity_not_generic_category_template():
     """Reject the exact generic template this repair targets."""
     result = chinese_takeaway("AI & Semiconductors", entities=["NVIDIA"], primary=_primary())

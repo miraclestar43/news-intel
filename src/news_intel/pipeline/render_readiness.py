@@ -107,6 +107,14 @@ _EVENT_TYPE_LABELS_EN: list[tuple[str, str]] = [
     ("recall", "a product recall"),
     ("hack", "a security breach"),
     ("breach", "a security breach"),
+    ("missile", "a missile launch"),
+    ("ballistic", "a missile launch"),
+    ("drone strike", "a drone strike"),
+    ("weapons test", "a weapons test"),
+    ("nuclear test", "a nuclear test"),
+    ("attack", "an attack"),
+    ("shelling", "shelling"),
+    ("bombard", "a bombardment"),
 ]
 
 _EVENT_TYPE_LABELS_ZH: dict[str, str] = {
@@ -147,6 +155,13 @@ _EVENT_TYPE_LABELS_ZH: dict[str, str] = {
     "a recession signal": "经济衰退信号",
     "a product recall": "产品召回",
     "a security breach": "安全漏洞",
+    "a missile launch": "导弹发射",
+    "a drone strike": "无人机袭击",
+    "a weapons test": "武器试验",
+    "a nuclear test": "核试验",
+    "an attack": "袭击事件",
+    "shelling": "炮击",
+    "a bombardment": "轰炸",
 }
 
 

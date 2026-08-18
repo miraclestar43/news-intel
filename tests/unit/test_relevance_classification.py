@@ -243,6 +243,20 @@ def test_world_politics_bucket_maps_to_politics_category_label():
     assert _CATEGORY_LABELS["world_politics_geopolitics"] == "Politics"
 
 
+def test_north_korea_missile_launch_classifies_as_world_politics():
+    """Real gap found via the Aug 15 replay: conflict-reporting vocabulary
+    ("launches a new ballistic missile", "suspected drone attack") had no
+    materiality.HIGH_IMPACT_TERMS hit at all under the original narrower
+    term list (which only covered "invas"/"war "/"ceasefire"/"coup"), so a
+    genuinely material missile story never reached the event-type gate
+    despite a clean country/actor vocabulary hit."""
+    result = _classify(
+        "North Korea launches a new ballistic missile over the Sea of Japan, prompting an emergency "
+        "response from South Korea and Japan"
+    )
+    assert result.bucket == "world_politics_geopolitics"
+
+
 def test_lebanon_mention_without_event_type_signal_does_not_qualify():
     """The consequence gate: a bare country/actor mention with no
     conflict/diplomacy/event-type signal (e.g. a soft tourism or lifestyle

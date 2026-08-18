@@ -135,6 +135,14 @@ HIGH_IMPACT_TERMS: frozenset[str] = frozenset(
         "negotiat", "peace talks", "diplomatic recognition", "diplomatic ties",
         "treaty", "summit", "court rul", "leadership change",
         "military operation", "troop", "offensive",
+        # 2026-08-17: found via the Aug 15 real-data daily replay -- common
+        # conflict-reporting vocabulary ("North Korea launches new ballistic
+        # missile", "Russia suspected in ... drone attack") had NO event-
+        # type hit despite being genuinely material, since the terms above
+        # only covered "invas"/"war "/"ceasefire"/"coup", not the words real
+        # headlines actually use for this category of event.
+        "missile", "ballistic", "drone strike", "weapons test", "nuclear test",
+        "attack", "shelling", "bombard",
     }
 )
 
