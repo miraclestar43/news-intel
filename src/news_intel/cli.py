@@ -12,6 +12,8 @@ from news_intel.jobs.alerts import release_held_alerts, run_alert_check
 from news_intel.jobs.collect import run_collect
 from news_intel.jobs.daily import run_daily
 from news_intel.jobs.daily_canary import run_daily_canary
+from news_intel.jobs.monthly import run_monthly
+from news_intel.jobs.monthly_production import run_monthly_production
 from news_intel.jobs.weekly import run_weekly
 from news_intel.jobs.weekly_production import run_weekly_production
 from news_intel.logging_setup import configure_logging, get_logger
@@ -190,6 +192,33 @@ def digest_weekly(
         conn.close()
 
     typer.echo(f"week={summary.week_label} model_used={summary.model_used} fallback_used={summary.fallback_used}")
+    typer.echo(
+        f"trends={summary.trend_count} chars={summary.character_count} "
+        f"skipped_duplicate={summary.skipped_duplicate}"
+    )
+    typer.echo(f"idempotency_key={summary.idempotency_key} sent={summary.sent} sent_dry_run={summary.sent_dry_run}")
+    for i, part in enumerate(summary.rendered_parts, start=1):
+        typer.echo(f"\n--- rendered part {i}/{len(summary.rendered_parts)} ---\n")
+        typer.echo(part)
+
+
+@digest_app.command("monthly")
+def digest_monthly(
+    dry_run: bool = typer.Option(True, help="Preview only; do not persist the digest or send Telegram."),
+    chat_id: int = typer.Option(None, help="Telegram chat id to send to (must be in the allowlist)."),
+) -> None:
+    """Generate (and optionally send) the first-Monday monthly brief."""
+    config, conn = _load()
+    try:
+        if dry_run:
+            with db.rollback_only(conn):
+                summary = run_monthly(config, conn, chat_id=chat_id, dry_run=True)
+        else:
+            summary = run_monthly(config, conn, chat_id=chat_id, dry_run=False)
+    finally:
+        conn.close()
+
+    typer.echo(f"month={summary.month_label} model_used={summary.model_used} fallback_used={summary.fallback_used}")
     typer.echo(
         f"trends={summary.trend_count} chars={summary.character_count} "
         f"skipped_duplicate={summary.skipped_duplicate}"
@@ -408,6 +437,40 @@ def production_weekly() -> None:
 
     typer.echo(
         f"week={summary.week_label} git_head={summary.git_head} fail_closed={summary.fail_closed} "
+        f"sent={summary.sent} trends={summary.trend_count} chars={summary.character_count} "
+        f"skipped_duplicate={summary.skipped_duplicate}"
+    )
+    if summary.fail_closed:
+        typer.echo(f"fail_reason={summary.fail_reason}")
+    typer.echo(f"idempotency_key={summary.idempotency_key}")
+
+
+@production_app.command("monthly")
+def production_monthly() -> None:
+    """The production monthly entrypoint: always a real (non-dry-run) send,
+    first-Monday-of-month slot only. Rejects execution outside an explicitly
+    valid first-Monday America/Los_Angeles window BEFORE any job-run/digest/
+    delivery record is created -- this is what keeps a `Persistent=true`
+    timer, installed after a missed first-Monday slot, from firing a late
+    catch-up send; see jobs/monthly_production.py. Never use
+    `pi-news digest monthly` (the lower-level dry-run-capable command) as
+    the production service."""
+    config, conn = _load()
+    try:
+        summary = run_monthly_production(config, conn)
+    finally:
+        conn.close()
+
+    if summary.skipped_late_catchup:
+        typer.echo(
+            f"production monthly: outside the valid first-Monday America/Los_Angeles window at "
+            f"{summary.pt_window_checked_at} -- skipped_late_catchup, zero database writes, "
+            f"zero Telegram contact."
+        )
+        return
+
+    typer.echo(
+        f"month={summary.month_label} git_head={summary.git_head} fail_closed={summary.fail_closed} "
         f"sent={summary.sent} trends={summary.trend_count} chars={summary.character_count} "
         f"skipped_duplicate={summary.skipped_duplicate}"
     )

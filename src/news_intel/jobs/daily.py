@@ -195,6 +195,7 @@ class DailySummary:
     sent: bool
     skipped_lock: bool = False
     skipped_sunday: bool = False
+    skipped_monthly_slot: bool = False
     fail_closed: bool = False
     fail_reason: str | None = None
 
@@ -248,10 +249,15 @@ def run_daily(
 ) -> DailySummary:
     now = now or datetime.now(UTC)
 
-    pt_weekday = now.astimezone(ZoneInfo(config.policy.timezone)).weekday()
+    now_pt_date = now.astimezone(ZoneInfo(config.policy.timezone)).date()
+    pt_weekday = now_pt_date.weekday()
     if pt_weekday == 6:  # Sunday: the weekly brief replaces the daily send entirely
         return DailySummary(
             "", 0, 0, 0, False, "", "", True, False, skipped_sunday=True
+        )
+    if pt_weekday == 0 and now_pt_date.day <= 7:  # first Monday: the monthly brief replaces the daily send
+        return DailySummary(
+            "", 0, 0, 0, False, "", "", True, False, skipped_monthly_slot=True
         )
 
     if not db.acquire_job_lock(conn, "daily"):

@@ -1,0 +1,14 @@
+[Unit]
+Description=pi-news-intel: normal production monthly brief (first-Monday synthesis)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/pi-news-intel
+# Same protected environment-file mechanism as production daily/weekly --
+# this is the ONLY other unit permitted to load the Telegram secret file.
+# pi-news-collect.service has no EnvironmentFile and never references it.
+EnvironmentFile=%h/pi-news-intel/.env
+ExecStart=%h/pi-news-intel/.venv/bin/pi-news production monthly
+TimeoutStartSec=280
