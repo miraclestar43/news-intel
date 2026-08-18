@@ -341,18 +341,25 @@ sources:
     adapter: html_index
     tier: 0
     enabled: true
-    # Verified live 2026-08-17: 35 items, newest 2026-08-14, spokesperson
-    # press-briefing transcripts. Official assertion, not independent
-    # corroboration of disputed claims -- see materiality/render-readiness
-    # attribution handling. Date is embedded in the title text itself
-    # ("...（2026-08-14）"), so the date selector points at the same <a>
-    # as title/link; pipeline's ISO-date regex extracts it from that text.
+    # Verified live 2026-08-17 (selector), RE-VERIFIED live 2026-08-18: a
+    # real production collection run against this source returned ZERO
+    # items ("selector 'div.list1 li' matched nothing") -- the original
+    # selector was simply wrong: the live page uses <ul class="list1">,
+    # never a <div class="list1">. Fixed by inspecting the actual live DOM
+    # (curl + grep, not guessed) -- confirmed 35 items across 5 <ul
+    # class="list1"> blocks, newest 2026-08-17 (one day old at verification
+    # time), spokesperson press-briefing transcripts. Official assertion,
+    # not independent corroboration of disputed claims -- see materiality/
+    # render-readiness attribution handling. Date is embedded in the title
+    # text itself ("...（2026-08-17）"), so the date selector points at the
+    # same <a> as title/link; pipeline's ISO-date regex extracts it from
+    # that text.
     url: "https://www.mfa.gov.cn/web/wjdt_674879/fyrbt_674889/"
     poll_interval_seconds: 1800
     category_hints: [china, world, policy]
     editions: [zh_cn]
     selectors:
-      item: "div.list1 li"
+      item: "ul.list1 li"
       title: "a"
       link: "a"
       date: "a"
