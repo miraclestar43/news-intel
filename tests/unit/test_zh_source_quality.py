@@ -60,6 +60,43 @@ def test_lifestyle_content_with_incidental_tech_word_still_rejected():
     assert result.bucket == "explicit_noise"
 
 
+def test_bare_five_year_plan_mention_alone_does_not_classify_as_ai_semiconductor():
+    """Real misclassification found via a live collection run: a State
+    Council notice about a LEGAL-EDUCATION five-year plan was classified
+    into the AI/semiconductor bucket purely because it mentioned "五年规划"
+    -- China's five-year planning cycle covers every sector, not just tech
+    policy, so a bare mention alone must never qualify."""
+    text = "中共中央 国务院转发《中央宣传部、司法部关于开展法治宣传教育的第九个五年规划（2026-2030年）》"
+    result = _classify_zh(text)
+    assert result.bucket != "ai_semiconductor_export_controls"
+
+
+def test_bare_state_council_letterhead_mention_alone_does_not_classify_as_china_policy():
+    """Same defect, second cause: "国务院"/"中共中央" are the issuing-
+    authority letterhead on nearly every Chinese government document
+    regardless of subject -- a bare mention carries no china-policy
+    substance signal on its own."""
+    result = _classify_zh("国务院办公厅关于印发城市绿化管理若干规定的通知")
+    assert result.bucket != "us_china_policy_geopolitics"
+
+
+def test_genuine_ai_policy_story_still_classifies_correctly_after_the_fix():
+    """Non-regression: removing the over-generic terms must not suppress
+    genuinely material AI/semiconductor policy content."""
+    result = _classify_zh("国家发展改革委发布人工智能产业发展指导意见，明确对先进制程芯片的政策支持")
+    assert result.bucket == "ai_semiconductor_export_controls"
+
+
+def test_genuine_china_us_relations_story_still_classifies_correctly_after_the_fix():
+    result = _classify_zh("外交部发言人就中美关系发表最新表态")
+    assert result.bucket == "us_china_policy_geopolitics"
+
+
+def test_genuine_export_control_story_still_classifies_correctly_after_the_fix():
+    result = _classify_zh("商务部宣布对相关企业实施新一轮出口管制措施")
+    assert result.bucket == "ai_semiconductor_export_controls"
+
+
 # --- attribution preservation --------------------------------------------
 
 

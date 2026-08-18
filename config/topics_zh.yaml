@@ -69,6 +69,18 @@ groups:
 
   policy:
     weight: 1.10
+    # 2026-08-18 repair: "五年规划"/"十五五规划" (bare "Five-Year Plan"/
+    # "15th Five-Year Plan" references) were removed after a real
+    # misclassification found via a live collection run -- a State
+    # Council notice about a LEGAL-EDUCATION five-year plan
+    # ("法治宣传教育的第九个五年规划") was classified into the AI/
+    # semiconductor bucket purely because it mentioned "五年规划". China's
+    # five-year planning cycle covers every sector (legal education,
+    # agriculture, culture, tourism, ...), not just tech/chip policy, so a
+    # bare mention is not itself a signal of AI/semiconductor relevance --
+    # same "bare mention insufficient without genuine specificity"
+    # reasoning already applied to 关税/tariff (see trade_policy_context
+    # below) and to the English geopolitics bucket's country-mention gate.
     terms_zh:
       - 出口管制
       - 实体清单
@@ -78,8 +90,6 @@ groups:
       - 网络安全审查
       - 关键信息基础设施
       - 产业政策
-      - 十五五规划
-      - 五年规划
     terms_en:
       - export control
       - entity list
@@ -119,15 +129,22 @@ groups:
 
   china:
     weight: 1.10
+    # 2026-08-18 repair (same live-collection defect as the policy group's
+    # 五年规划 fix above): "国务院"/"中共中央" (State Council / CPC Central
+    # Committee) are the ISSUING-AUTHORITY letterhead on nearly every
+    # Chinese government document regardless of subject -- a bare mention
+    # carries no china-policy substance signal on its own (the same
+    # misclassified legal-education five-year-plan notice also matched
+    # here purely because it was issued "中共中央 国务院"). Removed;
+    # genuinely topical terms (台湾/香港/习近平/外交部/中美关系/一带一路)
+    # remain.
     terms_zh:
       - 中国
       - 北京
       - 台湾
       - 香港
       - 习近平
-      - 国务院
       - 外交部
-      - 中共中央
       - 中美关系
       - 一带一路
       - 中欧班列
