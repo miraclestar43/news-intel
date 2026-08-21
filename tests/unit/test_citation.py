@@ -5,7 +5,12 @@ restated headline that was eating the character window)."""
 
 from __future__ import annotations
 
-from news_intel.pipeline.citation import resolve_citation_publisher, strip_citation_preamble, strip_title_preamble
+from news_intel.pipeline.citation import (
+    resolve_citation_publisher,
+    strip_citation_preamble,
+    strip_title_preamble,
+    strip_title_suffix,
+)
 
 _RUNTIMEWIRE_EXCERPT = (
     "Kate Knibbs / Wired : A look at AI news website RuntimeWire, which costs $100/day to run "
@@ -99,3 +104,30 @@ def test_strip_title_preamble_does_not_strip_a_legitimate_headline_colon():
 
 def test_strip_title_preamble_handles_empty_and_none_gracefully():
     assert strip_title_preamble("") == ""
+
+
+# 2026-08-21 repair: real defect (Aug 20 en_global digest, already
+# delivered) -- "Supermicro investigation clears CEO in $2.5 billion
+# alleged smuggling scheme | Fortune" was rendered with the site's own
+# "| Fortune" title suffix still attached.
+
+
+def test_strip_title_suffix_drops_trailing_publisher_pipe():
+    title = "Supermicro investigation clears CEO in $2.5 billion alleged smuggling scheme | Fortune"
+    assert strip_title_suffix(title) == "Supermicro investigation clears CEO in $2.5 billion alleged smuggling scheme"
+
+
+def test_strip_title_suffix_leaves_a_title_with_no_pipe_unchanged():
+    title = "A title with no suffix at all"
+    assert strip_title_suffix(title) == title
+
+
+def test_strip_title_suffix_leaves_empty_string_unchanged():
+    assert strip_title_suffix("") == ""
+
+
+def test_strip_title_suffix_never_returns_empty_for_a_pipe_only_title():
+    """Never discards content it can't confidently identify as more than
+    a bare suffix -- falls back to the original text unchanged."""
+    result = strip_title_suffix("| Fortune")
+    assert result  # non-empty

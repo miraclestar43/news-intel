@@ -81,6 +81,31 @@ def strip_title_preamble(title: str) -> str:
     return rest or title
 
 
+# 2026-08-21 repair: real defect (Aug 20 en_global digest, already
+# delivered) -- "Supermicro investigation clears CEO in $2.5 billion
+# alleged smuggling scheme | Fortune" was rendered with the site's own
+# "| Fortune" title suffix still attached, since the origin-fetched title
+# is used verbatim. A trailing "| <short text>" is an extremely common
+# website <title>-tag convention ("Article Headline | Site Name"), rarely
+# genuine headline content -- general, not specific to Fortune. Scoped to
+# the pipe character specifically (not hyphen/en-dash, which commonly
+# appear inside legitimate headline clauses and would risk over-stripping
+# real content).
+_TITLE_SUFFIX_RE = re.compile(r"\s*\|\s*[^|]{1,40}$")
+
+
+def strip_title_suffix(title: str) -> str:
+    """Drops a trailing "| Publisher Name" suffix from a title, returning
+    the title unchanged if no pipe-delimited suffix is present."""
+    if not title or "|" not in title:
+        return title
+    match = _TITLE_SUFFIX_RE.search(title)
+    if not match:
+        return title
+    rest = title[: match.start()].strip()
+    return rest or title
+
+
 def strip_citation_preamble(excerpt: str) -> str:
     """Drops a leading "Name: <restated headline> —" citation prefix
     so summarization windows over the actual new sentence instead of a

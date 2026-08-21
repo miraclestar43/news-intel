@@ -8,7 +8,7 @@ import sqlite3
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
-from news_intel.pipeline.citation import resolve_citation_publisher, strip_title_preamble
+from news_intel.pipeline.citation import resolve_citation_publisher, strip_title_preamble, strip_title_suffix
 from news_intel.pipeline.publisher_family import registrable_domain
 
 
@@ -240,7 +240,7 @@ def _display_title(sources: list[dict], raw_title: str) -> str:
     Publication:" citation) from the stored title. Never touches the
     source label or URL -- purely a display-text transform."""
     if sources and sources[0].get("origin_title"):
-        return sources[0]["origin_title"]
+        return strip_title_suffix(sources[0]["origin_title"])
     return strip_title_preamble(raw_title)
 
 
