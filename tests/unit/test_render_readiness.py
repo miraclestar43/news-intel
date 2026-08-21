@@ -297,3 +297,21 @@ def test_chinese_takeaway_openai_regression_has_no_generic_relevant_template():
     assert "相关" + "AI/半导体产业格局" + "重要动态" not in result
     assert "$12.3 billion" in result
     assert "净亏损" in result
+
+
+def test_why_it_matters_broadcom_regression_names_debt_financing_not_investment():
+    """2026-08-21: real production regression (Aug 20 en_global digest,
+    already delivered) -- "raise $60B+ in debt for an AI chip financing
+    deal" rendered as "Broadcom an investment of $60 billion" because the
+    role-lookback window only saw "raise" before the figure; "in debt" and
+    "financing" both land immediately AFTER it in this common phrasing."""
+    primary = {
+        "title": "Broadcom is in talks with a group of lenders to raise $60B+ in debt for an AI chip "
+        "financing deal that will benefit Anthropic and other companies",
+        "excerpt": "Broadcom Inc. is in talks with a group of lenders to raise more than $60 billion in "
+        "debt for an AI chip financing deal.",
+    }
+    result = why_it_matters(primary, None, "AI & Semiconductors", entities=["Broadcom"])
+    assert "$60 billion" in result
+    assert "financing" in result
+    assert "an investment of $60" not in result

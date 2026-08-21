@@ -300,21 +300,44 @@ def _event_type_label(lowered_text: str, labels: list[tuple[str, str]]) -> str |
 # figure -- when no role keyword is nearby, "worth" remains the
 # documented floor, not a guess.
 _DOLLAR_ROLE_LOOKBACK_CHARS = 40
+_DOLLAR_ROLE_LOOKAHEAD_CHARS = 15
+# 2026-08-21 repair: real production regression (Aug 20 en_global digest,
+# already delivered) -- "Broadcom is in talks with a group of lenders to
+# raise $60B+ in debt for an AI chip financing deal" rendered as "Broadcom
+# an investment of $60 billion" instead of debt financing. The lookback-
+# only window saw "raise" immediately before the figure and matched the
+# invest/investment bucket, never getting a chance to see "in debt" and
+# "financing", which both land immediately AFTER the figure in this (very
+# common) "raise $X in debt/financing" phrasing. debt/financing is checked
+# ahead of invest/investment, and both a lookback AND a lookahead window
+# are searched, since "raise"/"raising"/"raised" alone is a generic verb
+# that also describes a debt raise, not only an equity investment -- a
+# nearby "debt"/"financing" mention is the more specific, decisive signal
+# when both are present. Lookahead is intentionally much shorter than the
+# lookback (15 vs 40 chars): title+excerpt are concatenated with a single
+# space in _combined_text, so a wide lookahead on a figure near the end of
+# the title bleeds into the excerpt's own, unrelated first sentence -- a
+# real regression this caused: Xiaomi's $16.2B (revenue, correctly
+# identified via the preceding "revenue down" text) was reclassified as
+# "profit" because the excerpt's later, unrelated "posted profit that
+# fell..." sentence fell inside a 40-char lookahead.
 _DOLLAR_ROLE_PHRASES: list[tuple[tuple[str, ...], str]] = [
     (("loss", "losses", "deficit", "shortfall"), "posting losses of"),
     (("operating profit", "net income", "profit of"), "reporting profit of"),
     (("revenue", "sales"), "reporting revenue of"),
     (("valuation", "valued at", "valuing"), "valued at"),
-    (("invest", "investment", "funding", "raise", "raising", "raised"), "an investment of"),
     (("debt", "financing"), "seeking financing of"),
+    (("invest", "investment", "funding", "raise", "raising", "raised"), "an investment of"),
 ]
 
 
 def _dollar_role_phrase(text: str, position: int) -> str:
     window_start = max(0, position - _DOLLAR_ROLE_LOOKBACK_CHARS)
     preceding = text[window_start:position].lower()
+    following = text[position : position + _DOLLAR_ROLE_LOOKAHEAD_CHARS].lower()
+    nearby = preceding + " " + following
     for keywords, phrase in _DOLLAR_ROLE_PHRASES:
-        if any(kw in preceding for kw in keywords):
+        if any(kw in nearby for kw in keywords):
             return phrase
     return "worth"
 
@@ -343,16 +366,18 @@ _ZH_DOLLAR_ROLE_PHRASES: list[tuple[tuple[str, ...], str]] = [
     (("operating profit", "net income", "profit of"), "净利润"),
     (("revenue", "sales"), "营收"),
     (("valuation", "valued at", "valuing"), "估值"),
-    (("invest", "investment", "funding", "raise", "raising", "raised"), "融资"),
     (("debt", "financing"), "债务融资"),
+    (("invest", "investment", "funding", "raise", "raising", "raised"), "融资"),
 ]
 
 
 def _dollar_role_phrase_zh(text: str, position: int) -> str:
     window_start = max(0, position - _DOLLAR_ROLE_LOOKBACK_CHARS)
     preceding = text[window_start:position].lower()
+    following = text[position : position + _DOLLAR_ROLE_LOOKAHEAD_CHARS].lower()
+    nearby = preceding + " " + following
     for keywords, phrase in _ZH_DOLLAR_ROLE_PHRASES:
-        if any(kw in preceding for kw in keywords):
+        if any(kw in nearby for kw in keywords):
             return phrase
     return "涉及金额"
 
