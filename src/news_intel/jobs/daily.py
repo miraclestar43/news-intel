@@ -32,6 +32,7 @@ from news_intel.pipeline import freshness
 from news_intel.pipeline.daily_selection import SelectionResult, select_daily_stories
 from news_intel.pipeline.entities import known_entities
 from news_intel.pipeline.event_integrity import is_dashboard_like, is_low_consequence_event_type
+from news_intel.pipeline.event_integrity_zh import is_low_consequence_event_type_zh
 from news_intel.scheduled_repo import upcoming
 from news_intel.settings import AppConfig
 
@@ -86,9 +87,20 @@ def _has_material_consequence(item: dict) -> bool:
     award/ranking story, a tutorial/builder-guide/promotional post, or an
     enforcement action against a single named individual must not qualify
     for the digest merely because the publisher is authoritative or no
-    better story exists -- see pipeline/event_integrity.py."""
+    better story exists -- see pipeline/event_integrity.py.
+
+    2026-08-21 multi-edition dispatch: the English gate's phrase lists are
+    all English words and never match Chinese text -- a zh_cn candidate
+    previously received zero event-type/consequence filtering beyond
+    classify_relevance's noise_exclusions and render-readiness (real
+    defect: a conference-appearance story and an industry-award-list
+    story both reached selection with nothing behind the headline). See
+    pipeline/event_integrity_zh.py for the Chinese-language gate."""
     primary = item["sources"][0] if item.get("sources") else {}
-    return not is_low_consequence_event_type(item.get("title", ""), primary.get("excerpt"))
+    title, excerpt = item.get("title", ""), primary.get("excerpt")
+    if item.get("edition_id") == "zh_cn":
+        return not is_low_consequence_event_type_zh(title, excerpt)
+    return not is_low_consequence_event_type(title, excerpt)
 
 
 # 2026-08-16 freshness repair: a discovery aggregator (Techmeme) can
