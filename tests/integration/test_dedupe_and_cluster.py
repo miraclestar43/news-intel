@@ -99,6 +99,60 @@ def test_unrelated_same_company_stories_stay_separate(config, conn):
     assert event_a != event_b
 
 
+def test_cross_edition_same_url_does_not_suppress_other_edition(config, conn):
+    """2026-08-21 repair regression: gov_cn_policy (en_global) and
+    gov_cn_policy_zh (zh_cn) scrape the identical gov.cn URL. Before the
+    edition_id scoping fix, gov_cn_policy_zh's item silently matched
+    gov_cn_policy's already-stored row (same url_hash/content_hash) and
+    returned UNCHANGED -- the zh_cn edition never got its own raw_item/event
+    for this source at all, regardless of how many times it was fetched."""
+    now = datetime(2026, 8, 18, 9, 0, tzinfo=UTC)
+    url = "https://www.gov.cn/zhengce/content/202608/content_9999999.htm"
+    title = "国务院关于修改《住房公积金管理条例》的决定"
+
+    insert_source_row(conn, "gov_cn_policy", 0)
+    en_item = CollectedItem(
+        source_id="gov_cn_policy",
+        external_id=url,
+        canonical_url=url,
+        title=title,
+        summary_excerpt=None,
+        language="zh",
+        published_at=now,
+        origin_family="gov_cn_policy",
+        metadata={},
+    )
+    en_normalized = normalize(
+        en_item, excerpt_max_chars=config.policy.storage.raw_excerpt_max_chars, now=now, edition_id="en_global"
+    )
+    en_upsert = upsert_raw_item(conn, en_normalized)
+    assert en_upsert.result == UpsertResult.NEW
+
+    insert_source_row(conn, "gov_cn_policy_zh", 0)
+    zh_item = CollectedItem(
+        source_id="gov_cn_policy_zh",
+        external_id=url,
+        canonical_url=url,
+        title=title,
+        summary_excerpt=None,
+        language="zh",
+        published_at=now,
+        origin_family="gov_cn_policy_zh",
+        metadata={},
+    )
+    zh_normalized = normalize(
+        zh_item, excerpt_max_chars=config.policy.storage.raw_excerpt_max_chars, now=now, edition_id="zh_cn"
+    )
+    zh_upsert = upsert_raw_item(conn, zh_normalized)
+    assert zh_upsert.result == UpsertResult.NEW
+    assert zh_upsert.raw_item_id != en_upsert.raw_item_id
+
+    zh_row = conn.execute(
+        "SELECT edition_id FROM raw_items WHERE id = ?", (zh_upsert.raw_item_id,)
+    ).fetchone()
+    assert zh_row["edition_id"] == "zh_cn"
+
+
 def test_rerunning_collection_is_idempotent(config, conn):
     now = datetime(2026, 7, 31, 15, 0, tzinfo=UTC)
     insert_source_row(conn, "nvidia_newsroom", 0)

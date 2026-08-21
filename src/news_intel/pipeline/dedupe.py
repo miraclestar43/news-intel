@@ -34,7 +34,24 @@ class UpsertOutcome:
 
 
 def find_existing_identity(conn: sqlite3.Connection, item: NormalizedItem) -> sqlite3.Row | None:
-    """Same real-world article, regardless of whether its content changed."""
+    """Same real-world article, regardless of whether its content changed.
+
+    2026-08-21 repair: the url_hash fallback (and find_existing_by_content
+    below) used to match across ANY edition, not just this item's own. Real
+    production defect: gov_cn_policy (en_global, pre-existing) and
+    gov_cn_policy_zh (zh_cn, added 2026-08-17) both scrape the identical
+    gov.cn policy-index page. Since url_hash/content_hash are identical for
+    the same article regardless of which edition's source fetched it first,
+    gov_cn_policy_zh's items were silently matching gov_cn_policy's
+    already-stored rows and returning UNCHANGED -- gov_cn_policy_zh
+    structurally never produced its own zh_cn raw_items/events, no matter
+    how many times it fetched. Editions are independent content pools by
+    design (separate selection, separate delivery); scoping identity lookups
+    to the item's own edition_id fixes this in general, for any current or
+    future source pair that happens to share an upstream URL/content across
+    editions -- the same-edition, cross-source-id dedup this function
+    already does (e.g. two different English-edition sources both mirroring
+    one GDELT story) is unaffected and still merges those correctly."""
     if item.external_id:
         row = conn.execute(
             "SELECT * FROM raw_items WHERE source_id = ? AND external_id = ?",
@@ -44,15 +61,20 @@ def find_existing_identity(conn: sqlite3.Connection, item: NormalizedItem) -> sq
             return row
 
     return conn.execute(
-        "SELECT * FROM raw_items WHERE url_hash = ? ORDER BY id LIMIT 1", (item.url_hash,)
+        "SELECT * FROM raw_items WHERE url_hash = ? AND edition_id = ? ORDER BY id LIMIT 1",
+        (item.url_hash, item.edition_id),
     ).fetchone()
 
 
 def find_existing_by_content(conn: sqlite3.Connection, item: NormalizedItem) -> sqlite3.Row | None:
-    """Identical content re-appearing under a different identity (e.g. a
-    mirror republishing the same text) -- still not a new article."""
+    """Identical content re-appearing under a different identity within the
+    SAME edition (e.g. a mirror republishing the same text) -- still not a
+    new article. Scoped by edition_id (see find_existing_identity above) so
+    this never suppresses a different edition's independent copy of the same
+    underlying story."""
     return conn.execute(
-        "SELECT * FROM raw_items WHERE content_hash = ? ORDER BY id LIMIT 1", (item.content_hash,)
+        "SELECT * FROM raw_items WHERE content_hash = ? AND edition_id = ? ORDER BY id LIMIT 1",
+        (item.content_hash, item.edition_id),
     ).fetchone()
 
 
