@@ -456,3 +456,95 @@ def test_reproduces_nvidia_ellipsis_defect_end_to_end():
     assert "..." not in rendered
     assert "NVIDIA Partners With Apollo and Others" in rendered
     assert "Category: AI &amp; Semiconductors" in rendered
+
+
+# --- summary quality: abbreviation periods and dangling clauses ------------
+# 2026-08-21: real production incident regression fixtures (Aug 20
+# en_global digest, already delivered to Telegram).
+
+
+def test_summary_broadcom_regression_full_clause_not_bare_entity_fragment():
+    """Real defect: "Broadcom Inc." was rendered as the entire summary --
+    _SENTENCE_END_RE treated the period in the "Inc." abbreviation as a
+    genuine sentence terminator, short-circuiting before the real,
+    complete fallback clause ever got a chance to run."""
+    title = (
+        "Sources: Broadcom is in talks with a group of lenders to raise $60B+ in debt for an AI chip "
+        "financing deal that will benefit Anthropic and other companies (Bloomberg)"
+    )
+    excerpt = (
+        "Bloomberg : Sources: Broadcom is in talks with a group of lenders to raise $60B+ in debt for "
+        "an AI chip financing deal that will benefit Anthropic and other companies — Broadcom Inc. is "
+        "in talks with a group of lenders to raise more than $60 billion in debt for an AI chip "
+        "financing deal …"
+    )
+    result = summarize(excerpt, title)
+    assert result == (
+        "Broadcom Inc. is in talks with a group of lenders to raise more than $60 billion in debt "
+        "for an AI chip financing deal."
+    )
+    assert result != "Broadcom Inc."
+
+
+def test_summary_supermicro_regression_dangling_that_clause_rejected():
+    """Real defect: "Super Micro Computer said on Thursday that an
+    independent investigation led by its board found no evidence that
+    current members." was delivered as a complete-looking sentence, but
+    the trailing "that current members" clause never resolves -- the
+    source excerpt was truncated mid-thought and a period was appended
+    mechanically. Must now yield no summary (render-readiness gate then
+    drops and backfills the story, per pipeline/daily_selection.py's
+    existing drop-and-backfill design)."""
+    title = (
+        "Super Micro says its independent probe found no evidence its CEO or senior management knew "
+        "of an alleged scheme to smuggle $2.5B worth of Nvidia chips to China (Amanda Gerut/Fortune)"
+    )
+    excerpt = (
+        "Amanda Gerut / Fortune : Super Micro says its independent probe found no evidence its CEO or "
+        "senior management knew of an alleged scheme to smuggle $2.5B worth of Nvidia chips to China "
+        "— Super Micro Computer said on Thursday that an independent investigation led by its board "
+        "found no evidence that current members …"
+    )
+    assert summarize(excerpt, title) is None
+
+
+def test_summary_generic_corporate_suffix_period_is_not_a_sentence_end():
+    """General case, not specific to Broadcom: any "<Name> Corp./Ltd./Co."
+    fragment must not be treated as a complete sentence on its own."""
+    excerpt = "Some Publisher : Restated headline — Acme Semiconductor Corp. reported record quarterly bookings."
+    result = summarize(excerpt, "Acme headline")
+    assert result == "Acme Semiconductor Corp. reported record quarterly bookings."
+
+
+def test_summary_entity_only_fragment_with_no_verb_yields_no_summary():
+    excerpt = "Some Publisher : Restated headline — Acme Semiconductor Corp."
+    assert summarize(excerpt, "Acme headline") is None
+
+
+def test_summary_dangling_which_clause_rejected():
+    excerpt = (
+        "Some Publisher : Restated headline — Regulators opened a formal inquiry into the merger, "
+        "which industry analysts"
+    )
+    assert summarize(excerpt, "Merger headline") is None
+
+
+def test_summary_dangling_who_clause_rejected():
+    excerpt = (
+        "Some Publisher : Restated headline — The company appointed a new chief executive, who "
+        "previously"
+    )
+    assert summarize(excerpt, "Executive headline") is None
+
+
+def test_summary_that_clause_with_a_real_verb_is_not_flagged_dangling():
+    """Non-regression: a "that" clause that DOES reach a verb must not be
+    rejected just because a subordinating conjunction appears near the
+    end of some earlier, unrelated clause."""
+    excerpt = (
+        "Some Publisher : Restated headline — The board said in a statement that the investigation "
+        "found no wrongdoing by current executives."
+    )
+    result = summarize(excerpt, "Investigation headline")
+    assert result is not None
+    assert "found no wrongdoing by current executives" in result

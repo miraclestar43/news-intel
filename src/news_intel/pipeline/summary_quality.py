@@ -34,6 +34,79 @@ _FALLBACK_MIN_CHARS = 30
 # terminal punctuation in general.
 _DANGLING_DOLLAR_RE = re.compile(r"\$\s?[\d,]+\.?\d*$")
 
+# 2026-08-21 repair: a real defect (Aug 20 production replay) -- "Broadcom
+# Inc. is in talks with a group of lenders to raise more than $60 billion
+# in debt ..." was truncated down to the bare fragment "Broadcom Inc." by
+# _SENTENCE_END_RE treating the period in the corporate-suffix abbreviation
+# "Inc." as a genuine sentence terminator. An entity name plus a business
+# abbreviation is not itself a complete sentence -- general, not specific
+# to Broadcom: any "<Name> Corp./Inc./Ltd./Co." pattern has the same issue.
+_ABBREVIATIONS_NOT_SENTENCE_END = frozenset(
+    {"inc", "corp", "co", "ltd", "llc", "plc", "vs", "etc", "mr", "mrs", "ms", "dr", "jr", "sr", "st", "u.s", "u.k"}
+)
+_WORD_BEFORE_PERIOD_RE = re.compile(r"([A-Za-z][A-Za-z.]*)$")
+
+
+def _is_abbreviation_period(text_up_to_period: str) -> bool:
+    match = _WORD_BEFORE_PERIOD_RE.search(text_up_to_period)
+    if not match:
+        return False
+    word = match.group(1).rstrip(".").lower()
+    return word in _ABBREVIATIONS_NOT_SENTENCE_END
+
+
+# 2026-08-21 repair: a second real defect from the same replay -- "Super
+# Micro Computer said on Thursday that an independent investigation led by
+# its board found no evidence that current members ..." was accepted by
+# the fallback-clause path (no real terminal punctuation, but long enough
+# to clear the length floor) even though the trailing "that current
+# members" clause never resolves -- the source excerpt itself was
+# truncated mid-clause, and appending a period made an unfinished sentence
+# LOOK grammatically complete. General (not headline-specific) heuristic:
+# find the LAST subordinating conjunction near the end of the text; if
+# the words after it are few and none look verb-like, the clause never
+# reached a resolution.
+_DANGLING_CONJUNCTIONS = (
+    "that", "which", "who", "whose", "because", "since", "although", "though", "while", "if", "unless",
+)
+_COMMON_VERB_SUFFIXES = ("ed", "ing")
+_COMMON_BARE_VERBS = frozenset(
+    {
+        "is", "are", "was", "were", "be", "been", "has", "have", "had", "will", "would", "could", "should",
+        "can", "may", "might", "do", "does", "did", "said", "says", "claims", "denies", "confirms", "plans",
+        "expects", "believes", "knew", "know", "knows", "found", "find", "finds", "aware", "involved", "acted",
+    }
+)
+_DANGLING_CLAUSE_MAX_TAIL_WORDS = 6
+
+
+def _ends_with_dangling_clause(text: str) -> bool:
+    """True if the text's last subordinate clause (introduced by "that"/
+    "which"/... near the end) never reaches a verb -- a strong signal the
+    source excerpt was truncated mid-thought, not that this is a genuine,
+    if unusual, complete sentence."""
+    lowered = text.lower()
+    last_idx = -1
+    last_conj_len = 0
+    for conj in _DANGLING_CONJUNCTIONS:
+        idx = lowered.rfind(f" {conj} ")
+        if idx > last_idx:
+            last_idx = idx
+            last_conj_len = len(conj) + 2
+    if last_idx == -1:
+        return False
+    tail = text[last_idx + last_conj_len :].strip().rstrip(".!?")
+    tail_words = tail.split()
+    if not tail_words or len(tail_words) > _DANGLING_CLAUSE_MAX_TAIL_WORDS:
+        return False
+    for word in tail_words:
+        cleaned = word.strip(",.\"'").lower()
+        if cleaned in _COMMON_BARE_VERBS:
+            return False
+        if len(cleaned) > 3 and any(cleaned.endswith(suf) for suf in _COMMON_VERB_SUFFIXES):
+            return False
+    return True
+
 
 def _strip_trailing_ellipsis(text: str) -> str:
     """A trailing '...' or '…' is the source's own truncation marker, not
@@ -59,10 +132,11 @@ def _complete_sentences(excerpt: str, max_chars: int) -> list[str]:
     # (event_repo._display_publisher) still sees the original excerpt.
     excerpt = strip_citation_preamble(excerpt)
     window = _strip_trailing_ellipsis(excerpt[:max_chars])
-    matches = list(_SENTENCE_END_RE.finditer(window))
     sentences = []
     start = 0
-    for m in matches:
+    for m in _SENTENCE_END_RE.finditer(window):
+        if window[m.start()] == "." and _is_abbreviation_period(window[: m.start() + 1]):
+            continue
         s = window[start : m.end()].strip()
         if s:
             sentences.append(s)
@@ -117,6 +191,8 @@ def _fallback_clause(excerpt: str, title: str, max_chars: int) -> str | None:
     if len(fallback) < _FALLBACK_MIN_CHARS or _is_redundant_with_title(fallback, title):
         return None
     if _DANGLING_DOLLAR_RE.search(fallback):
+        return None
+    if _ends_with_dangling_clause(fallback):
         return None
     return fallback if fallback[-1] in ".!?" else fallback + "."
 
