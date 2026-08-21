@@ -15,6 +15,7 @@ silently reuses an English-only assumption.
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 
 # Chinese sentence-ending punctuation. Half-width "!"/"?"/";" are also
 # accepted (mixed-width punctuation is common in Chinese tech writing --
@@ -29,18 +30,81 @@ _ZH_ELLIPSIS_SUFFIXES = ("……", "...", "…")
 # commonly prepend -- general patterns, never a single-outlet special case.
 _ZH_PREAMBLE_RE = re.compile(r"^\s*(来源|转自|原标题|记者|编辑|撰文|作者)\s*[：:]\s*")
 
+# 2026-08-21 repair: a real fabricated-number defect -- a "相关阅读"
+# (related-reading) trailer appended to the end of an article is a link
+# list to OTHER, separate stories, not part of the article itself. A TCL/
+# 广州华星 story's trailer contained an unrelated LG Display/TCL
+# transaction ("LG 显示以定价 2.2466 万亿韩元 将广州 LCD 工厂出售给 TCL 华星"),
+# and parse_zh_amounts (before this fix) treated that trailer's 2.2466万亿
+# figure as if it were part of THIS story, fabricating a why-it-matters
+# amount ~236x larger than the story's real 93.25亿元 transaction value.
+# General fix, not story-specific: strip the trailer before any
+# extraction -- numbers, entities, and sentences alike should never be
+# drawn from a block of unrelated "you might also like" links.
+_ZH_TRAILER_RE = re.compile(r"(相关阅读|延伸阅读|推荐阅读|猜你喜欢|更多阅读)\s*[:：]?", re.DOTALL)
+
+# AI-generated "reading companion" boilerplate some sources append (e.g.
+# ithome's own "AI 解读" note) -- editorial commentary ABOUT the article,
+# not the article's own reported facts; stripped for the same reason as
+# the related-reading trailer.
+_ZH_AI_COMMENTARY_RE = re.compile(r"AI\s*解读\s*")
+
+
+def strip_zh_trailer(text: str) -> str:
+    """Drops a trailing "相关阅读：..."/"延伸阅读：..." related-link block
+    and any "AI 解读" commentary note -- both are aggregator furniture
+    appended after the real article content, describing OTHER stories or
+    commenting ABOUT this one, never additional facts of the story itself.
+    Never touches text with no recognized trailer marker."""
+    if not text:
+        return text
+    match = _ZH_TRAILER_RE.search(text)
+    if match:
+        text = text[: match.start()].rstrip()
+    match = _ZH_AI_COMMENTARY_RE.search(text)
+    if match:
+        text = text[: match.start()].rstrip()
+    return text
+
+
 # 万 (10^4), 亿 (10^8), 万亿 (10^12) -- checked longest-prefix-first so
 # "万亿" is never mis-parsed as a "万" immediately followed by a stray "亿".
-_ZH_UNIT_MULTIPLIERS: list[tuple[str, float]] = [
-    ("万亿", 1_000_000_000_000.0),
-    ("亿元", 100_000_000.0),
-    ("亿美元", 100_000_000.0),
-    ("亿", 100_000_000.0),
-    ("万元", 10_000.0),
-    ("万美元", 10_000.0),
-    ("万", 10_000.0),
+# Decimal (not float) multipliers -- combined with parsing the digit
+# string through Decimal in parse_zh_amounts, this keeps the conversion
+# exact (93.25亿元 -> exactly 9,325,000,000, never a binary-float rounding
+# artifact) end to end, not just "close enough".
+_ZH_UNIT_MULTIPLIERS: list[tuple[str, Decimal]] = [
+    ("万亿", Decimal("1000000000000")),
+    ("亿元", Decimal("100000000")),
+    ("亿美元", Decimal("100000000")),
+    ("亿", Decimal("100000000")),
+    ("万元", Decimal("10000")),
+    ("万美元", Decimal("10000")),
+    ("万", Decimal("10000")),
 ]
 
+# 2026-08-21 repair: a real fabricated-number defect (see _ZH_TRAILER_RE's
+# docstring) surfaced a second, independent bug in the same story -- even
+# without the trailer, "2.2466万亿韩元" (2.2466 TRILLION KOREAN WON, a
+# different currency entirely) would have matched this regex's "万亿"
+# alternative and been silently treated as if it were a same-magnitude
+# yuan amount, with "韩元" simply left unconsumed and the currency
+# distinction lost entirely. The negative lookahead below refuses to match
+# a Chinese-unit amount immediately followed by a foreign-currency marker
+# -- general currency-awareness, not specific to this one story or to won.
+#
+# Applied as a POST-MATCH filter (checked against the text immediately
+# after a full match), not an inline regex lookahead: an inline lookahead
+# on the "万亿" alternative alone would only block THAT alternative, and
+# Python's alternation then falls through to try the next-shorter
+# alternative ("万") at the same position, which still matches and still
+# fabricates a number (just a different wrong one -- "2.2466万亿韩元"
+# would silently become "2.2466万" instead of being excluded outright).
+# Filtering after a single greedy (longest-alternative-first) match avoids
+# that fallthrough entirely.
+_FOREIGN_CURRENCY_MARKERS = (
+    "韩元", "日元", "欧元", "英镑", "卢比", "泰铢", "越南盾", "港元", "港币", "新台币", "新元", "卢布", "里拉",
+)
 _ZH_NUMBER_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(万亿|亿元|亿美元|亿|万元|万美元|万)")
 _ZH_PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:个百分点|%|％)")
 
@@ -102,15 +166,23 @@ def parse_zh_amounts(text: str) -> list[float]:
     go through materiality._parse_dollar_values, which zh_cn text may also
     contain when quoting a USD figure verbatim (see ithome/qbitai samples,
     which routinely mix "1398 元" and Chinese-unit amounts in the same
-    story)."""
+    story). Strips 相关阅读/AI 解读 aggregator furniture first (see
+    strip_zh_trailer) so an unrelated linked story's figures, possibly in
+    an entirely different currency, are never picked up as this story's
+    own. Decimal-based conversion keeps the result exact."""
+    text = strip_zh_trailer(text)
     values: list[float] = []
-    for amount_str, unit in _ZH_NUMBER_RE.findall(text):
-        try:
-            amount = float(amount_str)
-        except ValueError:
+    for match in _ZH_NUMBER_RE.finditer(text):
+        amount_str, unit = match.group(1), match.group(2)
+        tail = text[match.end() : match.end() + 4]
+        if any(tail.startswith(marker) for marker in _FOREIGN_CURRENCY_MARKERS):
             continue
-        multiplier = next((m for suffix, m in _ZH_UNIT_MULTIPLIERS if suffix == unit), 1.0)
-        values.append(amount * multiplier)
+        try:
+            amount = Decimal(amount_str)
+        except (ValueError, ArithmeticError):
+            continue
+        multiplier = next((m for suffix, m in _ZH_UNIT_MULTIPLIERS if suffix == unit), Decimal(1))
+        values.append(float(amount * multiplier))
     return values
 
 

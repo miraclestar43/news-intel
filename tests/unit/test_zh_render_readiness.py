@@ -139,3 +139,67 @@ def test_what_happened_zh_still_accepts_a_genuinely_substantive_unpunctuated_fal
         "excerpt": "商务部新闻发言人今日就近期贸易摩擦相关问题作出正式回应并公布具体应对措施安排",
     }
     assert is_render_ready_zh(primary) is True
+
+
+# 2026-08-21: real production incident regression fixtures (Aug 20 zh_cn
+# TCL/广州华星 digest). The delivered digest fabricated "金额约2.2万亿"
+# (~2.2 trillion yuan) for a story whose own transaction value is 93.25亿元
+# (9.325 billion yuan) -- traced to a "相关阅读" trailer linking to an
+# UNRELATED LG Display/TCL transaction priced in Korean won
+# ("2.2466万亿韩元"). ~236x too large, wrong currency, wrong story.
+_TCL_TITLE = "100% 控股 t9 产线：TCL 科技 93.25 亿元收购广州华星 45% 股权获证监会注册"
+_TCL_EXCERPT = (
+    "IT之家 8 月 20 日消息，TCL 科技今日披露，公司发行股份及支付现金购买广州华星光电半导体显示技术有限公司"
+    "（即 TCL 华星 t9 产线运营主体）45% 股权事项，已获中国证监会同意注册。"
+    "本次交易总对价约 93.25 亿元，其中现金支付与股份支付各占约 46.62 亿元。"
+    "交易完成后，TCL 科技将直接及间接控制广州华星半导体 100% 股权。"
+    "t9 产线总投资 350 亿元，规划月产能 18 万片玻璃基板。"
+    "相关阅读： 《 LG 显示以定价 2.2466 万亿韩元将广州 LCD 工厂出售给 TCL 华星 》"
+)
+
+
+def test_why_it_matters_zh_tcl_regression_no_fabricated_trillion_figure():
+    primary = {"title": _TCL_TITLE, "excerpt": _TCL_EXCERPT}
+    result = why_it_matters_zh(primary, None, "Markets & Economy", entities=["TCL"])
+    assert "万亿" not in result
+
+
+def test_why_it_matters_zh_tcl_regression_uses_the_labeled_deal_value_not_an_unrelated_larger_figure():
+    """Prefers the explicitly-labeled "交易总对价约93.25亿元" over both the
+    wrong-currency trailer figure AND the acquired production line's own
+    unrelated (larger) total-investment figure mentioned later for
+    background context."""
+    primary = {"title": _TCL_TITLE, "excerpt": _TCL_EXCERPT}
+    result = why_it_matters_zh(primary, None, "Markets & Economy", entities=["TCL"])
+    assert "93.2亿" in result or "93.25亿" in result
+    assert "350亿" not in result
+
+
+def test_what_happened_zh_tcl_regression_excludes_trailer_from_summary():
+    primary = {"title": _TCL_TITLE, "excerpt": _TCL_EXCERPT}
+    result = what_happened_zh(primary)
+    assert result is not None
+    assert "相关阅读" not in result
+    assert "韩元" not in result
+
+
+# 2026-08-21: second real production fixture (Aug 19 zh_cn 江淮汽车 digest)
+# -- the delivered summary was a raw dump of every reported financial-
+# statement line item plus the source's own "AI 解读" commentary
+# boilerplate, not an edited summary.
+_JAC_TITLE = "江淮汽车 2026 年上半年归母亏损 7.49 亿元，同比亏损收窄 3.09%"
+_JAC_EXCERPT = (
+    "IT之家 8 月 19 日消息，江淮汽车今日发布 2026 年半年度报告：营业总收入：221.30 亿元，同比增长 14.31%"
+    "归母净利润：-7.49 亿元，同比亏损收窄 3.09% 扣非净利润：-9.91 亿元，同比亏损扩大 8.22%"
+    "经营现金流：-52.88 亿元，净流出扩大 68.03%"
+    "AI 解读 本次财报营收表现符合行业增长趋势，尚未查到主流机构对本次财报的一致预期数据。"
+)
+
+
+def test_what_happened_zh_jac_regression_strips_ai_commentary_boilerplate():
+    primary = {"title": _JAC_TITLE, "excerpt": _JAC_EXCERPT}
+    result = what_happened_zh(primary)
+    assert result is not None
+    assert "AI 解读" not in result
+    assert "尚未查到主流机构" not in result
+

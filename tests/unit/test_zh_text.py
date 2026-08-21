@@ -12,6 +12,7 @@ from news_intel.pipeline.zh_text import (
     has_zh_text,
     parse_zh_amounts,
     strip_zh_preamble,
+    strip_zh_trailer,
     zh_sentences,
 )
 
@@ -171,3 +172,63 @@ def test_has_zh_text_true_for_mixed_language_text():
 def test_has_zh_text_false_for_empty_or_none():
     assert has_zh_text("") is False
     assert has_zh_text(None) is False
+
+# 2026-08-21 repair: real fabricated-number defect found via the Aug 20
+# production replay -- a TCL/广州华星 story's own transaction value is
+# 93.25亿元 (9.325 billion yuan); the delivered digest fabricated
+# "金额约2.2万亿" (~2.2 trillion), traced to a "相关阅读" (related-reading)
+# trailer linking to an UNRELATED LG Display/TCL transaction priced in
+# KOREAN WON ("2.2466万亿韩元") -- a completely different story, a
+# completely different currency, picked up as if it were this story's own
+# figure. ~236x too large and unsupported by the story's own text.
+
+
+def test_strip_zh_trailer_removes_related_reading_block():
+    text = "正文内容到此结束。 相关阅读： 《 无关文章标题 》 《 另一篇无关文章 》"
+    result = strip_zh_trailer(text)
+    assert result == "正文内容到此结束。"
+    assert "相关阅读" not in result
+    assert "无关文章" not in result
+
+
+def test_strip_zh_trailer_removes_ai_commentary_note():
+    text = "正文内容到此结束。 AI 解读 本次财报营收表现符合行业增长趋势。"
+    result = strip_zh_trailer(text)
+    assert result == "正文内容到此结束。"
+
+
+def test_strip_zh_trailer_leaves_text_without_a_trailer_unchanged():
+    text = "这是一段完全没有尾部链接的正文。"
+    assert strip_zh_trailer(text) == text
+
+
+def test_parse_zh_amounts_excludes_related_reading_trailer_figures():
+    text = (
+        "本次交易总对价约 93.25 亿元，其中现金支付与股份支付各占约 46.62 亿元。"
+        " 相关阅读： 《 LG 显示以定价 2.2466 万亿韩元将广州 LCD 工厂出售给 TCL 华星 》"
+    )
+    values = parse_zh_amounts(text)
+    assert 9_325_000_000.0 in values
+    assert 4_662_000_000.0 in values
+    assert not any(v > 1_000_000_000_000.0 for v in values)  # no trillion-scale figure at all
+
+
+def test_parse_zh_amounts_excludes_foreign_currency_even_outside_a_trailer():
+    """General currency-awareness, not just trailer-stripping: a
+    Chinese-unit amount immediately followed by a foreign-currency marker
+    must never be parsed as if it were the same magnitude in yuan."""
+    text = "LG 显示以定价 2.2466 万亿韩元将工厂出售给 TCL 华星。"
+    assert parse_zh_amounts(text) == []
+
+
+def test_parse_zh_amounts_still_parses_yuan_next_to_a_foreign_currency_mention():
+    text = "该交易价值约 93.25 亿元，此前韩元计价的类似交易约为 2.2 万亿韩元。"
+    values = parse_zh_amounts(text)
+    assert 9_325_000_000.0 in values
+    assert not any(v > 1_000_000_000_000.0 for v in values)
+
+
+def test_parse_zh_amounts_is_decimal_exact_not_a_float_rounding_artifact():
+    assert parse_zh_amounts("交易价值93.25亿元") == [9_325_000_000.0]
+    assert parse_zh_amounts("规模46.62亿元") == [4_662_000_000.0]
+

@@ -23,6 +23,7 @@ from news_intel.pipeline.zh_text import (
     format_zh_amount,
     parse_zh_amounts,
     strip_zh_preamble,
+    strip_zh_trailer,
     zh_sentences,
 )
 
@@ -103,6 +104,10 @@ def what_happened_zh(primary: dict, secondary: dict | None = None) -> str | None
         excerpt = source.get("excerpt")
         if not excerpt:
             continue
+        # 2026-08-21: strip aggregator trailer furniture (相关阅读/AI 解读)
+        # before extraction -- it describes OTHER stories or comments
+        # ABOUT this one, never additional facts of the story itself.
+        excerpt = strip_zh_trailer(excerpt)
         sentences = zh_sentences(excerpt)
         if sentences:
             return "".join(sentences) if len(sentences) == 1 else " ".join(sentences)
@@ -117,9 +122,9 @@ def is_render_ready_zh(primary: dict, secondary: dict | None = None) -> bool:
 
 
 def _combined_text(primary: dict, secondary: dict | None) -> str:
-    parts = [f"{primary.get('title', '')} {primary.get('excerpt', '') or ''}"]
+    parts = [f"{primary.get('title', '')} {strip_zh_trailer(primary.get('excerpt', '') or '')}"]
     if secondary:
-        parts.append(f"{secondary.get('title', '')} {secondary.get('excerpt', '') or ''}")
+        parts.append(f"{secondary.get('title', '')} {strip_zh_trailer(secondary.get('excerpt', '') or '')}")
     return " ".join(parts)
 
 
@@ -127,6 +132,38 @@ def _event_type_label_zh(text: str) -> str | None:
     for term, label in _EVENT_TYPE_LABELS_ZH:
         if term in text:
             return label
+    return None
+
+
+# 2026-08-21 repair: even after excluding the wrong-currency trailer figure
+# (see zh_text.strip_zh_trailer), max() over every remaining amount in a
+# real article can still land on the wrong number -- a TCL/广州华星 share-
+# acquisition story's own text ALSO mentions the acquired production
+# line's unrelated total-investment figure ("t9 产线总投资350亿元") later,
+# for background context, which is larger than the actual 93.25亿元 deal
+# value and so won under plain max(). Standard Chinese M&A/deal reporting
+# states its own headline figure using one of these conventional labels
+# ("交易总对价约93.25亿元") -- preferring a labeled figure over an
+# unlabeled max() is a general convention-following rule, not specific to
+# this one story.
+_ZH_DEAL_VALUE_LABELS = (
+    "交易总对价约", "总对价约", "对价约", "交易金额约", "收购价约", "收购金额约", "融资金额约",
+    "交易总对价", "总对价", "交易金额", "收购价", "收购金额", "融资金额", "融资规模约", "融资规模",
+)
+
+
+def _labeled_amount_zh(text: str) -> float | None:
+    """The first amount immediately following a conventional Chinese deal-
+    value label, or None if no such label is present -- callers fall back
+    to an unlabeled max() over the whole text in that case."""
+    for label in _ZH_DEAL_VALUE_LABELS:
+        idx = text.find(label)
+        if idx == -1:
+            continue
+        window = text[idx : idx + len(label) + 20]
+        values = parse_zh_amounts(window)
+        if values:
+            return values[0]
     return None
 
 
@@ -175,8 +212,12 @@ def why_it_matters_zh(
     # sources routinely mix Chinese and English/dollar amounts in the same
     # story (e.g. a Chinese article quoting a USD deal size verbatim); zh
     # amounts take priority (native to the story) when both are present.
-    zh_values = parse_zh_amounts(text)
-    amount_clause = f"，金额约{format_zh_amount(max(zh_values))}" if zh_values else ""
+    labeled_amount = _labeled_amount_zh(text)
+    if labeled_amount is not None:
+        amount_clause = f"，金额约{format_zh_amount(labeled_amount)}"
+    else:
+        zh_values = parse_zh_amounts(text)
+        amount_clause = f"，金额约{format_zh_amount(max(zh_values))}" if zh_values else ""
     if not amount_clause:
         dollar_values = parse_current_dollar_values(text)
         if dollar_values:
