@@ -203,3 +203,17 @@ def test_what_happened_zh_jac_regression_strips_ai_commentary_boilerplate():
     assert "AI 解读" not in result
     assert "尚未查到主流机构" not in result
 
+
+
+def test_why_it_matters_zh_jac_regression_names_the_loss_not_revenue():
+    """2026-08-21: why_it_matters_zh()'s amount selection was a bare
+    max(zh_values) over the whole article, which for an earnings report
+    always favors revenue (almost always the largest-magnitude figure)
+    over a net loss, erasing the real tension -- 江淮汽车's 221.3亿元
+    revenue was picked over its -7.49亿元 net loss purely because it's
+    the bigger number."""
+    primary = {"title": _JAC_TITLE, "excerpt": _JAC_EXCERPT}
+    result = why_it_matters_zh(primary, None, "Markets & Economy")
+    assert "净亏损约7.5亿" in result
+    assert "221.3" not in result
+    assert "221.30" not in result

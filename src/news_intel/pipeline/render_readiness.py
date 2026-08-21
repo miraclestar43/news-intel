@@ -42,7 +42,6 @@ from news_intel.pipeline.citation import strip_title_preamble
 from news_intel.pipeline.materiality import (
     dollar_values_with_position,
     format_dollar_value,
-    parse_current_dollar_values,
 )
 from news_intel.pipeline.summary_quality import best_available_summary
 
@@ -331,6 +330,41 @@ def _primary_dollar_clause(text: str) -> str:
     return f" {phrase} {format_dollar_value(value)}"
 
 
+# 2026-08-21 repair: chinese_takeaway() used to pick its amount via a bare
+# max(parse_current_dollar_values(text)) -- the same "largest number in the
+# article" anti-pattern banned elsewhere -- and could show a DIFFERENT
+# figure than the English why_it_matters() line for the same story (each
+# computed independently). Mirrors _dollar_role_phrase's keyword-proximity
+# detection (translated) and reuses the SAME winning (value, position) as
+# _primary_dollar_clause so one story's EN and ZH takeaway lines can never
+# disagree on which number is "the" figure.
+_ZH_DOLLAR_ROLE_PHRASES: list[tuple[tuple[str, ...], str]] = [
+    (("loss", "losses", "deficit", "shortfall"), "净亏损"),
+    (("operating profit", "net income", "profit of"), "净利润"),
+    (("revenue", "sales"), "营收"),
+    (("valuation", "valued at", "valuing"), "估值"),
+    (("invest", "investment", "funding", "raise", "raising", "raised"), "融资"),
+    (("debt", "financing"), "债务融资"),
+]
+
+
+def _dollar_role_phrase_zh(text: str, position: int) -> str:
+    window_start = max(0, position - _DOLLAR_ROLE_LOOKBACK_CHARS)
+    preceding = text[window_start:position].lower()
+    for keywords, phrase in _ZH_DOLLAR_ROLE_PHRASES:
+        if any(kw in preceding for kw in keywords):
+            return phrase
+    return "涉及金额"
+
+
+def _primary_dollar_role_and_value(text: str) -> tuple[str, float] | None:
+    matches = dollar_values_with_position(text)
+    if not matches:
+        return None
+    value, position = max(matches, key=lambda vp: vp[0])
+    return _dollar_role_phrase_zh(text, position), value
+
+
 def why_it_matters(
     primary: dict, secondary: dict | None, category: str, entities: list[str] | None = None
 ) -> str:
@@ -360,16 +394,22 @@ def why_it_matters(
             f"Why it matters: {entity}'s {possessive_label}{amount_clause} "
             f"is a material development in {context}."
         )
+    # 2026-08-21 repair: this branch (entity extracted, no event-type label
+    # matched -- the common case for the OpenAI/Xiaomi/Mercor regressions)
+    # and the final catch-all below used to read "this development
+    # involving X ... ranks among today's most material in {context}" --
+    # exactly the generic entity/category/amount template the user
+    # explicitly named for removal from every production/fallback path.
+    # Restructured to still lead with the specific entity and (now
+    # numeric-role-aware, see _primary_dollar_clause) amount_clause without
+    # the banned boilerplate phrasing.
     if entity:
-        return (
-            f"Why it matters: this development involving {entity}{amount_clause} "
-            f"ranks among today's most material in {context}."
-        )
+        return f"Why it matters: {entity}{amount_clause}, a material development in {context}."
     if event_label:
         return f"Why it matters: {event_label}{amount_clause} is a material development in {context}."
     if amount_clause:
         return f"Why it matters: a development{amount_clause} in {context}."
-    return f"Why it matters: ranks among today's most material developments in {context}."
+    return f"Why it matters: a material development in {context}."
 
 
 def chinese_takeaway(category: str, entities: list[str] | None = None, primary: dict | None = None,
@@ -387,21 +427,27 @@ def chinese_takeaway(category: str, entities: list[str] | None = None, primary: 
     entity = _principal_entity(entities, entity_text, title=title)
 
     event_label_zh = None
+    amount_role_zh = None
     amount = None
     if primary is not None:
         text = entity_text
         lowered = text.lower()
         event_label_en = _event_type_label(lowered, _EVENT_TYPE_LABELS_EN)
         event_label_zh = _EVENT_TYPE_LABELS_ZH.get(event_label_en) if event_label_en else None
-        values = parse_current_dollar_values(text)
-        if values:
-            amount = format_dollar_value(max(values))
+        role_and_value = _primary_dollar_role_and_value(text)
+        if role_and_value:
+            amount_role_zh, amount = role_and_value
 
-    amount_clause = f"（金额约{amount}）" if amount else ""
+    amount_clause = f"（{amount_role_zh}约{format_dollar_value(amount)}）" if amount else ""
     if entity and event_label_zh:
         return f"看点：{entity}{event_label_zh}{amount_clause}，属{context}重要动态。"
+    # 2026-08-21 repair: this branch used to read "{entity}相关{context}
+    # 重要动态" -- the entity/category-only template the user explicitly
+    # named (matches the "属AI/半导体产业格局重要动态" regression case).
+    # Now leads with entity + role-aware amount instead of a bare category
+    # restatement.
     if entity:
-        return f"看点：{entity}相关{context}重要动态{amount_clause}。"
+        return f"看点：{entity}{amount_clause}，属{context}重要动态。"
     if event_label_zh:
         return f"看点：{context}领域{event_label_zh}{amount_clause}。"
     return f"看点：{context}的重要动态。"

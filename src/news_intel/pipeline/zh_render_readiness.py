@@ -168,6 +168,38 @@ def _labeled_amount_zh(text: str) -> float | None:
     return None
 
 
+# 2026-08-21 repair: real defect -- 江淮汽车's Aug 19 earnings story
+# ("营业总收入：221.30亿元...归母净利润：-7.49亿元...") had its amount
+# picked by bare max(zh_values), which -- since parse_zh_amounts has no
+# sign tracking and simply returns magnitudes -- always prefers the
+# largest-magnitude figure in an earnings report, which is revenue almost
+# by definition, even when the actual story is a LOSS. "221.3亿元" (revenue)
+# is not itself wrong, but reporting it alone as "the" figure erases the
+# real tension (revenue up, but still posting a material loss). A net-
+# income/loss label is checked FIRST, ahead of the bare max() fallback,
+# mirroring the deal-value-label preference above -- general to any
+# earnings-report story, not specific to this one company. The "-" or "亏"
+# marker within the label's own text window distinguishes a loss from a
+# profit so the amount_clause can say "净亏损" vs "净利润" rather than a
+# bare unsigned "金额约".
+_ZH_EARNINGS_METRIC_LABELS = ("归母净利润", "净利润", "扣非净利润", "净亏损")
+
+
+def _labeled_earnings_metric_zh(text: str) -> tuple[float, bool] | None:
+    """(amount, is_loss) for the first matched net-income/loss label, or
+    None if no such label is present."""
+    for label in _ZH_EARNINGS_METRIC_LABELS:
+        idx = text.find(label)
+        if idx == -1:
+            continue
+        window = text[idx : idx + len(label) + 20]
+        is_loss = "-" in window or "亏损" in window or "亏" in label
+        values = parse_zh_amounts(window)
+        if values:
+            return values[0], is_loss
+    return None
+
+
 # 2026-08-18 repair: found via a real live-collection replay -- entities[0]
 # picked "ASP" (a generic finance acronym, alphabetically first) over the
 # story's genuine subject ("NAND"/"Micron") for a NAND-market report whose
@@ -214,8 +246,13 @@ def why_it_matters_zh(
     # story (e.g. a Chinese article quoting a USD deal size verbatim); zh
     # amounts take priority (native to the story) when both are present.
     labeled_amount = _labeled_amount_zh(text)
+    earnings_metric = None if labeled_amount is not None else _labeled_earnings_metric_zh(text)
     if labeled_amount is not None:
         amount_clause = f"，金额约{format_zh_amount(labeled_amount)}"
+    elif earnings_metric is not None:
+        metric_value, is_loss = earnings_metric
+        verb = "净亏损" if is_loss else "净利润"
+        amount_clause = f"，{verb}约{format_zh_amount(metric_value)}"
     else:
         zh_values = parse_zh_amounts(text)
         amount_clause = f"，金额约{format_zh_amount(max(zh_values))}" if zh_values else ""
@@ -228,8 +265,13 @@ def why_it_matters_zh(
 
     if entity and event_label:
         return f"看点：{entity}{event_label}{amount_clause}，属{context}重要动态。"
+    # 2026-08-21 repair: this branch used to read "{entity}相关动态
+    # {amount_clause}，属{context}重要发展" -- the entity/category-only
+    # template the user explicitly named for removal. Drops the bare
+    # "相关动态" wrapper; the entity + role-aware amount is already
+    # story-specific on its own.
     if entity:
-        return f"看点：{entity}相关动态{amount_clause}，属{context}重要发展。"
+        return f"看点：{entity}{amount_clause}，属{context}重要发展。"
     if event_label:
         return f"看点：{context}领域{event_label}{amount_clause}。"
     if amount_clause:

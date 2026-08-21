@@ -211,6 +211,15 @@ def test_why_it_matters_openai_regression_names_the_loss_not_a_generic_worth():
     assert "$12.3 billion" in result
     assert "losses" in result
     assert "worth $12.3" not in result
+    # 2026-08-21: real production regression -- this exact story (entity
+    # extracted, no event-type label matched) hit why_it_matters()'s
+    # "if entity:" branch, which independently still read "this
+    # development involving X ... ranks among today's most material" even
+    # after the amount-role fix above landed. The banned generic template
+    # must be gone from every branch, not just the ones these three
+    # regression tests happened to already assert on.
+    assert "ranks among today's most material" not in result
+    assert "this development involving" not in result
 
 
 def test_why_it_matters_xiaomi_regression_names_revenue_not_generic_worth():
@@ -224,6 +233,8 @@ def test_why_it_matters_xiaomi_regression_names_revenue_not_generic_worth():
     assert "$16.2 billion" in result
     assert "revenue" in result
     assert "worth $16.2" not in result
+    assert "ranks among today's most material" not in result
+    assert "this development involving" not in result
 
 
 def test_why_it_matters_mercor_regression_names_valuation_not_generic_worth():
@@ -237,6 +248,8 @@ def test_why_it_matters_mercor_regression_names_valuation_not_generic_worth():
     assert "$20 billion" in result
     assert "valued at" in result
     assert "worth $20" not in result
+    assert "ranks among today's most material" not in result
+    assert "this development involving" not in result
 
 
 def test_why_it_matters_role_phrase_defaults_to_worth_with_no_role_keyword_nearby():
@@ -265,3 +278,22 @@ def test_why_it_matters_russia_ukraine_regression_is_world_not_domestic_policy()
     result = why_it_matters(primary, None, "World", entities=["Russia"])
     assert "domestic policy" not in result
     assert "international conflict" in result or "global security" in result or "diplomacy" in result
+
+
+# 2026-08-21: chinese_takeaway() had the same "{entity}相关{context}重要
+# 动态" template (matches the "属AI/半导体产业格局重要动态" regression
+# named in the Aug 20 instruction) for the entity-only branch, independent
+# of why_it_matters()'s English fix above -- and computed its own amount
+# via a bare max() rather than reusing the role-aware figure, so it could
+# show a different number than the English line for the same story.
+def test_chinese_takeaway_openai_regression_has_no_generic_relevant_template():
+    primary = {
+        "title": "OpenAI's Q2 sales grew 18% QoQ to $6.7B as its losses widened from $9.3B to $12.3B; "
+        "Anthropic's sales grew 2x+ to $11.6B, with a small operating profit",
+        "excerpt": "The ChatGPT-maker's revenue disappointed some investors, although the company told "
+        "them its growth accelerated in the third quarter.",
+    }
+    result = chinese_takeaway("AI & Semiconductors", entities=["OpenAI"], primary=primary)
+    assert "相关" + "AI/半导体产业格局" + "重要动态" not in result
+    assert "$12.3 billion" in result
+    assert "净亏损" in result
