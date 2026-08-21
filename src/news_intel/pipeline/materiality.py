@@ -89,13 +89,34 @@ def _parse_dollar_values(text: str) -> list[float]:
 # materially significant for ranking purposes regardless of which figure
 # is "current" -- this is a composition/novelty-display concern only.
 _DOLLAR_BASELINE_MARKERS = ("down from", "up from", "compared to", "compared with", "versus", "vs.")
+# 2026-08-21: "widened/narrowed/grew/rose/fell FROM $A TO $B" verbs were
+# tried as additional baseline markers here, then reverted -- the shared
+# lookback window that correctly excludes a SINGLE value after "down
+# from"/"up from" also excluded BOTH values in this two-number "from...to"
+# construction (found via a real OpenAI replay: "losses widened from
+# $9.3B to $12.3B" lost $12.3B too, since it falls within 50 chars of the
+# same "widened from" marker), losing the real current figure entirely.
+# A correct fix needs to distinguish "the value immediately after from"
+# from "the value immediately after to" as two different roles, not a
+# blanket lookback-window exclusion -- left as a known, disclosed gap
+# rather than shipping a fix that trades one wrong answer for another.
 _DOLLAR_BASELINE_LOOKBACK_CHARS = 50
 
 
 def parse_current_dollar_values(text: str) -> list[float]:
     """Like _parse_dollar_values, but excludes figures the text frames as a
     historical/comparison baseline rather than the story's current value."""
-    values: list[float] = []
+    return [value for value, _position in dollar_values_with_position(text)]
+
+
+def dollar_values_with_position(text: str) -> list[tuple[float, int]]:
+    """Same current-value-only filtering as parse_current_dollar_values,
+    but also returns each accepted match's character position in `text` --
+    lets a caller inspect the words immediately preceding a figure (e.g.
+    render_readiness.py's role-aware "posted losses of"/"reported revenue
+    of"/"valued at" phrasing) without re-deriving which matches survived
+    the baseline exclusion."""
+    results: list[tuple[float, int]] = []
     for match in _DOLLAR_RE.finditer(text):
         try:
             amount = float(match.group(1).replace(",", ""))
@@ -105,8 +126,9 @@ def parse_current_dollar_values(text: str) -> list[float]:
         preceding = text[window_start : match.start()].lower()
         if any(marker in preceding for marker in _DOLLAR_BASELINE_MARKERS):
             continue
-        values.append(amount * _UNIT_MULTIPLIERS.get((match.group(2) or "").lower(), 1))
-    return values
+        value = amount * _UNIT_MULTIPLIERS.get((match.group(2) or "").lower(), 1)
+        results.append((value, match.start()))
+    return results
 
 
 def format_dollar_value(value: float) -> str:

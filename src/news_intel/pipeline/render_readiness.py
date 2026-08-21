@@ -39,7 +39,11 @@ from __future__ import annotations
 import re
 
 from news_intel.pipeline.citation import strip_title_preamble
-from news_intel.pipeline.materiality import format_dollar_value, parse_current_dollar_values
+from news_intel.pipeline.materiality import (
+    dollar_values_with_position,
+    format_dollar_value,
+    parse_current_dollar_values,
+)
 from news_intel.pipeline.summary_quality import best_available_summary
 
 # HIGH_IMPACT_TERMS itself lives in materiality.py; the event-type labels
@@ -284,6 +288,47 @@ def _event_type_label(lowered_text: str, labels: list[tuple[str, str]]) -> str |
     return None
 
 
+# 2026-08-21 repair: two real production defects (Aug 20 en_global
+# digest, already delivered) -- "this development involving OpenAI worth
+# $12.3 billion" for a story where $12.3B is OpenAI's WIDENED LOSS, and
+# "worth $16.2 billion" for a story where $16.2B is Xiaomi's QUARTERLY
+# REVENUE. The fixed "worth {amount}" phrasing implies a deal size or
+# valuation regardless of what the figure actually measures. General,
+# keyword-proximity role detection (not specific to OpenAI/Xiaomi/any
+# other name) over the ~40 characters immediately preceding the winning
+# figure -- when no role keyword is nearby, "worth" remains the
+# documented floor, not a guess.
+_DOLLAR_ROLE_LOOKBACK_CHARS = 40
+_DOLLAR_ROLE_PHRASES: list[tuple[tuple[str, ...], str]] = [
+    (("loss", "losses", "deficit", "shortfall"), "posting losses of"),
+    (("operating profit", "net income", "profit of"), "reporting profit of"),
+    (("revenue", "sales"), "reporting revenue of"),
+    (("valuation", "valued at", "valuing"), "valued at"),
+    (("invest", "investment", "funding", "raise", "raising", "raised"), "an investment of"),
+    (("debt", "financing"), "seeking financing of"),
+]
+
+
+def _dollar_role_phrase(text: str, position: int) -> str:
+    window_start = max(0, position - _DOLLAR_ROLE_LOOKBACK_CHARS)
+    preceding = text[window_start:position].lower()
+    for keywords, phrase in _DOLLAR_ROLE_PHRASES:
+        if any(kw in preceding for kw in keywords):
+            return phrase
+    return "worth"
+
+
+def _primary_dollar_clause(text: str) -> str:
+    """The role-aware " {phrase} {amount}" clause for the winning
+    (current, non-baseline) dollar figure, or "" if none was found."""
+    matches = dollar_values_with_position(text)
+    if not matches:
+        return ""
+    value, position = max(matches, key=lambda vp: vp[0])
+    phrase = _dollar_role_phrase(text, position)
+    return f" {phrase} {format_dollar_value(value)}"
+
+
 def why_it_matters(
     primary: dict, secondary: dict | None, category: str, entities: list[str] | None = None
 ) -> str:
@@ -301,8 +346,7 @@ def why_it_matters(
     text = _combined_text(primary, secondary)
     lowered = text.lower()
     context = _CATEGORY_CONTEXT_EN.get(category, "this coverage area")
-    values = parse_current_dollar_values(text)
-    amount_clause = f" worth {format_dollar_value(max(values))}" if values else ""
+    amount_clause = _primary_dollar_clause(text)
     entity = _principal_entity(entities, text, title=primary.get("title"))
     event_label = _event_type_label(lowered, _EVENT_TYPE_LABELS_EN)
 
@@ -321,8 +365,8 @@ def why_it_matters(
         )
     if event_label:
         return f"Why it matters: {event_label}{amount_clause} is a material development in {context}."
-    if values:
-        return f"Why it matters: a {format_dollar_value(max(values))} development in {context}."
+    if amount_clause:
+        return f"Why it matters: a development{amount_clause} in {context}."
     return f"Why it matters: ranks among today's most material developments in {context}."
 
 

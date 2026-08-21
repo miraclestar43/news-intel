@@ -191,3 +191,60 @@ def test_why_it_matters_anchors_on_current_value_with_up_from_phrasing():
     assert "$65" in result or "65 billion" in result
     assert "$47" not in result and "47 billion" not in result
     assert "$9 billion" not in result
+
+
+# 2026-08-21: real production incident regression fixtures (Aug 19
+# en_global digest, already delivered to Telegram). "Why it matters:
+# worth $X" implies a deal size or valuation regardless of what the
+# figure actually measures -- these three stories mislabeled a widened
+# LOSS and a quarterly REVENUE figure as if they were "worth" something.
+
+
+def test_why_it_matters_openai_regression_names_the_loss_not_a_generic_worth():
+    primary = {
+        "title": "OpenAI's Q2 sales grew 18% QoQ to $6.7B as its losses widened from $9.3B to $12.3B; "
+        "Anthropic's sales grew 2x+ to $11.6B, with a small operating profit",
+        "excerpt": "The ChatGPT-maker's revenue disappointed some investors, although the company told "
+        "them its growth accelerated in the third quarter.",
+    }
+    result = why_it_matters(primary, None, "AI & Semiconductors", entities=["OpenAI"])
+    assert "$12.3 billion" in result
+    assert "losses" in result
+    assert "worth $12.3" not in result
+
+
+def test_why_it_matters_xiaomi_regression_names_revenue_not_generic_worth():
+    primary = {
+        "title": "Xiaomi reports Q2 revenue down 6.1% YoY to ~$16.2B and net income down 21% to ~$1.4B, "
+        "above est., amid a persistent memory shortage and weaker smartphone demand",
+        "excerpt": "Xiaomi Corp. posted profit that fell less than expected, raising hopes it can weather "
+        "a persistent memory shortage that's weakened demand for smartphones.",
+    }
+    result = why_it_matters(primary, None, "Markets & Economy", entities=["Xiaomi"])
+    assert "$16.2 billion" in result
+    assert "revenue" in result
+    assert "worth $16.2" not in result
+
+
+def test_why_it_matters_mercor_regression_names_valuation_not_generic_worth():
+    primary = {
+        "title": "Nvidia has discussed an investment in Mercor as part of a round valuing the startup "
+        "at $20B; Nvidia paid Mercor tens of millions of dollars last quarter",
+        "excerpt": "Nvidia has discussed an investment in Mercor, a data labeling provider that helps "
+        "the chip designer develop its open-source AI models.",
+    }
+    result = why_it_matters(primary, None, "AI & Semiconductors", entities=["NVIDIA"])
+    assert "$20 billion" in result
+    assert "valued at" in result
+    assert "worth $20" not in result
+
+
+def test_why_it_matters_role_phrase_defaults_to_worth_with_no_role_keyword_nearby():
+    """Non-regression: when no role keyword is present, the honest floor
+    ("worth") remains -- this is a documented floor, not a guess."""
+    primary = {
+        "title": "A startup announced a new product alongside a $500 million figure with no other context",
+        "excerpt": "The company did not elaborate on what the figure represents.",
+    }
+    result = why_it_matters(primary, None, "AI & Semiconductors", entities=["Acme"])
+    assert "worth $500 million" in result
