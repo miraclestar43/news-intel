@@ -198,7 +198,7 @@ def run_weekly(
         unresolved = unresolved_stories(current_events)
         became_policy, remained_statement = classify_statement_vs_policy(conn, current_events, config.alert_triggers)
 
-        calendar_rows = upcoming(conn, within_hours=24 * 7, now=now)
+        calendar_rows = upcoming(conn, within_hours=24 * 7, now=now, edition_id=edition_id)
         calendar_candidates = [
             {"title": r["title"], "scheduled_at": r["scheduled_at"], "url": r["url"], "calendar_id": r["id"]}
             for r in calendar_rows

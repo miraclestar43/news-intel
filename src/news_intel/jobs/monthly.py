@@ -218,7 +218,7 @@ def run_monthly(
         )
         unresolved = unresolved_stories(current_events)
 
-        calendar_rows = upcoming(conn, within_hours=24 * 31, now=now)
+        calendar_rows = upcoming(conn, within_hours=24 * 31, now=now, edition_id=edition_id)
         calendar_candidates = [
             {"title": r["title"], "scheduled_at": r["scheduled_at"], "url": r["url"], "calendar_id": r["id"]}
             for r in calendar_rows

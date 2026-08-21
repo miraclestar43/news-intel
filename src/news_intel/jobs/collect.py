@@ -111,15 +111,19 @@ def run_collect(config: AppConfig, conn, *, now: datetime | None = None) -> Coll
                 )
             )
 
-            if "calendar" in entry.category_hints:
-                record_scheduled_events(conn, entry.id, outcome.items, now=now)
-                continue
-
             # A source belongs to one edition in every current config entry
             # (the field is a list -- "do not force every source to belong
             # to exactly one" -- but this rollout's mapping is 1:1); the
             # first configured edition is this source's items' edition.
+            # Computed BEFORE the calendar branch below (2026-08-21 repair:
+            # calendar items need their own edition_id too, see
+            # scheduled_repo.upcoming's docstring).
             source_edition_id = entry.editions[0] if entry.editions else "en_global"
+
+            if "calendar" in entry.category_hints:
+                record_scheduled_events(conn, entry.id, outcome.items, now=now, edition_id=source_edition_id)
+                continue
+
             known = _known_for(source_edition_id)
             source_topics = config.topics_for(source_edition_id)
 

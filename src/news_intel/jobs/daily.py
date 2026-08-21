@@ -180,16 +180,23 @@ def _calendar_display_url(title: str, stored_url: str | None) -> str | None:
     return None
 
 
-def _tomorrow_calendar_items(conn: sqlite3.Connection, config: AppConfig, now: datetime) -> list[dict]:
+def _tomorrow_calendar_items(
+    conn: sqlite3.Connection, config: AppConfig, now: datetime, *, edition_id: str = "en_global"
+) -> list[dict]:
     """Only events on the next America/Los_Angeles calendar date relative to
     the digest's own Pacific date -- not a flat lookahead window (2026-08-12
     repair: the prior 36-hour sliding window let a same-week-but-not-
-    tomorrow release, e.g. PPI two days out, leak into the digest)."""
+    tomorrow release, e.g. PPI two days out, leak into the digest).
+
+    2026-08-21 repair: scoped to edition_id -- previously unscoped, so the
+    identical en_global-only BLS/BEA calendar item rendered verbatim in
+    zh_cn's "明日关注" too, regardless of relevance to a Chinese-language
+    audience."""
     tz = ZoneInfo(config.policy.timezone)
     pt_now = now.astimezone(tz)
     target_date = (pt_now + timedelta(days=1)).date()
     items = []
-    for row in upcoming(conn, within_hours=60, now=now):
+    for row in upcoming(conn, within_hours=60, now=now, edition_id=edition_id):
         try:
             scheduled = datetime.fromisoformat(row["scheduled_at"])
         except ValueError:
@@ -314,7 +321,7 @@ def run_daily(
         window_start, selection = _select_events(conn, config, now, edition_id=edition_id)
         top3 = [s.primary for s in selection.top_stories]
         quick = [s.primary for s in selection.more_to_know]
-        calendar_items = _tomorrow_calendar_items(conn, config, now)
+        calendar_items = _tomorrow_calendar_items(conn, config, now, edition_id=edition_id)
 
         pt_now = now.astimezone(ZoneInfo(edition.schedule.timezone))
         date_label = pt_now.strftime("%b %-d")
