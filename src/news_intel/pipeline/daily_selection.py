@@ -72,7 +72,7 @@ MAX_TOP_STORIES_PER_DOMAIN = 1
 MIN_NON_AI_WHEN_FOUR_OR_MORE = 2
 
 TECHNOLOGY_FAMILY_CATEGORIES = {"AI & Semiconductors"}
-REQUIRED_COVERAGE_CATEGORIES = ("Markets & Economy", "Politics", "US / China / World")
+REQUIRED_COVERAGE_CATEGORIES = ("Markets & Economy", "Politics", "US / China / World", "World")
 
 
 # Decision-value weights (2026-08-14): materiality dominates, user-relevance

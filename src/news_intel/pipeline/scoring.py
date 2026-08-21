@@ -19,11 +19,19 @@ _CATEGORY_LABELS = {
     "tech_platforms_datacenter": "Technology",
     "markets_macro_corporate": "Markets & Economy",
     "us_china_policy_geopolitics": "US / China / World",
-    # 2026-08-17 Politics/World classification repair: general world
-    # conflict/diplomacy (Middle East, Korean peninsula, Russia/Ukraine,
-    # major international bodies) that isn't China-specific -- see
-    # pipeline/relevance.py's world_politics_geopolitics bucket.
-    "world_politics_geopolitics": "Politics",
+    # 2026-08-21 repair: world_politics_geopolitics (general international
+    # conflict/diplomacy -- Middle East, Korean peninsula, Russia/Ukraine,
+    # major international bodies, none of it China-specific) previously
+    # shared the "Politics" label with routine_politics_general (genuinely
+    # domestic political stories) -- a real production defect: a Russian
+    # strike on Kyiv killing 17 people rendered as "a material development
+    # in domestic policy" because render_readiness.py's category-context
+    # lookup has no way to tell the two apart once both display as
+    # "Politics". Split into its own "World" category so the why-it-
+    # matters context, section routing, and coverage requirements can all
+    # correctly distinguish "this happened at home" from "this happened
+    # between nations."
+    "world_politics_geopolitics": "World",
     "routine_politics_general": "Politics",
     "explicit_noise": "noise",
     "unclassified": "Unclassified",

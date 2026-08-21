@@ -25,16 +25,18 @@ _BUCKET_PRIORITY = [
     ("ai_semiconductor_export_controls", ["ai", "semiconductors", "policy"]),
     ("tech_platforms_datacenter", []),
     ("markets_macro_corporate", ["macro_markets"]),
-    # 2026-08-17: "geopolitics" moved OUT of this bucket's group list (was
-    # ["china", "geopolitics"]) -- a Middle East/Ukraine/Korea story with no
-    # China-specific vocabulary must not be labeled "US / China / World"
-    # just because it also matched a general term like "ceasefire" or
-    # "missile". China-specific classification now depends on the "china"
-    # group alone; general world conflict/diplomacy vocabulary (the old
-    # "geopolitics" group, unchanged) now feeds the separately-gated
-    # world_politics_geopolitics bucket below instead -- see
-    # _WORLD_POLITICS_GROUPS.
-    ("us_china_policy_geopolitics", ["china"]),
+    # 2026-08-21: "china" REMOVED from this generic bucket-priority loop --
+    # a bare vocabulary hit is no longer sufficient on its own. See
+    # _china_policy_bucket below, which requires either a specific-enough
+    # china term or an additional cross-border signal, the same
+    # "vocabulary + additional signal" pattern _world_politics_bucket
+    # already uses. Real defect this fixes: a purely domestic story about
+    # a BYD battery-supply partnership with FAW (two Chinese companies, no
+    # foreign party, no international angle at all) classified as
+    # "US / China / World" purely because the text happened to say
+    # "China FAW" (中国一汽), the literal company name -- "中国"/"China" is
+    # far too generic a term to indicate genuine cross-border relevance by
+    # itself; it's simply how domestic Chinese entities are referred to.
 ]
 
 # 2026-08-17 Politics/World classification repair (BBC audit: Lebanon
@@ -143,6 +145,59 @@ def _has_event_type_signal(lowered: str) -> bool:
     return any(term in lowered for term in HIGH_IMPACT_TERMS)
 
 
+CHINA_POLICY_BUCKET = "us_china_policy_geopolitics"
+
+# 2026-08-21 repair: "中国"/"China" (and "北京"/"Beijing") are the ISSUING-
+# AUTHORITY/company-name-component letterhead on nearly every China-
+# related item regardless of subject -- "中国一汽" (FAW Group's own
+# Chinese name literally contains "中国") triggered this bucket for a
+# 100% domestic battery-supply story between two Chinese companies, with
+# no foreign party and no international angle anywhere in the text. A
+# bare mention of these two terms alone is never sufficient; genuinely
+# specific china-group terms (Taiwan/台湾, Hong Kong/香港, Xi Jinping/
+# 习近平, ...) remain sufficient on their own, same as before.
+_CHINA_GENERIC_TERMS = frozenset({"china", "beijing", "中国", "北京"})
+
+# General cross-border signal: either a foreign country/region (reusing
+# the world_politics group's own vocabulary -- Russia, Ukraine, Korea,
+# Iran, ... -- deliberately not a china-specific list) or explicit
+# international-relations vocabulary. Either one, alongside a bare
+# "China"/"Beijing" mention, is what actually distinguishes "a story
+# about China's role in the world" from "a story about a domestic
+# Chinese company that happens to be Chinese."
+_CHINA_INTL_SIGNAL_TERMS = (
+    "export control", "entity list", "sanction", "sanctions", "tariff", "tariffs", "trade war", "diplomatic",
+    "embassy", "treaty", "united states", "u.s.", "washington", "european union", "wto", "singapore", "japan",
+    "south korea", "britain", "u.k.",
+    "出口管制", "实体清单", "制裁", "关税", "贸易战", "外交", "条约", "世贸组织", "美国", "华盛顿", "欧盟", "新加坡",
+)
+
+
+def _china_policy_bucket(text: str, lowered: str, topics: TopicsConfig) -> tuple[str, list[str]] | None:
+    """General US/China/World classification: a china-group vocabulary hit
+    is required, but a bare generic mention (see _CHINA_GENERIC_TERMS)
+    additionally requires either a foreign-country/region signal (the
+    world_politics group's own vocabulary) or explicit international-
+    relations vocabulary -- otherwise a purely domestic Chinese story
+    (two Chinese companies, no foreign party) never qualifies just
+    because it mentions "China" or "Beijing" in passing."""
+    china_group = topics.groups.get("china", {})
+    matched = [term for term in _all_terms(china_group) if _term_matches(term, lowered, text)]
+    if not matched:
+        return None
+    specific_matches = [t for t in matched if t.lower() not in _CHINA_GENERIC_TERMS]
+    if specific_matches:
+        return CHINA_POLICY_BUCKET, matched
+    world_politics_group = topics.groups.get("world_politics", {})
+    foreign_country_hit = any(
+        _term_matches(term, lowered, text) for term in _all_terms(world_politics_group)
+    )
+    intl_signal = foreign_country_hit or any(_term_matches(term, lowered, text) for term in _CHINA_INTL_SIGNAL_TERMS)
+    if not intl_signal:
+        return None
+    return CHINA_POLICY_BUCKET, matched
+
+
 def _world_politics_bucket(text: str, lowered: str, topics: TopicsConfig) -> tuple[str, list[str]] | None:
     """General world-politics/geopolitics classification: requires BOTH (a)
     a country/region/capital/government/international-organization/
@@ -245,6 +300,16 @@ def classify_relevance(
     if tariff_bucket is not None:
         tags = _coverage_tags(text, lowered, topics, tariff_bucket)
         return RelevanceMatch(tariff_bucket, multipliers.get(tariff_bucket, 1.0), ["tariff"], [], tags)
+
+    # 2026-08-21: china-specific classification now requires its own gate
+    # too (see _china_policy_bucket) -- checked before the general world-
+    # politics gate, preserving the original bucket-priority order (china-
+    # specific over general world politics when both could apply).
+    china_match = _china_policy_bucket(text, lowered, topics)
+    if china_match is not None:
+        bucket, matched = china_match
+        tags = _coverage_tags(text, lowered, topics, bucket)
+        return RelevanceMatch(bucket, multipliers.get(bucket, 1.0), matched, [], tags)
 
     # Feed/category metadata (title-vocabulary match above) is a prior, not
     # automatic qualification -- the world-politics gate below still

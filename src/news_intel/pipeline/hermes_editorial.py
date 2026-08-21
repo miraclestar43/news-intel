@@ -40,7 +40,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 ALLOWED_CATEGORIES = frozenset({
-    "AI & Semiconductors", "Markets & Economy", "Politics", "US / China / World", "Technology",
+    "AI & Semiconductors", "Markets & Economy", "Politics", "World", "US / China / World", "Technology",
 })
 TECHNOLOGY_FAMILY = frozenset({"AI & Semiconductors", "Technology"})
 NON_TECHNOLOGY_CATEGORIES = ALLOWED_CATEGORIES - TECHNOLOGY_FAMILY
@@ -497,7 +497,7 @@ def _coverage_warnings(items: list[ResolvedItem]) -> list[str]:
     cats = {i.category for i in items}
     if "Markets & Economy" not in cats:
         warnings.append("no Markets & Economy item selected (soft preference, not enforced)")
-    if not (cats & {"Politics", "US / China / World"}):
+    if not (cats & {"Politics", "World", "US / China / World"}):
         warnings.append("no politics/regulation/international/geopolitical item selected (soft preference)")
     if "US / China / World" not in cats:
         warnings.append("no China/US-China item selected (soft preference, not enforced)")

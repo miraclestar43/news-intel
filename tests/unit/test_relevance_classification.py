@@ -237,10 +237,19 @@ def test_korea_diplomacy_classifies_as_world_politics():
     assert result.bucket == "world_politics_geopolitics"
 
 
-def test_world_politics_bucket_maps_to_politics_category_label():
+def test_world_politics_bucket_maps_to_world_category_label():
+    """2026-08-21 repair: world_politics_geopolitics (general international
+    conflict/diplomacy) previously shared the "Politics" label with
+    routine_politics_general (genuinely domestic stories) -- a real
+    production defect, since render_readiness.py's why-it-matters context
+    lookup then had no way to distinguish them and rendered a Russian
+    strike on Kyiv as "a material development in domestic policy". Split
+    into its own "World" category; routine_politics_general stays
+    "Politics"."""
     from news_intel.pipeline.scoring import _CATEGORY_LABELS
 
-    assert _CATEGORY_LABELS["world_politics_geopolitics"] == "Politics"
+    assert _CATEGORY_LABELS["world_politics_geopolitics"] == "World"
+    assert _CATEGORY_LABELS["routine_politics_general"] == "Politics"
 
 
 def test_north_korea_missile_launch_classifies_as_world_politics():
@@ -314,3 +323,85 @@ def test_coverage_tags_are_separate_from_primary_category():
     assert result.bucket == "world_politics_geopolitics"
     assert isinstance(result.coverage_tags, list)
     assert result.bucket in result.coverage_tags
+
+
+# 2026-08-21 repair: "中国"/"China" (and "北京"/"Beijing") are the ISSUING-
+# AUTHORITY/company-name-component letterhead on nearly every China-
+# related item regardless of subject -- real defect found via a live Aug
+# 19 zh_cn replay, a 100% domestic battery-supply story between two
+# Chinese companies (BYD's FDI/弗迪 unit and FAW/一汽) classified as
+# "US / China / World" purely because the text said "中国一汽" (FAW's own
+# Chinese name literally contains "中国"). Also fixes the same class of
+# defect for English ("China" alone). Regression cases per the six
+# categories explicitly required: domestic Chinese company cooperation,
+# international expansion, export restrictions, US-China policy,
+# geopolitical events, Chinese government policy.
+
+
+def test_domestic_chinese_company_cooperation_is_not_us_china_world():
+    text = (
+        "一汽弗迪新能源动力电池项目由中国一汽与比亚迪共同打造，正在推进弗迪二代刀片电池的导入适配，"
+        "即将实现兆瓦闪充技术在中国一汽车型上的首次搭载。"
+    )
+    result = _classify(text)
+    assert result.bucket != "us_china_policy_geopolitics"
+
+
+def test_domestic_english_company_story_mentioning_china_alone_is_not_us_china_world():
+    """General, not zh-specific: the same over-broad "China" mention issue
+    applies to English text too."""
+    text = "A Chinese domestic supplier signed a new manufacturing contract with a China-based automaker."
+    result = _classify(text)
+    assert result.bucket != "us_china_policy_geopolitics"
+
+
+def test_international_expansion_still_classifies_as_us_china_world():
+    text = (
+        "China announced plans for a new automaker to expand into the Singapore market, "
+        "competing with Japanese rivals."
+    )
+    result = _classify(text)
+    assert result.bucket == "us_china_policy_geopolitics"
+
+
+def test_export_restrictions_still_classify_as_us_china_world():
+    """Note: a genuinely semiconductor-flavored export-control story (the
+    overwhelmingly common real-world case) correctly classifies as
+    ai_semiconductor_export_controls via the earlier-priority policy
+    group -- unaffected by this fix, and arguably more accurate in
+    practice. This case uses a non-semiconductor sanctions scenario to
+    isolate the china-gate behavior specifically."""
+    text = "The US imposed new sanctions on several state-owned shipping companies in China."
+    result = _classify(text)
+    assert result.bucket == "us_china_policy_geopolitics"
+
+
+def test_us_china_trade_policy_still_classifies_correctly():
+    result = _classify("US says dozens of countries helped China dodge Trump's tariffs")
+    assert result.bucket == "us_china_policy_geopolitics"
+
+
+def test_geopolitical_event_involving_china_still_classifies_correctly():
+    text = "China and the United States held high-level diplomatic talks in Washington on regional security."
+    result = _classify(text)
+    assert result.bucket == "us_china_policy_geopolitics"
+
+
+def test_chinese_government_domestic_policy_alone_is_not_us_china_world():
+    """Chinese government policy with no cross-border angle at all -- e.g.
+    Beijing issuing a purely domestic administrative notice -- should not
+    win the international bucket merely by saying "China"/"Beijing"."""
+    text = "Beijing issued new local rules for municipal waste sorting, effective next month."
+    result = _classify(text)
+    assert result.bucket != "us_china_policy_geopolitics"
+
+
+def test_taiwan_hong_kong_xi_jinping_remain_sufficient_alone():
+    """Non-regression: these china-group terms are specific enough that
+    they still qualify without an additional cross-border signal."""
+    assert _classify("Taiwan's government responded to the latest developments today.").bucket == (
+        "us_china_policy_geopolitics"
+    )
+    assert _classify("Hong Kong authorities announced a new policy today.").bucket == (
+        "us_china_policy_geopolitics"
+    )

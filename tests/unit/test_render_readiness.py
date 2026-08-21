@@ -248,3 +248,20 @@ def test_why_it_matters_role_phrase_defaults_to_worth_with_no_role_keyword_nearb
     }
     result = why_it_matters(primary, None, "AI & Semiconductors", entities=["Acme"])
     assert "worth $500 million" in result
+
+
+# 2026-08-21: real production incident fixture (Aug 20 en_global digest,
+# already delivered) -- a Russian strike on Kyiv killing 17 people
+# rendered as "a material development in domestic policy" because the
+# world_politics_geopolitics bucket shared the "Politics" display
+# category (and its "domestic policy" context) with genuinely domestic
+# political stories.
+def test_why_it_matters_russia_ukraine_regression_is_world_not_domestic_policy():
+    primary = {
+        "title": "Russia 'purposefully' hit critical infrastructure in latest strikes, Kyiv mayor says",
+        "excerpt": 'At least 17 people were killed in the "massive attack" overnight on Ukraine\'s '
+        "capital, as mayor Vitali Klitschko warns hot water supply has been disrupted.",
+    }
+    result = why_it_matters(primary, None, "World", entities=["Russia"])
+    assert "domestic policy" not in result
+    assert "international conflict" in result or "global security" in result or "diplomacy" in result

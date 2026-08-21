@@ -34,6 +34,7 @@ _CATEGORY_LABELS_ZH = {
     "AI & Semiconductors": "AI与半导体",
     "Markets & Economy": "市场与经济",
     "Politics": "政策",
+    "World": "国际时政",
     "US / China / World": "中美与国际",
     "Technology": "科技",
 }
@@ -115,7 +116,13 @@ def _render_brief_item(story: Story) -> str:
 # shared across editions) route into the Chinese section headers.
 _TECH_CATEGORIES = {"AI & Semiconductors", "Technology"}
 _CHINA_ECON_CATEGORIES = {"Markets & Economy", "Politics"}
-_INTL_CATEGORIES = {"US / China / World"}
+# "World" (general international conflict/diplomacy, none of it
+# China-specific -- see scoring.py's 2026-08-21 category split) routes
+# into the same "国际与中美" section as "US / China / World": both are
+# international in nature, and the documented 5-section Chinese daily
+# structure (今日最重要/科技与产业/中国经济与政策/国际与中美/明日关注) has
+# no separate section for it.
+_INTL_CATEGORIES = {"US / China / World", "World"}
 
 
 def _section_for(story: Story) -> str:

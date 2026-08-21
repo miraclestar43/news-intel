@@ -168,3 +168,18 @@ def test_single_official_source_confirmation_state_is_not_auto_confirmed(config,
     # on pipeline/confirmation.py's own vocabulary, but "confirmed" (an
     # explicit cross-family corroboration claim) must not be it.
     assert row["confirmation_state"] != "confirmed"
+
+
+# 2026-08-21: real production incident fixture (Aug 19 zh_cn digest,
+# already delivered) -- a 100% domestic battery-supply cooperation story
+# between two Chinese companies (BYD's 弗迪 unit and FAW/一汽) classified
+# as "US / China / World" purely because the text said "中国一汽" (FAW's
+# own Chinese name literally contains "中国").
+def test_byd_faw_domestic_battery_story_is_not_us_china_world():
+    text = (
+        "比亚迪二代刀片电池、兆瓦闪充首次对外开放，一汽红旗下一代纯电平台率先获定点 "
+        "一汽弗迪新能源动力电池项目由中国一汽与比亚迪共同打造，正在推进弗迪二代刀片电池的导入适配，"
+        "即将实现兆瓦闪充技术在中国一汽车型上的首次搭载。"
+    )
+    result = _classify_zh(text)
+    assert result.bucket != "us_china_policy_geopolitics"
