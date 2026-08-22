@@ -68,6 +68,18 @@ MAX_TOTAL_STORIES = 8
 MIN_TOTAL_STORIES = 4
 MAX_AI_STORIES = 2
 MAX_STORIES_PER_DOMAIN = 2
+
+# 2026-08-22 repair: the Aug 19-21 zh_cn digests consistently shipped only
+# 2-3 total stories (well under MAX_TOTAL_STORIES=8) with no indication to
+# the reader that the qualified candidate pool was genuinely this thin --
+# indistinguishable from a normal, deliberately concise day. The system
+# must never force low-quality/promotional filler just to hit a target
+# count (see event_integrity_zh.py, the WRC/award-list gates), but silently
+# shipping a thin digest is its own failure of disclosure -- the formatter
+# appends an explicit UNDERFILLED_QUALIFIED_POOL footer instead whenever
+# the total falls below this threshold, so a thin day is never
+# indistinguishable from a normal one.
+UNDERFILLED_POOL_THRESHOLD = 6
 MAX_TOP_STORIES_PER_DOMAIN = 1
 MIN_NON_AI_WHEN_FOUR_OR_MORE = 2
 

@@ -548,3 +548,26 @@ def test_summary_that_clause_with_a_real_verb_is_not_flagged_dangling():
     result = summarize(excerpt, "Investigation headline")
     assert result is not None
     assert "found no wrongdoing by current executives" in result
+
+
+# 2026-08-22: real production observation -- the Aug 19-21 zh_cn digests
+# consistently shipped only 2-3 total stories with no indication to the
+# reader that the qualified pool was genuinely this thin, indistinguishable
+# from a normal, deliberately concise day. The system must never force
+# low-quality/promotional filler to hit a target count, but silently
+# shipping a thin digest is its own disclosure failure.
+def test_underfilled_pool_marker_appears_below_threshold():
+    story = Story(primary=_item("E1", "A real story happens", "Markets & Economy", 80.0))
+    result = SelectionResult(top_stories=[story], more_to_know=[])
+    rendered = render_production_daily(result, "Aug 22", [])
+    assert "UNDERFILLED_QUALIFIED_POOL" in rendered
+
+
+def test_underfilled_pool_marker_absent_at_full_strength():
+    stories = [
+        Story(primary=_item(f"E{i}", f"Story number {i} happens", "Markets & Economy", 80.0))
+        for i in range(6)
+    ]
+    result = SelectionResult(top_stories=stories[:3], more_to_know=stories[3:])
+    rendered = render_production_daily(result, "Aug 22", [])
+    assert "UNDERFILLED_QUALIFIED_POOL" not in rendered

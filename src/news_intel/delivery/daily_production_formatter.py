@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import html
 
-from news_intel.pipeline.daily_selection import SelectionResult, Story
+from news_intel.pipeline.daily_selection import UNDERFILLED_POOL_THRESHOLD, SelectionResult, Story
 from news_intel.pipeline.render_readiness import chinese_takeaway, why_it_matters
 from news_intel.pipeline.summary_quality import best_available_summary, extract_summary
 
@@ -146,6 +146,12 @@ def render_production_daily(
     if not result.top_stories and not result.more_to_know:
         lines.append("")
         lines.append("No qualifying developments were found in the last 24 hours.")
+    elif len(result.all_stories) < UNDERFILLED_POOL_THRESHOLD:
+        lines.append("")
+        lines.append(
+            f"[UNDERFILLED_QUALIFIED_POOL] Only {len(result.all_stories)} stories cleared the quality bar "
+            "today -- no lower-quality or promotional filler was added to reach a fuller digest."
+        )
 
     if calendar_items:
         lines.append("")

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import html
 
-from news_intel.pipeline.daily_selection import SelectionResult, Story
+from news_intel.pipeline.daily_selection import UNDERFILLED_POOL_THRESHOLD, SelectionResult, Story
 from news_intel.pipeline.zh_render_readiness import what_happened_zh, why_it_matters_zh
 
 
@@ -162,6 +162,12 @@ def render_production_daily_zh(
     if not result.top_stories and not result.more_to_know:
         lines.append("")
         lines.append("过去24小时内未发现符合条件的重大动态。")
+    elif len(result.all_stories) < UNDERFILLED_POOL_THRESHOLD:
+        lines.append("")
+        lines.append(
+            f"[UNDERFILLED_QUALIFIED_POOL] 今日仅有 {len(result.all_stories)} 条动态通过质量筛选，"
+            "未添加低质量或宣传性内容凑数。"
+        )
 
     if calendar_items:
         lines.append("")
