@@ -288,3 +288,44 @@ def test_shared_place_name_alone_does_not_merge_unrelated_stories():
         entities=["Hong Kong IPO"],
     )
     assert same_event_story(manus, shein, generic_terms=_GENERIC_TERMS) is False
+
+# 2026-08-22: real production regression (Aug 21 en_global digest, already
+# delivered) -- "Anthropic's bankers SAID the company could raise $100B+..."
+# (prospective, attributed to bankers discussing with investors, confirmation_
+# state left at the default "unverified"/"reported") surfaced verbatim as
+# "new action (verified_official_statement)" in the digest's "Update since
+# prior coverage" note -- the trigger's own name overclaims certainty for
+# what is really just statement-SHAPED language ("said").
+def test_material_update_does_not_overclaim_unverified_statement_as_official():
+    config = load_config()
+    known = known_entities(config.topics.groups)
+    prior = _item("Anthropic considers an IPO", "AI & Semiconductors",
+                   excerpt="Anthropic has held early informal talks about a possible future listing.",
+                   confirmation_state="unverified")
+    candidate = _item("Anthropic's bankers said the company could raise $100B+ in its IPO", "AI & Semiconductors",
+                       excerpt="Anthropic's bankers said the company could raise $100 billion in its IPO in "
+                       "recent discussions with potential investors.",
+                       confirmation_state="reported")
+    result = detect_material_update(candidate, prior, known_entities=known, alert_triggers=config.alert_triggers)
+    assert result.is_update is True
+    assert "verified_official_statement" not in result.note
+    assert "new reported (unverified) statement" in result.note
+
+
+def test_material_update_still_shows_action_when_genuinely_official():
+    """Non-regression: a genuinely OFFICIAL confirmation_state (e.g. the
+    company's own press release, not a mirror of banker chatter) still
+    surfaces the underlying trigger action -- only the unverified case is
+    softened."""
+    config = load_config()
+    known = known_entities(config.topics.groups)
+    prior = _item("Anthropic considers an IPO", "AI & Semiconductors",
+                   excerpt="Anthropic has held early informal talks about a possible future listing.",
+                   confirmation_state="unverified")
+    candidate = _item("Anthropic files for IPO", "AI & Semiconductors",
+                       excerpt="Anthropic said in an official statement that it has filed a registration "
+                       "for its initial public offering.",
+                       confirmation_state="official")
+    result = detect_material_update(candidate, prior, known_entities=known, alert_triggers=config.alert_triggers)
+    assert result.is_update is True
+    assert "verified_official_statement" in result.note

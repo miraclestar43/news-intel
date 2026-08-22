@@ -373,7 +373,30 @@ def detect_material_update(
     if snap_new.reversed and not snap_old.reversed:
         reasons.append("reversal/cancellation")
     if snap_new.action and snap_new.action != snap_old.action:
-        reasons.append(f"new action ({snap_new.action})")
+        # 2026-08-22 repair: real production defect (Aug 21 en_global
+        # digest, already delivered) -- "Anthropic's bankers SAID the
+        # company could raise $100B+..." (prospective, bankers' own
+        # discussions with investors, not an Anthropic statement at all)
+        # surfaced verbatim as "new action (verified_official_statement)"
+        # in the digest's "Update since prior coverage" note. The trigger
+        # ID's OWN name overclaims certainty: material_facts.py's
+        # is_statement triggers (" said "/" posted "/" claimed "/etc., see
+        # config/alert_triggers.yaml) only detect statement-SHAPED
+        # language, never confirm the statement is genuinely official --
+        # alerts.py already treats these two facts as separate (statement
+        # language present vs. confirmation_state actually OFFICIAL/
+        # CONFIRMED) but detect_material_update() echoed the raw trigger_id
+        # straight into reader-facing text with no such distinction.
+        action_trigger = next((t for t in alert_triggers.triggers if t.id == snap_new.action), None)
+        is_unverified_statement = (
+            action_trigger is not None
+            and action_trigger.is_statement
+            and snap_new.confirmation_status not in (ConfirmationState.OFFICIAL, ConfirmationState.CONFIRMED)
+        )
+        if is_unverified_statement:
+            reasons.append("new reported (unverified) statement")
+        else:
+            reasons.append(f"new action ({snap_new.action})")
     new_status_terms = _status_terms_in(cand_text_lower) - _status_terms_in(prior_text_lower)
     if new_status_terms:
         reasons.append(f"status change ({', '.join(sorted(new_status_terms)[:3])})")

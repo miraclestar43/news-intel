@@ -247,22 +247,70 @@ _TITLE_LEAD_WORD_RE = re.compile(r"[A-Z][a-zA-Z0-9&.]*")
 # specific place name.
 _TITLE_LEAD_MODIFIER_SUFFIXES = ("-based", "-owned", "-backed", "-led", "-founded", "-listed", "-headquartered")
 
+# 2026-08-22 repair: real production regression (Aug 21 en_global digest,
+# already delivered) -- "The Shanghai Stock Exchange accepted ... YMTC's
+# application ..." picked "Shanghai" as the principal entity, beating the
+# real subject "YMTC" purely by appearing earlier in the text. "Shanghai"
+# is not itself noise (unlike a demonym adjective or "-based" modifier) --
+# it is the geographic qualifier of a MULTI-WORD INSTITUTION name ("Shanghai
+# Stock Exchange"), and the single-capitalized-word scan has no way to see
+# that without looking past the immediate word. General pattern: a small
+# set of common institutional-name suffixes, not tied to Shanghai/YMTC
+# specifically -- skips the ENTIRE institution phrase (not just the
+# qualifying word) so scanning resumes after it, letting the real subject
+# further in the title win instead.
+_TITLE_LEAD_INSTITUTION_SUFFIXES = (
+    " stock exchange", " stock market", " securities exchange", " commodities exchange",
+)
+
 
 def _title_lead_entity(title: str | None) -> str | None:
     stripped = strip_title_preamble(title or "").strip()
-    for match in _TITLE_LEAD_WORD_RE.finditer(stripped):
+    pos = 0
+    while True:
+        match = _TITLE_LEAD_WORD_RE.search(stripped, pos)
+        if not match:
+            return None
         candidate = match.group(0)
-        tail = stripped[match.end() : match.end() + 20].lower()
-        if any(tail.startswith(suffix) for suffix in _TITLE_LEAD_MODIFIER_SUFFIXES):
+        tail = stripped[match.end() : match.end() + 30]
+        tail_lower = tail.lower()
+        if any(tail_lower.startswith(suffix) for suffix in _TITLE_LEAD_MODIFIER_SUFFIXES):
+            pos = match.end()
             continue  # an origin/ownership modifier, not the entity it describes
+        institution_suffix = next(
+            (suf for suf in _TITLE_LEAD_INSTITUTION_SUFFIXES if tail_lower.startswith(suf)), None
+        )
+        if institution_suffix is not None:
+            pos = match.end() + len(institution_suffix)
+            continue  # a geographic qualifier of an institution name, not the entity itself
         if candidate.upper() in _NON_ENTITY_ACRONYMS or candidate in _TITLE_LEAD_STOPWORDS:
+            pos = match.end()
             continue
         return candidate
-    return None
+
+
+def _is_non_entity_candidate(candidate: str) -> bool:
+    """True if `candidate` is itself a bare denylisted acronym/role OR a
+    multi-word phrase that merely CONTAINS one as one of its words -- e.g.
+    "Hong Kong IPO"/"Shanghai IPO" (a place name glued to an event-type
+    word by entities.py's capitalized-sequence fallback, not a genuine
+    entity). 2026-08-22 repair: real production regression (Aug 21
+    en_global digest, already delivered) -- "Filings: The Shanghai Stock
+    Exchange accepted ... YMTC's application ..." picked "Shanghai" (the
+    grammatical subject of the sentence, via _title_lead_entity) over the
+    known-vocabulary entity "YMTC" purely because "Shanghai" appears
+    earlier in the text. The real fix is upstream of the position race:
+    "Shanghai IPO" (a candidate already sitting in entities.py's output)
+    should never have out-competed "YMTC" for a *different* reason than
+    the Hong Kong IPO case below -- both are the same defect, an event-
+    type word ("IPO") turning an incidental place mention into a noise
+    candidate."""
+    words = candidate.upper().split()
+    return any(word in _NON_ENTITY_ACRONYMS for word in words)
 
 
 def _principal_entity(entities: list[str] | None, text: str = "", title: str | None = None) -> str | None:
-    candidates = [e for e in (entities or []) if e.upper() not in _NON_ENTITY_ACRONYMS]
+    candidates = [e for e in (entities or []) if not _is_non_entity_candidate(e)]
     lead = _title_lead_entity(title)
     if lead and lead not in candidates:
         candidates.append(lead)
@@ -325,7 +373,12 @@ _DOLLAR_ROLE_PHRASES: list[tuple[tuple[str, ...], str]] = [
     (("loss", "losses", "deficit", "shortfall"), "posting losses of"),
     (("operating profit", "net income", "profit of"), "reporting profit of"),
     (("revenue", "sales"), "reporting revenue of"),
-    (("valuation", "valued at", "valuing"), "valued at"),
+    # 2026-08-22: "which could value it at $2T"/"would value the company at"
+    # -- pronoun/article-mediated inflections of "value...at" -- real
+    # production regression (Anthropic IPO story, Aug 21 en_global digest,
+    # already delivered) defaulted to the generic "worth" floor because
+    # neither matched the original "valued at"/"valuing" phrasing.
+    (("valuation", "valued at", "valuing", "value it at", "value them at", "value the"), "valued at"),
     (("debt", "financing"), "seeking financing of"),
     (("invest", "investment", "funding", "raise", "raising", "raised"), "an investment of"),
 ]
@@ -365,7 +418,7 @@ _ZH_DOLLAR_ROLE_PHRASES: list[tuple[tuple[str, ...], str]] = [
     (("loss", "losses", "deficit", "shortfall"), "净亏损"),
     (("operating profit", "net income", "profit of"), "净利润"),
     (("revenue", "sales"), "营收"),
-    (("valuation", "valued at", "valuing"), "估值"),
+    (("valuation", "valued at", "valuing", "value it at", "value them at", "value the"), "估值"),
     (("debt", "financing"), "债务融资"),
     (("invest", "investment", "funding", "raise", "raising", "raised"), "融资"),
 ]

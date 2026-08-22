@@ -4,6 +4,7 @@ bare per-category template."""
 
 from __future__ import annotations
 
+from news_intel.pipeline.citation import strip_title_preamble
 from news_intel.pipeline.render_readiness import chinese_takeaway, is_render_ready, why_it_matters
 
 
@@ -315,3 +316,44 @@ def test_why_it_matters_broadcom_regression_names_debt_financing_not_investment(
     assert "$60 billion" in result
     assert "financing" in result
     assert "an investment of $60" not in result
+
+
+def test_why_it_matters_ymtc_regression_skips_stock_exchange_qualifier():
+    """2026-08-22: real production regression (Aug 21 en_global digest,
+    already delivered) -- "Filings: The Shanghai Stock Exchange accepted
+    ... YMTC's application ..." picked "Shanghai" as the principal entity
+    (both from the unstripped "Filings:" preamble and, after stripping
+    that, from being the grammatical subject of the sentence) instead of
+    the real subject, YMTC."""
+    primary = {
+        "title": "Filings: The Shanghai Stock Exchange accepted China-based chipmaker YMTC's application "
+        "to list its shares on the STAR Market; YMTC seeks to raise ~$4.9B (Reuters)",
+        "excerpt": "Reuters : Filings: The Shanghai Stock Exchange accepted China-based chipmaker YMTC's "
+        "application to list its shares on the STAR Market; YMTC seeks to raise ~$4.9B —  China's leading "
+        "flash memory chipmaker YMTC plans to raise 33 billion yuan ($4.91 billion) in its Shanghai IPO, an "
+        "updated prospectus filed to the stock exchange showed on Friday.",
+    }
+    stripped_title = strip_title_preamble(primary["title"])
+    result = why_it_matters(
+        {"title": stripped_title, "excerpt": primary["excerpt"]}, None, "US / China / World",
+        entities=["STAR Market", "Shanghai IPO", "YMTC"],
+    )
+    assert "YMTC" in result
+    assert "Shanghai" not in result.split("Why it matters:")[1].split(",")[0]
+
+
+def test_why_it_matters_anthropic_regression_names_valuation_with_pronoun_phrasing():
+    """2026-08-22: real production regression (Aug 21 en_global digest,
+    already delivered) -- "which could value it at $2T" defaulted to the
+    generic "worth" floor because the role-phrase list only recognized
+    "valued at"/"valuing", not this pronoun-mediated inflection."""
+    primary = {
+        "title": "Sources: Anthropic's bankers said the company could raise $100B+ in its IPO, which "
+        "could value it at $2T, in recent discussions with potential investors (New York Times)",
+        "excerpt": "The offering could value the five-year-old A.I. start-up at $2 trillion, its bankers "
+        "have told potential investors, which would exceed Elon Musk's SpaceX.",
+    }
+    result = why_it_matters(primary, None, "AI & Semiconductors", entities=["Anthropic"])
+    assert "$2 trillion" in result
+    assert "valued at" in result
+    assert "worth $2" not in result

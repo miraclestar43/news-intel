@@ -58,7 +58,15 @@ def resolve_citation_publisher(excerpt: str | None) -> str | None:
 # already handled for excerpts above -- never strips an arbitrary
 # "Word:" prefix that could be a legitimate part of a real headline
 # (e.g. "Analysis: ..." or "NVIDIA Q3: record revenue" are left alone).
-_KNOWN_TITLE_PREAMBLE_WORDS = frozenset({"sources", "source", "more"})
+# 2026-08-22: real production regression (Aug 21 en_global digest, already
+# delivered) -- "Filings: The Shanghai Stock Exchange accepted ... YMTC's
+# application ..." rendered with "Filings" itself picked as the principal
+# entity ("Why it matters: Filings an investment of $4.9 billion...") --
+# "Filings:" is the same kind of Techmeme aggregation cue as "Sources:"/
+# "Source:"/"More:" (this is sourced-from-a-filing reporting, not itself
+# part of any article's actual headline), just a word that hadn't been
+# added to the denylist yet.
+_KNOWN_TITLE_PREAMBLE_WORDS = frozenset({"sources", "source", "more", "filings", "filing"})
 
 
 def strip_title_preamble(title: str) -> str:
