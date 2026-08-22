@@ -183,3 +183,19 @@ def test_byd_faw_domestic_battery_story_is_not_us_china_world():
     )
     result = _classify_zh(text)
     assert result.bucket != "us_china_policy_geopolitics"
+
+
+# 2026-08-22: real production regression (Aug 21 zh_cn digest, already
+# delivered) -- an "IT早报" daily roundup bulletin (dozens of unrelated
+# one-line news items bundled into one article, each already separately
+# published elsewhere) independently qualified as its own AI & Semiconductors
+# candidate, then got picked as a "secondary" corroborating source for an
+# unrelated Kakao spin-off story purely on incidental shared vocabulary --
+# dragging Alibaba's own unrelated quarterly net-income figure (one of the
+# 26 bulleted items) into the Kakao digest entry as if it were Kakao's own.
+def test_it_morning_roundup_bulletin_is_rejected_as_noise():
+    result = _classify_zh(
+        "IT早报 0821：奕境汽车为“假 Labubu”礼品致歉；华为发布享界 G9 等四车；"
+        "阿里巴巴 2027 财年第一财季归母净利润 105.37 亿元，同比下降 76%"
+    )
+    assert result.bucket == "explicit_noise"

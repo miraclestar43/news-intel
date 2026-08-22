@@ -259,7 +259,15 @@ def classify_relevance(
         # everywhere else -- "sale" matched inside "sales", silently
         # zeroing out (noise_penalty=100, final_score=0) a Nebius earnings
         # report whose only offending word was "second-quarter sales".
-        if _term_matches(term, lowered, lowered):
+        # 2026-08-22 fix: passing `lowered` as _term_matches' `original`
+        # argument (instead of the true-case `text`) meant a non-ASCII noise
+        # term containing ANY uppercase Latin letters could never match --
+        # _term_matches' non-ASCII branch does a case-SENSITIVE substring
+        # check against `original`, so "IT早报" ("IT" upper) was compared
+        # against an already-lowercased "it早报...", never matching. Never
+        # exposed before because every noise term until "IT早报" (added in
+        # this same repair) was pure Chinese, unaffected by .lower().
+        if _term_matches(term, lowered, text):
             return RelevanceMatch(
                 "explicit_noise", multipliers.get("explicit_noise", 0.0), [term], [], ["explicit_noise"]
             )
