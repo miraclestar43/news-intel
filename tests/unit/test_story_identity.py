@@ -329,3 +329,32 @@ def test_material_update_still_shows_action_when_genuinely_official():
     result = detect_material_update(candidate, prior, known_entities=known, alert_triggers=config.alert_triggers)
     assert result.is_update is True
     assert "verified_official_statement" in result.note
+
+
+# 2026-08-22: real production regression (Aug 21 en_global digest, already
+# delivered) -- a bare single-letter "A" token (split out of "Series A" on
+# one side, and a garbled multi-word entity-extraction artifact ending in
+# "...Agents A" on the other) satisfied the ALL-CAPS acronym exception
+# (KKR/SEC/FDA-style) despite being one character long, so two completely
+# unrelated events -- an NVIDIA agent-benchmark research post and an
+# unrelated Starcloud funding-round story that merely mentions NVIDIA as a
+# minor investor -- were merged into one displayed Story, misattributing
+# Starcloud's own $2.3B valuation to NVIDIA.
+def test_bare_single_letter_token_does_not_merge_unrelated_stories():
+    a = _item(
+        "NVIDIA AVO Reaches 100% on ARC-AGI-3, Demonstrating a Frontier-Level General-Purpose "
+        "Architecture for Long-Horizon Autonomous Agents",
+        "AI & Semiconductors",
+        excerpt="A frontier language model is only one component of an AI agent.",
+        entities=["AGI", "ARC", "Horizon Autonomous Agents A", "Level General", "NVIDIA",
+                  "NVIDIA AVO Reaches", "Purpose Architecture"],
+    )
+    b = _item(
+        "Space data center startup Starcloud raised a $250M extension, at a $2.3B valuation, to its "
+        "March $170M Series A; source: Nvidia invested $25M (Tim Fernholz/TechCrunch)",
+        "AI & Semiconductors",
+        excerpt="Starcloud, a startup developing satellites that can perform AI inference in orbit, "
+        "told TechCrunch that it has added a $250 million extension.",
+        entities=["NVIDIA", "Series A", "Tim Fernholz"],
+    )
+    assert same_event_story(a, b, generic_terms=_GENERIC_TERMS) is False

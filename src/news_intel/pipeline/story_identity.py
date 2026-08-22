@@ -183,7 +183,18 @@ def _material_tokens(item: dict, generic_terms: set[str]) -> set[str]:
     return {
         t
         for t in raw_tokens
-        if (len(t) >= 4 or t.isupper())  # short ALL-CAPS tokens (KKR, SEC, FDA) are acronyms, not noise
+        # short ALL-CAPS tokens (KKR, SEC, FDA) are acronyms, not noise --
+        # but a BARE SINGLE LETTER trivially satisfies isupper() without
+        # being a real acronym at all. 2026-08-22 repair: real production
+        # regression (Aug 21 en_global digest, already delivered) -- a
+        # standalone "A" (from splitting "Series A" into words on one side,
+        # and a garbled multi-word entity-extraction artifact ending in
+        # "...Agents A" on the other) merged two completely unrelated
+        # events -- an NVIDIA agent-benchmark post and an unrelated
+        # Starcloud funding-round story that merely mentions NVIDIA as a
+        # minor investor -- into one displayed Story, misattributing
+        # Starcloud's own $2.3B valuation to NVIDIA.
+        if (len(t) >= 4 or (t.isupper() and len(t) >= 2))
         and t not in _CONNECTOR_WORDS
         and t not in _BOILERPLATE_TERMS
         and t.upper() not in _MACRO_ACRONYM_TERMS
