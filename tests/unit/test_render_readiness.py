@@ -357,3 +357,26 @@ def test_why_it_matters_anthropic_regression_names_valuation_with_pronoun_phrasi
     assert "$2 trillion" in result
     assert "valued at" in result
     assert "worth $2" not in result
+
+
+def test_why_it_matters_gaza_regression_names_target_not_co_actor():
+    """2026-08-22: real production regression (Aug 21 en_global digest,
+    already delivered) -- "UK, Canada and Australia condemn Israel for
+    refusing criminal probe into aid worker killings in Gaza" rendered as
+    "Canada's regulatory probe is a material development in domestic
+    policy" -- entities.py produced only a garbled fragment ("Gaza Seven
+    World Central"), so the earliest-capitalized-word fallback picked
+    "Canada" (one of three co-actors doing the condemning) instead of the
+    real subject, Israel (the entity being condemned) -- and "refusing...
+    probe" was mislabeled as the opposite: a probe happening, not one
+    being blocked."""
+    primary = {
+        "title": "UK, Canada and Australia condemn Israel for refusing criminal probe into aid worker "
+        "killings in Gaza",
+        "excerpt": "Seven World Central Kitchen workers were killed in the Israeli strike on their convoy "
+        "in 2024.",
+    }
+    result = why_it_matters(primary, None, "World", entities=["Gaza Seven World Central"])
+    assert "Israel" in result
+    assert "Canada" not in result
+    assert "refusal" in result.lower()

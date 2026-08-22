@@ -217,3 +217,34 @@ def test_why_it_matters_zh_jac_regression_names_the_loss_not_revenue():
     assert "净亏损约7.5亿" in result
     assert "221.3" not in result
     assert "221.30" not in result
+
+
+# 2026-08-22: real production fixture (Aug 21 zh_cn digest, already
+# delivered) -- "CPM" (the law firm representing the plaintiffs) was
+# picked as the principal entity, "财报业绩" (earnings) was picked as the
+# event type over the story's real subject (a lawsuit), and the digest
+# fabricated "1.12万亿元" from an unrelated later paragraph describing
+# cumulative US tariff refunds across many companies, not anything about
+# Logitech's own liability or this lawsuit.
+_LOGITECH_TITLE = "产品涨价最高 25%：美国政府退税后罗技没退，罗技被消费者集体起诉"
+_LOGITECH_EXCERPT = (
+    "IT之家 8 月 21 日消息，当地时间 8 月 18 日，美国律师事务所 Cotchett, Pitre & McCarthy LLP"
+    "（CPM）在加利福尼亚州北区联邦地区法院圣何塞分院提起集体诉讼，将罗技（Logitech）告上法庭。"
+    "原告代表美国消费者，指控罗技在 2025 年以上调关税为理由涨价最高 25%，并在相关关税被美国最高法院裁定"
+    "违法、政府向企业退款后，没有将消费者此前承担的相关成本退还给消费者。"
+    "罗技管理层此前也曾在财报电话会议中明确提及此次涨价旨在抵消进口关税带来的成本压力。"
+    "此次相关关税累计征收金额约 1,660 亿美元 （现汇率约合 1.12 万亿元人民币） 。"
+)
+
+
+def test_why_it_matters_zh_logitech_regression_names_defendant_and_lawsuit_no_fabricated_amount():
+    primary = {"title": _LOGITECH_TITLE, "excerpt": _LOGITECH_EXCERPT}
+    result = why_it_matters_zh(primary, None, "Markets & Economy", entities=[
+        "CPM", "GAAP", "IEEPA", "Joe Cotchett", "K400 Plus Wireless Touch",
+        "MX Master", "Matteo Anversa", "McCarthy LLP",
+    ])
+    assert "罗技" in result
+    assert "CPM" not in result
+    assert "诉讼" in result
+    assert "财报" not in result
+    assert "1.1万亿" not in result and "1.12万亿" not in result

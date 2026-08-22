@@ -130,10 +130,22 @@ def _combined_text(primary: dict, secondary: dict | None) -> str:
 
 
 def _event_type_label_zh(text: str) -> str | None:
+    """Ranks by EARLIEST OCCURRENCE IN THE TEXT, not the labels list's own
+    fixed order. 2026-08-22 repair: real production regression -- 罗技
+    (Logitech)'s consumer-lawsuit story also had one background mention of
+    an earnings call much later in the article; since "财报" (earnings
+    report) appears earlier in this priority list than "诉讼"/"起诉"
+    (lawsuit), the background mention won regardless of which term the
+    article was actually about. A term appearing earlier in the text is
+    the more prominent, more likely-to-be-the-actual-subject signal."""
+    best: tuple[int, str] | None = None
     for term, label in _EVENT_TYPE_LABELS_ZH:
-        if term in text:
-            return label
-    return None
+        idx = text.find(term)
+        if idx == -1:
+            continue
+        if best is None or idx < best[0]:
+            best = (idx, label)
+    return best[1] if best else None
 
 
 # 2026-08-21 repair: even after excluding the wrong-currency trailer figure
@@ -166,6 +178,45 @@ def _labeled_amount_zh(text: str) -> float | None:
         if values:
             return values[0]
     return None
+
+
+# 2026-08-22 repair: real production defect (Logitech lawsuit, Aug 21
+# zh_cn digest, already delivered) -- neither a deal-value label nor a
+# net-income/loss label applies to a LAWSUIT story, so amount selection
+# fell all the way to bare max(zh_values) over the ENTIRE article. That
+# article legitimately contains a "1.12万亿元" figure -- but it describes
+# the cumulative US tariffs collected across ALL affected companies under
+# a since-struck-down executive order (background context for a mention of
+# separate lawsuits against Nintendo/BYD later in the same article), not
+# anything about Logitech's own liability, price increase, or this
+# lawsuit. Restricting the unlabeled search to a window around the
+# earliest recognized event-type term occurrence (the same position
+# _event_type_label_zh already identifies as the story's real subject)
+# keeps this general -- not a Logitech-specific carve-out -- for any
+# story-type (lawsuit, investigation, etc.) that has no natural deal/
+# earnings label of its own.
+_EVENT_TYPE_AMOUNT_WINDOW_CHARS = 60
+
+
+def _event_type_proximate_amount_zh(text: str) -> float | None:
+    """Only restricts the search when a recognized event-type term is
+    actually present: with no such term at all (e.g. a policy-guidance
+    story with no matching event type, but a genuine, singular amount),
+    the ORIGINAL bare max() over the whole text remains -- this floor was
+    already deliberately preserved for exactly that case (2026-08-18 "an
+    amount-only signal must never be silently discarded"). The window
+    restriction only kicks in once an event-type term gives a real anchor
+    to be near, which is what the Logitech case needed."""
+    event_positions = [text.find(term) for term, _label in _EVENT_TYPE_LABELS_ZH]
+    positions = [p for p in event_positions if p != -1]
+    if not positions:
+        values = parse_zh_amounts(text)
+        return max(values) if values else None
+    earliest = min(positions)
+    window_start = max(0, earliest - _EVENT_TYPE_AMOUNT_WINDOW_CHARS)
+    window = text[window_start : earliest + _EVENT_TYPE_AMOUNT_WINDOW_CHARS]
+    values = parse_zh_amounts(window)
+    return max(values) if values else None
 
 
 # 2026-08-21 repair: real defect -- 江淮汽车's Aug 19 earnings story
@@ -210,7 +261,41 @@ def _labeled_earnings_metric_zh(text: str) -> tuple[float, bool] | None:
 # the same acronym denylist render_readiness.py's English path already
 # uses, plus multi-word (3+) candidates, which are reliably garbled
 # caption fragments rather than genuine multi-word entity names.
-def _principal_entity_zh(entities: list[str] | None) -> str | None:
+# 2026-08-22 repair: real production regression (Aug 21 zh_cn digest,
+# already delivered) -- "产品涨价最高25%：美国政府退税后罗技没退，罗技被
+# 消费者集体起诉" (Logitech was collectively sued by consumers) rendered
+# with "CPM" (the LAW FIRM representing the plaintiffs) as the principal
+# entity, since entities.py's extraction is tuned for Latin-script tokens
+# (CPM/GAAP/IEEPA all matched, but "罗技" -- a Chinese company name with no
+# capitalization for the fallback to key off -- never did). General
+# Chinese grammatical pattern, not specific to Logitech: "X被Y" (X was
+# Y-ed) marks X, the noun immediately before "被", as the affected/target
+# party -- almost always the story's real subject when one is present at
+# all. Tried BEFORE the known-entities list, since that list is already
+# documented above as noisier for zh_cn (English loanword/acronym bias)
+# than a grammatically-motivated extraction over the story's own Chinese
+# text.
+_BEI_PASSIVE_MAX_RUN_CHARS = 6
+_BEI_PASSIVE_MIN_RUN_CHARS = 2
+
+
+def _bei_passive_entity_zh(text: str) -> str | None:
+    for idx, ch in enumerate(text):
+        if ch != "被" or idx < _BEI_PASSIVE_MIN_RUN_CHARS:
+            continue
+        start = idx
+        while start > 0 and "一" <= text[start - 1] <= "鿿" and idx - start < _BEI_PASSIVE_MAX_RUN_CHARS:
+            start -= 1
+        run = text[start:idx]
+        if _BEI_PASSIVE_MIN_RUN_CHARS <= len(run) <= _BEI_PASSIVE_MAX_RUN_CHARS:
+            return run
+    return None
+
+
+def _principal_entity_zh(entities: list[str] | None, text: str = "") -> str | None:
+    bei_entity = _bei_passive_entity_zh(text) if text else None
+    if bei_entity:
+        return bei_entity
     if not entities:
         return None
     # Single-word candidates only: real multi-word entity names DO exist
@@ -247,20 +332,25 @@ def why_it_matters_zh(
     # amounts take priority (native to the story) when both are present.
     labeled_amount = _labeled_amount_zh(text)
     earnings_metric = None if labeled_amount is not None else _labeled_earnings_metric_zh(text)
+    proximate_amount = (
+        None if labeled_amount is not None or earnings_metric is not None
+        else _event_type_proximate_amount_zh(text)
+    )
     if labeled_amount is not None:
         amount_clause = f"，金额约{format_zh_amount(labeled_amount)}"
     elif earnings_metric is not None:
         metric_value, is_loss = earnings_metric
         verb = "净亏损" if is_loss else "净利润"
         amount_clause = f"，{verb}约{format_zh_amount(metric_value)}"
+    elif proximate_amount is not None:
+        amount_clause = f"，金额约{format_zh_amount(proximate_amount)}"
     else:
-        zh_values = parse_zh_amounts(text)
-        amount_clause = f"，金额约{format_zh_amount(max(zh_values))}" if zh_values else ""
+        amount_clause = ""
     if not amount_clause:
         dollar_values = parse_current_dollar_values(text)
         if dollar_values:
             amount_clause = f"，金额约{format_dollar_value(max(dollar_values))}"
-    entity = _principal_entity_zh(entities)
+    entity = _principal_entity_zh(entities, text)
     event_label = _event_type_label_zh(text)
 
     if entity and event_label:

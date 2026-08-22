@@ -264,6 +264,46 @@ _TITLE_LEAD_INSTITUTION_SUFFIXES = (
 )
 
 
+# 2026-08-22 repair: real production regression (Aug 21 en_global digest,
+# already delivered) -- "UK, Canada and Australia condemn Israel for
+# refusing criminal probe into aid worker killings in Gaza" rendered as
+# "Canada's regulatory probe is a material development in domestic
+# policy" -- entities.py's extraction produced only a garbled fragment
+# ("Gaza Seven World Central"), so _title_lead_entity's earliest-
+# capitalized-word scan picked "Canada" (one of three co-actors doing the
+# condemning) as if it were the story's subject, when the real subject is
+# ISRAEL -- the entity being condemned, whose refusal is the actual
+# consequence. General pattern, not specific to this headline: in an
+# "[actor(s)] condemn/criticize/slam/rebuke/denounce [target] for ..."
+# construction, the target (grammatical object of the verb) is the
+# story's real subject, never one of the actor(s) performing the
+# criticism -- tried ahead of the plain earliest-word heuristic below.
+_CONDEMNATION_VERBS = (
+    "condemn", "condemns", "condemned", "criticize", "criticizes", "criticized", "criticised",
+    "slam", "slams", "slammed", "denounce", "denounces", "denounced",
+    "rebuke", "rebukes", "rebuked", "blast", "blasts", "blasted",
+)
+
+
+def _condemnation_target_entity(text: str | None) -> str | None:
+    if not text:
+        return None
+    lowered = text.lower()
+    for verb in _CONDEMNATION_VERBS:
+        idx = lowered.find(f" {verb} ")
+        if idx == -1:
+            continue
+        tail = text[idx + len(verb) + 2 :].lstrip()
+        match = _TITLE_LEAD_WORD_RE.match(tail)
+        if not match:
+            continue
+        candidate = match.group(0)
+        if candidate.upper() in _NON_ENTITY_ACRONYMS or candidate in _TITLE_LEAD_STOPWORDS:
+            continue
+        return candidate
+    return None
+
+
 def _title_lead_entity(title: str | None) -> str | None:
     stripped = strip_title_preamble(title or "").strip()
     pos = 0
@@ -311,7 +351,7 @@ def _is_non_entity_candidate(candidate: str) -> bool:
 
 def _principal_entity(entities: list[str] | None, text: str = "", title: str | None = None) -> str | None:
     candidates = [e for e in (entities or []) if not _is_non_entity_candidate(e)]
-    lead = _title_lead_entity(title)
+    lead = _condemnation_target_entity(title) or _condemnation_target_entity(text) or _title_lead_entity(title)
     if lead and lead not in candidates:
         candidates.append(lead)
     if not candidates:
@@ -330,11 +370,45 @@ def _principal_entity(entities: list[str] | None, text: str = "", title: str | N
     return min(candidates, key=_position)
 
 
+# 2026-08-22 repair: real production regression (Aug 21 en_global digest,
+# already delivered) -- "UK, Canada and Australia condemn Israel for
+# REFUSING criminal probe into aid worker killings in Gaza" matched the
+# bare "probe" -> "a regulatory probe" label, producing "Israel's
+# regulatory probe" -- the opposite of the actual event (Israel is
+# refusing/blocking an investigation, not conducting one). General
+# pattern: a refusal/rejection verb shortly before the matched event-type
+# term flips its meaning to an obstruction of that action, never the
+# action itself -- not specific to "probe"/investigation labels.
+_EVENT_TYPE_REFUSAL_VERBS = ("refus", "reject", "declin", "block", "deny", "denies", "denied")
+_EVENT_TYPE_REFUSAL_WINDOW_CHARS = 25
+
+
 def _event_type_label(lowered_text: str, labels: list[tuple[str, str]]) -> str | None:
+    """Ranks by EARLIEST OCCURRENCE IN THE TEXT, not the labels list's own
+    fixed order. 2026-08-22 repair: real production regression (Logitech
+    lawsuit, Aug 21 zh_cn digest -- the English list has the identical
+    ordering defect, fixed here too) -- a story about a consumer LAWSUIT
+    also had one background mention of an "earnings call" much later in
+    the article; since "earnings" appears earlier in this priority list
+    than "lawsuit"/"sues", the background mention won regardless of which
+    term the article was actually ABOUT. A term appearing earlier in the
+    text is the more prominent, more likely-to-be-the-actual-subject
+    signal -- same principle already applied to entity selection."""
+    best: tuple[int, str] | None = None
     for term, label in labels:
-        if term in lowered_text:
-            return label
-    return None
+        idx = lowered_text.find(term)
+        if idx == -1:
+            continue
+        if best is None or idx < best[0]:
+            best = (idx, label)
+    if best is None:
+        return None
+    idx, label = best
+    window_start = max(0, idx - _EVENT_TYPE_REFUSAL_WINDOW_CHARS)
+    preceding = lowered_text[window_start:idx]
+    if any(verb in preceding for verb in _EVENT_TYPE_REFUSAL_VERBS):
+        return f"a refusal to allow {label}"
+    return label
 
 
 # 2026-08-21 repair: two real production defects (Aug 20 en_global
