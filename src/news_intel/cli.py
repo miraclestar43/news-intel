@@ -12,6 +12,8 @@ from news_intel.jobs.alerts import release_held_alerts, run_alert_check
 from news_intel.jobs.collect import run_collect
 from news_intel.jobs.daily import run_daily
 from news_intel.jobs.daily_canary import run_daily_canary
+from news_intel.jobs.daily_production import run_daily_production
+from news_intel.jobs.delivery_authorization import PRODUCTION_DELIVERY_AUTHORIZED
 from news_intel.jobs.monthly import run_monthly
 from news_intel.jobs.monthly_production import run_monthly_production
 from news_intel.jobs.weekly import run_weekly
@@ -394,28 +396,28 @@ def production_daily(
     ),
     edition: str = _EDITION_OPTION,
 ) -> None:
-    """The production daily entrypoint: always a real (non-dry-run) send.
-    Fail-closed checks (allowlist cardinality, event category/URL mapping,
-    message length, per-Pacific-date idempotency) all happen inside
-    run_daily() before any Telegram contact -- see jobs/daily.py."""
+    """The production daily entrypoint: the only call site in this codebase
+    that constructs PRODUCTION_DELIVERY_AUTHORIZED (see
+    jobs/delivery_authorization.py) -- a real, systemd-invoked scheduled
+    run. Fail-closed checks (allowlist cardinality, event category/URL
+    mapping, message length, per-Pacific-date idempotency) all still happen
+    inside run_daily() before any Telegram contact -- see jobs/daily.py and
+    jobs/daily_production.py."""
     config, conn = _load()
     try:
-        now = datetime.now(UTC)
-        edition_cfg = config.editions.get(edition)
-        pt_today = now.astimezone(ZoneInfo(edition_cfg.schedule.timezone)).date()
-        start = date.fromisoformat(start_date)
-        if pt_today < start:
-            typer.echo(
-                f"production: edition={edition} pt_date={pt_today} is before start_date={start} -- "
-                f"skipping, no Telegram contact."
-            )
-            return
-
-        allowed = config.secrets.allowed_chat_id_list
-        chat_id = allowed[0] if len(allowed) == 1 else -1
-        summary = run_daily(config, conn, chat_id=chat_id, dry_run=False, now=now, edition_id=edition)
+        summary = run_daily_production(
+            config, conn, start_date=date.fromisoformat(start_date), edition_id=edition,
+            authorization=PRODUCTION_DELIVERY_AUTHORIZED,
+        )
     finally:
         conn.close()
+
+    if summary.skipped_before_start_date:
+        typer.echo(
+            f"production: edition={edition} pt_date={summary.pt_date_checked} is before start_date={start_date} "
+            f"-- skipping, no Telegram contact."
+        )
+        return
 
     typer.echo(
         f"edition={edition} fail_closed={summary.fail_closed} sent={summary.sent} "
@@ -437,7 +439,9 @@ def production_weekly(edition: str = _EDITION_OPTION) -> None:
     lower-level dry-run-capable command) as the production service."""
     config, conn = _load()
     try:
-        summary = run_weekly_production(config, conn, edition_id=edition)
+        summary = run_weekly_production(
+            config, conn, edition_id=edition, authorization=PRODUCTION_DELIVERY_AUTHORIZED
+        )
     finally:
         conn.close()
 
@@ -471,7 +475,9 @@ def production_monthly(edition: str = _EDITION_OPTION) -> None:
     the production service."""
     config, conn = _load()
     try:
-        summary = run_monthly_production(config, conn, edition_id=edition)
+        summary = run_monthly_production(
+            config, conn, edition_id=edition, authorization=PRODUCTION_DELIVERY_AUTHORIZED
+        )
     finally:
         conn.close()
 

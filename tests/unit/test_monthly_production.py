@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from news_intel import db
+from news_intel.jobs.delivery_authorization import PRODUCTION_DELIVERY_AUTHORIZED
 from news_intel.jobs.monthly_production import _is_valid_monthly_window, run_monthly_production
 from news_intel.settings import load_config, reset_config_cache
 from tests.conftest import PROJECT_ROOT
@@ -115,7 +116,9 @@ def test_late_catchup_reports_git_head_even_when_skipped(config, conn):
 
 def test_valid_first_monday_window_proceeds_and_records_git_head(config, conn):
     _seed_full_month(conn)
-    summary = run_monthly_production(config, conn, now=FIRST_MONDAY_PT.astimezone(UTC))
+    summary = run_monthly_production(
+        config, conn, now=FIRST_MONDAY_PT.astimezone(UTC), authorization=PRODUCTION_DELIVERY_AUTHORIZED
+    )
 
     assert summary.skipped_late_catchup is False
     assert summary.git_head
@@ -131,15 +134,22 @@ def test_valid_first_monday_window_proceeds_and_records_git_head(config, conn):
 
 def test_valid_first_monday_window_creates_exactly_one_monthly_digest_row(config, conn):
     _seed_full_month(conn)
-    run_monthly_production(config, conn, now=FIRST_MONDAY_PT.astimezone(UTC))
+    run_monthly_production(
+        config, conn, now=FIRST_MONDAY_PT.astimezone(UTC), authorization=PRODUCTION_DELIVERY_AUTHORIZED
+    )
     count = conn.execute("SELECT COUNT(*) AS n FROM digests WHERE kind = 'monthly'").fetchone()["n"]
     assert count == 1
 
 
 def test_repeated_invocation_within_the_same_month_is_idempotent_not_a_resend(config, conn):
     _seed_full_month(conn)
-    first = run_monthly_production(config, conn, now=FIRST_MONDAY_PT.astimezone(UTC))
-    second = run_monthly_production(config, conn, now=(FIRST_MONDAY_PT + timedelta(minutes=5)).astimezone(UTC))
+    first = run_monthly_production(
+        config, conn, now=FIRST_MONDAY_PT.astimezone(UTC), authorization=PRODUCTION_DELIVERY_AUTHORIZED
+    )
+    second = run_monthly_production(
+        config, conn, now=(FIRST_MONDAY_PT + timedelta(minutes=5)).astimezone(UTC),
+        authorization=PRODUCTION_DELIVERY_AUTHORIZED,
+    )
 
     assert first.skipped_late_catchup is False
     assert first.fail_closed is False
@@ -153,7 +163,9 @@ def test_ambiguous_allowlist_fails_closed_before_any_write(config, conn, monkeyp
     monkeypatch.setattr(type(config.secrets), "allowed_chat_id_list", property(lambda self: [111, 222]))
     _seed_full_month(conn)
     counts_before = conn.execute("SELECT COUNT(*) AS n FROM job_runs").fetchone()["n"]
-    summary = run_monthly_production(config, conn, now=FIRST_MONDAY_PT.astimezone(UTC))
+    summary = run_monthly_production(
+        config, conn, now=FIRST_MONDAY_PT.astimezone(UTC), authorization=PRODUCTION_DELIVERY_AUTHORIZED
+    )
     assert summary.skipped_late_catchup is False
     assert summary.sent is False
     counts_after = conn.execute("SELECT COUNT(*) AS n FROM job_runs").fetchone()["n"]

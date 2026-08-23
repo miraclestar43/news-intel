@@ -34,6 +34,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from news_intel.jobs import job_runs
+from news_intel.jobs.delivery_authorization import ProductionDeliveryAuthorization
 from news_intel.jobs.weekly import WeeklySummary, run_weekly
 from news_intel.settings import AppConfig
 
@@ -76,8 +77,20 @@ class WeeklyProductionSummary(WeeklySummary):
 
 
 def run_weekly_production(
-    config: AppConfig, conn: sqlite3.Connection, *, now: datetime | None = None, edition_id: str = "en_global"
+    config: AppConfig,
+    conn: sqlite3.Connection,
+    *,
+    now: datetime | None = None,
+    edition_id: str = "en_global",
+    authorization: ProductionDeliveryAuthorization | None = None,
 ) -> WeeklyProductionSummary:
+    """2026-08-23 repair: `authorization` is required for any real send --
+    see jobs/delivery_authorization.py. Omitting it (the default) still
+    fully constructs and renders the digest (so the window-gate and
+    content-generation logic remain testable/previewable on their own) but
+    returns before ever resolving a chat_id or constructing a
+    TelegramSender -- this is now true independent of whether real
+    credentials are present in `config`."""
     now = now or datetime.now(UTC)
     edition = config.editions.get(edition_id)
     tz = ZoneInfo(edition.schedule.timezone)
@@ -94,6 +107,25 @@ def run_weekly_production(
         )
 
     git_head = _current_git_head()
+
+    if authorization is None:
+        # Pure construct/preview path: run the real selection/rendering
+        # pipeline (chat_id=None is already structurally non-delivering in
+        # run_weekly() -- see jobs/weekly.py) and return it, WITHOUT ever
+        # reading config.secrets.allowed_chat_id_list or constructing a
+        # TelegramSender. No job_runs/digest/delivery DB row is written
+        # either, matching the late-catch-up-skip branch above: previewing
+        # is not itself "a run."
+        preview = run_weekly(config, conn, chat_id=None, dry_run=True, now=now, edition_id=edition_id)
+        return WeeklyProductionSummary(
+            rendered_parts=preview.rendered_parts, character_count=preview.character_count,
+            trend_count=preview.trend_count, fallback_used=preview.fallback_used, model_used=preview.model_used,
+            idempotency_key=preview.idempotency_key, sent_dry_run=True, sent=False,
+            skipped_lock=preview.skipped_lock, skipped_duplicate=preview.skipped_duplicate,
+            week_label=preview.week_label, fail_closed=preview.fail_closed, fail_reason=preview.fail_reason,
+            skipped_late_catchup=False, git_head=git_head, pt_window_checked_at=now_pt.isoformat(),
+        )
+
     allowed = config.secrets.allowed_chat_id_list
 
     # Fail closed before ever contacting Telegram (mirrors jobs/daily.py's

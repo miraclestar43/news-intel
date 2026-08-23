@@ -24,6 +24,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from news_intel.jobs import job_runs
+from news_intel.jobs.delivery_authorization import ProductionDeliveryAuthorization
 from news_intel.jobs.monthly import MonthlySummary, is_first_monday, run_monthly
 from news_intel.settings import AppConfig
 
@@ -60,8 +61,18 @@ class MonthlyProductionSummary(MonthlySummary):
 
 
 def run_monthly_production(
-    config: AppConfig, conn: sqlite3.Connection, *, now: datetime | None = None, edition_id: str = "en_global"
+    config: AppConfig,
+    conn: sqlite3.Connection,
+    *,
+    now: datetime | None = None,
+    edition_id: str = "en_global",
+    authorization: ProductionDeliveryAuthorization | None = None,
 ) -> MonthlyProductionSummary:
+    """2026-08-23 repair: `authorization` is required for any real send --
+    see jobs/delivery_authorization.py and weekly_production.py's mirrored
+    docstring. Omitting it (the default) still fully constructs/renders the
+    digest but returns before ever resolving a chat_id or constructing a
+    TelegramSender, independent of what credentials are present."""
     now = now or datetime.now(UTC)
     edition = config.editions.get(edition_id)
     tz = ZoneInfo(edition.schedule.timezone)
@@ -76,6 +87,18 @@ def run_monthly_production(
         )
 
     git_head = _current_git_head()
+
+    if authorization is None:
+        preview = run_monthly(config, conn, chat_id=None, dry_run=True, now=now, edition_id=edition_id)
+        return MonthlyProductionSummary(
+            rendered_parts=preview.rendered_parts, character_count=preview.character_count,
+            trend_count=preview.trend_count, fallback_used=preview.fallback_used, model_used=preview.model_used,
+            idempotency_key=preview.idempotency_key, sent_dry_run=True, sent=False,
+            skipped_lock=preview.skipped_lock, skipped_duplicate=preview.skipped_duplicate,
+            month_label=preview.month_label, fail_closed=preview.fail_closed, fail_reason=preview.fail_reason,
+            skipped_late_catchup=False, git_head=git_head, pt_window_checked_at=now_pt.isoformat(),
+        )
+
     allowed = config.secrets.allowed_chat_id_list
     if len(allowed) != 1:
         return MonthlyProductionSummary(

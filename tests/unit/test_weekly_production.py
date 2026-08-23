@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from news_intel import db
+from news_intel.jobs.delivery_authorization import PRODUCTION_DELIVERY_AUTHORIZED
 from news_intel.jobs.weekly_production import (
     _is_valid_weekly_window,
     run_weekly_production,
@@ -106,7 +107,9 @@ def test_late_catchup_reports_git_head_even_when_skipped(config, conn):
 
 def test_valid_sunday_window_proceeds_and_records_git_head(config, conn):
     _seed_full_week(conn)
-    summary = run_weekly_production(config, conn, now=SUNDAY_PT.astimezone(UTC))
+    summary = run_weekly_production(
+        config, conn, now=SUNDAY_PT.astimezone(UTC), authorization=PRODUCTION_DELIVERY_AUTHORIZED
+    )
 
     assert summary.skipped_late_catchup is False
     assert summary.git_head
@@ -122,15 +125,22 @@ def test_valid_sunday_window_proceeds_and_records_git_head(config, conn):
 
 def test_valid_sunday_window_creates_exactly_one_weekly_digest_row(config, conn):
     _seed_full_week(conn)
-    run_weekly_production(config, conn, now=SUNDAY_PT.astimezone(UTC))
+    run_weekly_production(
+        config, conn, now=SUNDAY_PT.astimezone(UTC), authorization=PRODUCTION_DELIVERY_AUTHORIZED
+    )
     count = conn.execute("SELECT COUNT(*) AS n FROM digests WHERE kind = 'weekly'").fetchone()["n"]
     assert count == 1
 
 
 def test_repeated_invocation_within_the_same_week_is_idempotent_not_a_resend(config, conn):
     _seed_full_week(conn)
-    first = run_weekly_production(config, conn, now=SUNDAY_PT.astimezone(UTC))
-    second = run_weekly_production(config, conn, now=(SUNDAY_PT + timedelta(minutes=5)).astimezone(UTC))
+    first = run_weekly_production(
+        config, conn, now=SUNDAY_PT.astimezone(UTC), authorization=PRODUCTION_DELIVERY_AUTHORIZED
+    )
+    second = run_weekly_production(
+        config, conn, now=(SUNDAY_PT + timedelta(minutes=5)).astimezone(UTC),
+        authorization=PRODUCTION_DELIVERY_AUTHORIZED,
+    )
 
     # No real Telegram bot token configured in this test config, so the send
     # itself stays dry-run (sent_dry_run=True) even though dry_run=False was
@@ -147,7 +157,9 @@ def test_ambiguous_allowlist_fails_closed_before_any_write(config, conn, monkeyp
     monkeypatch.setattr(type(config.secrets), "allowed_chat_id_list", property(lambda self: [111, 222]))
     _seed_full_week(conn)
     counts_before = conn.execute("SELECT COUNT(*) AS n FROM job_runs").fetchone()["n"]
-    summary = run_weekly_production(config, conn, now=SUNDAY_PT.astimezone(UTC))
+    summary = run_weekly_production(
+        config, conn, now=SUNDAY_PT.astimezone(UTC), authorization=PRODUCTION_DELIVERY_AUTHORIZED
+    )
     assert summary.skipped_late_catchup is False
     assert summary.sent is False
     counts_after = conn.execute("SELECT COUNT(*) AS n FROM job_runs").fetchone()["n"]
