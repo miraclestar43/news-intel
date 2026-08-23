@@ -460,3 +460,20 @@ def test_why_it_matters_nvidia_poolside_regression_names_deal_not_nvidia_worth()
     assert "$6 billion" in result
     assert "deal" in result
     assert "worth $6" not in result
+
+
+def test_chinese_takeaway_ukraine_strike_regression_names_actor_not_agent_ambiguous():
+    """2026-08-23: real production regression (Aug 22 en_global digest, not
+    yet delivered) -- "看点：Ukraine军事打击" reads as Ukraine performing
+    the strike, when Ukraine was struck by Russia. The source text names
+    the actor via the demonym adjective "Russian" (excluded from principal-
+    entity selection as a modifier, but still a reliable actor signal for
+    this specific construction)."""
+    primary = {
+        "title": "Rescuers dig through Ukraine mall wreckage as Zelensky condemns 'despicable' Russian strike",
+        "excerpt": "Four people are still missing after Friday's attack which killed 16 and left 130 injured, "
+        "including a number of children.",
+    }
+    result = chinese_takeaway("World", entities=[], primary=primary)
+    assert "Ukraine遭俄军袭击" in result
+    assert "Ukraine军事打击" not in result

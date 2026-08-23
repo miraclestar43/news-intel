@@ -144,6 +144,37 @@ _VICTIM_PRONE_EVENT_LABELS = frozenset({
     "a drone strike", "shelling", "a bombardment",
 })
 
+# 2026-08-23 repair: chinese_takeaway() had the identical agent-ambiguity
+# issue why_it_matters() was fixed for above -- "看点：Ukraine军事打击"
+# (real production regression, Aug 22 en_global digest, not yet delivered)
+# reads as Ukraine performing the strike, when Ukraine was struck. Unlike
+# the English fix (a phrasing change alone was enough), the actor -- when
+# the source text names one -- should be surfaced ("乌克兰遭俄军袭击"),
+# not just described as "affected"; a demonym adjective ("Russian strike")
+# immediately before the matched event-type term is a reliable signal of
+# who acted, even though it is deliberately excluded from principal-entity
+# selection (see _TITLE_LEAD_STOPWORDS above -- a modifier, not the
+# subject). General mapping, not specific to this one story; only the
+# demonyms most likely to appear in conflict/strike reporting are covered,
+# consistent with this module's "floor, not exhaustive" design elsewhere.
+_DEMONYM_ZH = {
+    "russian": "俄", "ukrainian": "乌", "israeli": "以", "palestinian": "巴",
+    "chinese": "中", "american": "美", "iranian": "伊朗", "north korean": "朝",
+    "south korean": "韩", "japanese": "日", "indian": "印", "british": "英",
+    "french": "法", "german": "德", "saudi": "沙特", "turkish": "土耳其",
+    "syrian": "叙利亚", "lebanese": "黎巴嫩", "yemeni": "也门",
+}
+def _victim_prone_actor_zh(lowered_text: str) -> str | None:
+    """Simplified to a whole-text search rather than a position-windowed
+    one: victim-prone-label stories are short conflict/strike blurbs in
+    practice, not long multi-topic articles, so the risk of picking up an
+    unrelated demonym from elsewhere in the text is low -- consistent with
+    this module's "floor, not exhaustive" design elsewhere."""
+    for demonym, zh in _DEMONYM_ZH.items():
+        if demonym in lowered_text:
+            return zh
+    return None
+
 _EVENT_TYPE_LABELS_ZH: dict[str, str] = {
     "an acquisition": "收购交易",
     "a corporate spin-off": "公司分拆",
@@ -733,6 +764,11 @@ def chinese_takeaway(category: str, entities: list[str] | None = None, primary: 
 
     amount_clause = f"（{amount_role_zh}约{format_dollar_value(amount)}）" if amount else ""
     if entity and event_label_zh:
+        if event_label_en in _VICTIM_PRONE_EVENT_LABELS:
+            actor_zh = _victim_prone_actor_zh(lowered) if primary is not None else None
+            if actor_zh:
+                return f"看点：{entity}遭{actor_zh}军袭击{amount_clause}，属{context}重要动态。"
+            return f"看点：{entity}遭{event_label_zh}影响{amount_clause}，属{context}重要动态。"
         return f"看点：{entity}{event_label_zh}{amount_clause}，属{context}重要动态。"
     # 2026-08-21 repair: this branch used to read "{entity}相关{context}
     # 重要动态" -- the entity/category-only template the user explicitly
