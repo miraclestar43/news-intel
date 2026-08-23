@@ -199,3 +199,24 @@ def test_it_morning_roundup_bulletin_is_rejected_as_noise():
         "阿里巴巴 2027 财年第一财季归母净利润 105.37 亿元，同比下降 76%"
     )
     assert result.bucket == "explicit_noise"
+
+
+# 2026-08-23: real production regression (Aug 22 zh_cn digest, not yet
+# delivered) -- a routine national trade-statistics release ("2026 年 1~7
+# 月我国汽车出口 1108 亿美元，同比增 55%") was classified "US / China /
+# World" purely because it incidentally mentions "美国" as one of several
+# export destinations in a long statistics report -- domestic trade/export
+# DATA, not a US-China policy or geopolitics story. macro_markets had no
+# trade/export vocabulary at all, so it never won this classification
+# before falling through to the china_policy bucket's bare-country-name
+# signal.
+def test_domestic_trade_export_statistics_are_markets_not_us_china_world():
+    title = "乘联分会崔东树：2026 年 1~7 月我国汽车出口 1108 亿美元，同比增 55%"
+    text = (
+        title + " IT之家 8 月 22 日消息，乘联分会秘书长崔东树今天发布博文，表示基于海关总署数据，"
+        "2026 年 1~7 月中国商品贸易出口额为 25,237 亿美元，同比增长 18%。崔东树指出 2026 年 7 月我国汽车出口 "
+        "190 亿美元，同比增长 60%；中国汽车零部件出口是美国为主要市场。"
+    )
+    result = classify_relevance(text, ZH_TOPICS, CONFIG.policy.relevance_multipliers, title=title)
+    assert result.bucket == "markets_macro_corporate"
+    assert result.bucket != "us_china_policy_geopolitics"

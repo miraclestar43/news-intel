@@ -126,6 +126,20 @@ groups:
       - 融资
       - 估值
       - 成品油价格
+      # 2026-08-23 repair: real production regression (Aug 22 zh_cn digest,
+      # not yet delivered) -- this group had NO trade/export-statistics
+      # vocabulary at all, so a routine national trade-statistics release
+      # ("2026 年 1~7 月我国汽车出口 1108 亿美元，同比增 55%") never
+      # matched markets_macro_corporate and fell through to the china_
+      # policy bucket purely because it incidentally mentions "美国" as one
+      # of several export destinations -- domestic trade/export DATA, not
+      # a US-China policy or geopolitics story. General macro-statistics
+      # terminology, not specific to autos.
+      - 出口额
+      - 进出口
+      - 贸易顺差
+      - 贸易逆差
+      - 贸易出口
 
   china:
     weight: 1.10
