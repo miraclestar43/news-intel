@@ -566,6 +566,14 @@ _DOLLAR_ROLE_PHRASES: list[tuple[tuple[str, ...], str]] = [
     # neither matched the original "valued at"/"valuing" phrasing.
     (("valuation", "valued at", "valuing", "value it at", "value them at", "value the"), "valued at"),
     (("debt", "financing"), "seeking financing of"),
+    # 2026-08-23 repair: real production regression (Aug 22 en_global
+    # digest, not yet delivered) -- "Nvidia plans to use its $6B deal with
+    # Poolside to build..." rendered as "NVIDIA worth $6 billion" -- $6B is
+    # the size of Nvidia's commercial deal WITH Poolside, not a valuation
+    # of Nvidia itself. Checked before "invest" since "X's $N deal with Y"
+    # is a common, more specific construction than the generic invest/
+    # raise bucket.
+    (("deal",), "striking a deal valued at"),
     (("invest", "investment", "funding", "raise", "raising", "raised"), "an investment of"),
 ]
 
@@ -606,6 +614,7 @@ _ZH_DOLLAR_ROLE_PHRASES: list[tuple[tuple[str, ...], str]] = [
     (("revenue", "sales"), "营收"),
     (("valuation", "valued at", "valuing", "value it at", "value them at", "value the"), "估值"),
     (("debt", "financing"), "债务融资"),
+    (("deal",), "交易金额"),
     (("invest", "investment", "funding", "raise", "raising", "raised"), "融资"),
 ]
 

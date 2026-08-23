@@ -443,3 +443,20 @@ def test_why_it_matters_recognizes_corporate_spin_off_event_type():
     }
     result = why_it_matters(primary, None, "AI & Semiconductors", entities=["Kakao"])
     assert "spin-off" in result or "spin off" in result
+
+
+def test_why_it_matters_nvidia_poolside_regression_names_deal_not_nvidia_worth():
+    """2026-08-23: real production regression (Aug 22 en_global digest, not
+    yet delivered) -- "Nvidia plans to use its $6B deal with Poolside to
+    build..." rendered as "NVIDIA worth $6 billion" -- $6B is the size of
+    the commercial deal, not a valuation of Nvidia itself."""
+    primary = {
+        "title": "Sources: Nvidia plans to use its $6B deal with Poolside to build an open-weight AI model "
+        "to compete with Chinese models like DeepSeek and Kimi (Robbie Whelan/Wall Street Journal)",
+        "excerpt": "A sweeping agreement with startup Poolside aims to build an open AI ecosystem in the "
+        "U.S. to compete with Chinese heavyweights and American AI giants.",
+    }
+    result = why_it_matters(primary, None, "AI & Semiconductors", entities=["NVIDIA"])
+    assert "$6 billion" in result
+    assert "deal" in result
+    assert "worth $6" not in result
