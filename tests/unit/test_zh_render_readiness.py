@@ -320,3 +320,18 @@ def test_what_happened_zh_ymtc_regression_is_capped_not_a_full_dump():
     assert "330 亿元" in result  # the key supported figure is preserved
     assert "归母净利润" not in result  # the tail (background detail) is dropped, not everything
     assert len(result) < len(excerpt)
+
+
+def test_why_it_matters_zh_youdao_regression_names_ticker_not_exchange():
+    """2026-08-23: real production regression (网易有道/Youdao's Aug 21
+    zh_cn digest, not yet delivered) -- the common "Company (EXCHANGE:
+    TICKER)" convention put "NYSE" earlier in the text than "DAO" (the
+    company's actual ticker/entity), so the earliest-position heuristic
+    picked the listing venue over the subject."""
+    primary = {
+        "title": "网易有道2026Q2财报：Q2净收入14.7亿元，AI原生战略加速兑现商业价值",
+        "excerpt": "8月20日，网易有道（NYSE：DAO）发布了2026年第二季度未经审计的财务业绩。",
+    }
+    result = why_it_matters_zh(primary, None, "Markets & Economy", entities=["DAO", "NYSE"])
+    assert "DAO" in result
+    assert "NYSE" not in result

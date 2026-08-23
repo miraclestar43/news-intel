@@ -260,6 +260,14 @@ _NON_ENTITY_ACRONYMS = frozenset({
     # replay picked it as the principal entity for a NAND-market report --
     # a generic finance acronym, never itself a story's subject.
     "ASP", "YOY", "QOQ", "ROI",
+    # 2026-08-23: stock-exchange abbreviations, added after a real zh_cn
+    # replay (网易有道/Youdao's Aug 21 earnings story) picked "NYSE" over
+    # "DAO" (the company's actual ticker/entity) as the principal entity --
+    # the common "Company (EXCHANGE: TICKER)" convention puts the exchange
+    # name first, so the earliest-position heuristic otherwise favors the
+    # venue over the subject. A listing venue is never itself a story's
+    # subject, same category as IPO/CEO above.
+    "NYSE", "NASDAQ", "LSE", "HKEX", "SSE", "SZSE", "ASX", "TSX", "TSXV",
 })
 
 # 2026-08-18 defect: pipeline/entities.py's shared extraction (tuned for
