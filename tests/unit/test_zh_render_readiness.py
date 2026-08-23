@@ -248,3 +248,25 @@ def test_why_it_matters_zh_logitech_regression_names_defendant_and_lawsuit_no_fa
     assert "诉讼" in result
     assert "财报" not in result
     assert "1.1万亿" not in result and "1.12万亿" not in result
+
+
+def test_why_it_matters_zh_ymtc_regression_names_nand_not_dram():
+    """2026-08-23: real production regression (长江存储/YMTC's Aug 22
+    NAND-flash IPO story, not yet delivered) -- entities.py extracted
+    ["Counterpoint Research", "DRAM", "IDM", "IPO", "NAND", "NAND Flash"]
+    ("DRAM" is a background/comparison mention deep in the article; "NAND"
+    is the company's own technology, named in the TITLE itself: "国产
+    NAND 龙头长江存储..."), but _principal_entity_zh's old candidates[0]
+    just took the first survivor in entities.py's own list order,
+    picking "DRAM" over "NAND"."""
+    primary = {
+        "title": "国产 NAND 龙头长江存储冲刺科创板：IPO 审核状态变更为已受理，拟融资 330 亿元",
+        "excerpt": "IT之家 8 月 21 日消息，上海证券交易所网站显示，长江存储控股股份有限公司首次公开发行股票并在"
+        "科创板上市的 IPO 审核状态已变更为已受理。公司拟融资金额为 330 亿元，保荐机构为中信证券和中信建投。",
+    }
+    result = why_it_matters_zh(
+        primary, None, "Markets & Economy",
+        entities=["Counterpoint Research", "DRAM", "IDM", "IPO", "NAND", "NAND Flash"],
+    )
+    assert "NAND" in result
+    assert "DRAM" not in result

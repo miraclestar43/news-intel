@@ -313,7 +313,29 @@ def _principal_entity_zh(entities: list[str] | None, text: str = "") -> str | No
         e for e in entities
         if e.upper() not in _NON_ENTITY_ACRONYMS and " " not in e
     ]
-    return candidates[0] if candidates else entities[0]
+    if not candidates:
+        return entities[0]
+    # 2026-08-23 repair: real production regression (长江存储/YMTC's Aug
+    # 22 NAND-flash IPO story, not yet delivered) -- entities.py extracted
+    # ["Counterpoint Research", "DRAM", "IDM", "IPO", "NAND", "NAND Flash"]
+    # (DRAM is a background/comparison mention deep in the article; NAND
+    # is the company's own technology, named in the TITLE itself: "国产
+    # NAND 龙头长江存储..."), but candidates[0] just took the first
+    # survivor in entities.py's own (not position-meaningful) list order,
+    # picking "DRAM" over "NAND". Ranks by earliest occurrence in the
+    # combined text instead -- the same fix already applied to English
+    # entity selection and to both editions' event-type-label selection.
+    if not text:
+        return candidates[0]
+    lowered_text = text.lower()
+
+    def _position(entity: str) -> int:
+        idx = text.find(entity)
+        if idx == -1:
+            idx = lowered_text.find(entity.lower())
+        return idx if idx != -1 else len(text)
+
+    return min(candidates, key=_position)
 
 
 def why_it_matters_zh(
