@@ -125,6 +125,15 @@ _EVENT_TYPE_LABELS_EN: list[tuple[str, str]] = [
     ("bombard", "a bombardment"),
 ]
 
+# 2026-08-22: event-type labels that typically describe something that
+# HAPPENS TO an entity (a struck location, a bombed target) rather than
+# something an entity DOES -- see why_it_matters()'s entity+event_label
+# branch above. General category, not tied to any specific label pair.
+_VICTIM_PRONE_EVENT_LABELS = frozenset({
+    "a strike", "a strike/labor action", "an attack", "a missile launch",
+    "a drone strike", "shelling", "a bombardment",
+})
+
 _EVENT_TYPE_LABELS_ZH: dict[str, str] = {
     "an acquisition": "收购交易",
     "a merger": "合并交易",
@@ -158,6 +167,7 @@ _EVENT_TYPE_LABELS_ZH: dict[str, str] = {
     "a leadership change": "领导层变动",
     "a leadership resignation": "领导层辞职",
     "a strike/labor action": "罢工/劳工行动",
+    "a strike": "军事打击",
     "a Federal Reserve rate move": "美联储利率行动",
     "an inflation report": "通胀数据",
     "a recession signal": "经济衰退信号",
@@ -228,6 +238,15 @@ _NON_ENTITY_ACRONYMS = frozenset({
 _TITLE_LEAD_STOPWORDS = frozenset({
     "The", "A", "An", "New", "Report", "Reports", "Reportedly", "Officials", "Company",
     "Companies", "Exclusive", "Breaking", "Analysis", "Update", "According",
+    # 2026-08-22 repair: real production regression (Aug 22 en_global
+    # replay, not yet delivered -- caught during the required verification
+    # replay) -- "Rescuers dig through Ukraine mall wreckage..." (entities
+    # list empty) rendered as "Rescuers's strike/labor action", since
+    # "Rescuers" -- a generic role noun, capitalized only by sentence-
+    # initial position, same category as "Officials" already denylisted
+    # above -- won as the lead candidate. Skipping it lets the scan reach
+    # "Ukraine" instead, the story's real subject.
+    "Rescuers", "Survivors", "Witnesses", "Victims",
     # Nationality/demonym adjectives: grammatically modifiers ("Israeli
     # airstrikes hit...", "Chinese regulators fine...") that are never
     # themselves the subject entity being modified -- excluding them is a
@@ -444,21 +463,52 @@ def _event_type_label(lowered_text: str, labels: list[tuple[str, str]]) -> str |
     term the article was actually ABOUT. A term appearing earlier in the
     text is the more prominent, more likely-to-be-the-actual-subject
     signal -- same principle already applied to entity selection."""
-    best: tuple[int, str] | None = None
+    best: tuple[int, str, str] | None = None
     for term, label in labels:
         idx = lowered_text.find(term)
         if idx == -1:
             continue
         if best is None or idx < best[0]:
-            best = (idx, label)
+            best = (idx, label, term)
     if best is None:
         return None
-    idx, label = best
+    idx, label, term = best
     window_start = max(0, idx - _EVENT_TYPE_REFUSAL_WINDOW_CHARS)
     preceding = lowered_text[window_start:idx]
     if any(verb in preceding for verb in _EVENT_TYPE_REFUSAL_VERBS):
         return f"a refusal to allow {label}"
+    if term == "strike " and label == "a strike/labor action":
+        label = _disambiguate_strike_label(lowered_text, idx)
     return label
+
+
+# 2026-08-22 repair: real production regression (Aug 22 en_global replay,
+# not yet delivered -- caught during the required verification replay) --
+# "Rescuers dig through Ukraine mall wreckage ... killed 16 ... Russian
+# strike" rendered as "a strike/labor action" for a MISSILE STRIKE, since
+# bare "strike " is genuinely ambiguous between a labor strike and a
+# military strike and the label list default assumed labor. General
+# disambiguation, not specific to this one story: war-context words
+# (war/military/missile/attack/killed/wreckage/troops/shelling) nearby
+# indicate a military strike; labor-context words (union/workers/walkout/
+# picket) indicate a labor action; with neither, the ambiguous default is
+# kept unchanged (an honest floor, not a guess).
+_STRIKE_WAR_CONTEXT_TERMS = (
+    "war", "military", "missile", "attack", "killed", "wreckage", "troops", "shelling",
+    "airstrike", "air strike", "bombard", "invasion", "combat",
+)
+_STRIKE_LABOR_CONTEXT_TERMS = ("union", "workers", "walkout", "picket", "labor", "labour")
+_STRIKE_CONTEXT_WINDOW_CHARS = 80
+
+
+def _disambiguate_strike_label(lowered_text: str, idx: int) -> str:
+    window_start = max(0, idx - _STRIKE_CONTEXT_WINDOW_CHARS)
+    window = lowered_text[window_start : idx + _STRIKE_CONTEXT_WINDOW_CHARS]
+    if any(term in window for term in _STRIKE_WAR_CONTEXT_TERMS):
+        return "a strike"
+    if any(term in window for term in _STRIKE_LABOR_CONTEXT_TERMS):
+        return "a strike/labor action"
+    return "a strike/labor action"
 
 
 # 2026-08-21 repair: two real production defects (Aug 20 en_global
@@ -589,6 +639,26 @@ def why_it_matters(
     event_label = _event_type_label(lowered, _EVENT_TYPE_LABELS_EN)
 
     if entity and event_label:
+        # 2026-08-22 repair: real production regression (Aug 22 en_global
+        # replay, not yet delivered -- caught during the required
+        # verification replay) -- "Rescuers dig through Ukraine mall
+        # wreckage ... Russian strike" (entities empty, no "Russia" noun
+        # -- only the denylisted adjective "Russian" -- anywhere in the
+        # text) fell back to "Ukraine" as entity, then rendered "Ukraine's
+        # strike" -- backwards: Ukraine was struck, not the striker. A
+        # possessive framing ("{entity}'s {label}") asserts entity
+        # performed the action, which is only safe for label types an
+        # entity typically DOES (acquisition/lawsuit/earnings report) --
+        # never for conflict-event types that typically happen TO a
+        # location/party (strike/attack/missile/bombardment/shelling),
+        # where the extracted entity is at least as likely to be the
+        # target as the actor. General category split, not specific to
+        # Ukraine/Russia.
+        if event_label in _VICTIM_PRONE_EVENT_LABELS:
+            return (
+                f"Why it matters: {event_label}{amount_clause} affecting {entity} "
+                f"is a material development in {context}."
+            )
         # Drop the leading article ("an acquisition" -> "acquisition") after
         # a possessive -- "Entity's an acquisition" is not grammatical.
         possessive_label = event_label.removeprefix("a ").removeprefix("an ")

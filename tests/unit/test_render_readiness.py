@@ -394,3 +394,41 @@ def test_why_it_matters_gaza_regression_names_target_not_co_actor():
     assert "Israel" in result
     assert "Canada" not in result
     assert "refusal" in result.lower()
+
+
+def test_why_it_matters_ukraine_strike_regression_avoids_wrong_agency_and_labor_mislabel():
+    """2026-08-22: real production regression caught during the required
+    Aug 22 verification replay (not yet delivered) -- "Rescuers dig through
+    Ukraine mall wreckage ... killed 16 ... Russian strike" (entities.py
+    extracted nothing at all) rendered as "Rescuers's strike/labor action"
+    -- "Rescuers" is a generic role noun capitalized only by sentence-
+    initial position, and bare "strike" is ambiguous between a labor
+    strike and a military strike, defaulting to the wrong sense here.
+    After skipping "Rescuers", "Ukraine" becomes the entity -- but a
+    possessive framing ("Ukraine's strike") would still backwards-imply
+    Ukraine did the striking, when it was struck."""
+    primary = {
+        "title": "Rescuers dig through Ukraine mall wreckage as Zelensky condemns 'despicable' Russian strike",
+        "excerpt": "Four people are still missing after Friday's attack which killed 16 and left 130 injured, "
+        "including a number of children.",
+    }
+    result = why_it_matters(primary, None, "World", entities=[])
+    assert "Rescuers" not in result
+    assert "Ukraine" in result
+    assert "Ukraine's strike" not in result
+    assert "labor" not in result.lower()
+    assert "a strike affecting Ukraine" in result
+
+
+def test_why_it_matters_genuine_labor_strike_non_regression():
+    """Non-regression: a genuine labor-context strike still renders sensibly
+    (as "affecting" the company, not falsely as a military strike)."""
+    primary = {
+        "title": "Boeing workers launch a strike after union rejects latest contract offer",
+        "excerpt": "Thousands of Boeing factory workers walked off the job today after the union voted to "
+        "reject the company's latest contract proposal.",
+    }
+    result = why_it_matters(primary, None, "Markets & Economy", entities=["Boeing"])
+    assert "Boeing" in result
+    assert "missile" not in result.lower()
+    assert "military" not in result.lower()
