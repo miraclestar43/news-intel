@@ -251,6 +251,20 @@ def test_why_it_matters_mercor_regression_names_valuation_not_generic_worth():
     assert "worth $20" not in result
     assert "ranks among today's most material" not in result
     assert "this development involving" not in result
+    # 2026-08-22: real production regression -- $20B is MERCOR's valuation
+    # (the entity being invested in), not NVIDIA's (the entity doing the
+    # investing) -- entities.py only extracted "NVIDIA" (the grammatical
+    # subject of "Nvidia has discussed..."), and the earliest-position
+    # entity heuristic then named NVIDIA as "valued at $20 billion", which
+    # misattributes the valuation and implies NVIDIA itself invested $20B
+    # (the actual, undisclosed-in-source amount is "tens of millions").
+    # "invest(s/ed/ing) in X" marks X as the investment recipient and must
+    # win outright over the grammatical-subject heuristic.
+    assert "Mercor" in result
+    assert "NVIDIA valued at" not in result
+    zh_result = chinese_takeaway("AI & Semiconductors", entities=["NVIDIA"], primary=primary)
+    assert "Mercor" in zh_result
+    assert "NVIDIA" not in zh_result.split("看点：")[1].split("，")[0]
 
 
 def test_why_it_matters_role_phrase_defaults_to_worth_with_no_role_keyword_nearby():

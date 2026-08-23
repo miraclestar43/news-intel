@@ -304,6 +304,37 @@ def _condemnation_target_entity(text: str | None) -> str | None:
     return None
 
 
+# 2026-08-22 repair: real production regression (Aug 19 en_global digest,
+# already delivered) -- "Nvidia has discussed an investment in Mercor as
+# part of a round valuing the startup at $20B" rendered as "NVIDIA valued
+# at $20 billion" -- NVIDIA is the grammatical subject (the one doing the
+# discussing/investing), but Mercor is the startup being invested in AND
+# the one whose valuation $20B actually describes ("valuing THE STARTUP
+# at $20B" refers back to Mercor, not Nvidia). General pattern: "invest(s/
+# ed/ing/ment) in X" marks X as the investment recipient -- the entity
+# whose situation (valuation, funding round, business) the story is
+# actually about, not the investor performing the action. Same shape of
+# fix as _condemnation_target_entity above (actor vs. the party actually
+# affected), tried with the same priority.
+_INVESTMENT_TARGET_RE = re.compile(r"invest(?:s|ed|ing|ment)?\s+in\s+", re.IGNORECASE)
+
+
+def _investment_target_entity(text: str | None) -> str | None:
+    if not text:
+        return None
+    match = _INVESTMENT_TARGET_RE.search(text)
+    if not match:
+        return None
+    tail = text[match.end() :].lstrip()
+    word_match = _TITLE_LEAD_WORD_RE.match(tail)
+    if not word_match:
+        return None
+    candidate = word_match.group(0)
+    if candidate.upper() in _NON_ENTITY_ACRONYMS or candidate in _TITLE_LEAD_STOPWORDS:
+        return None
+    return candidate
+
+
 def _title_lead_entity(title: str | None) -> str | None:
     stripped = strip_title_preamble(title or "").strip()
     pos = 0
@@ -350,8 +381,27 @@ def _is_non_entity_candidate(candidate: str) -> bool:
 
 
 def _principal_entity(entities: list[str] | None, text: str = "", title: str | None = None) -> str | None:
+    # 2026-08-22 repair: real production regression (Aug 19 en_global
+    # digest, already delivered) -- "Nvidia has discussed an investment in
+    # Mercor as part of a round valuing the startup at $20B" rendered as
+    # "NVIDIA valued at $20 billion", even though "Mercor" (the investment
+    # recipient, whose valuation the figure actually describes) was simply
+    # appended into the earliest-position race, where NVIDIA (the
+    # grammatical subject, mentioned first) still won. These grammatical-
+    # role patterns (investment target, condemnation target) are higher-
+    # confidence, more specific signals than "which capitalized word/known
+    # entity appears earliest" -- they must WIN outright, not just get a
+    # seat in the position race a more prominently-placed actor would
+    # still win.
+    override = (
+        _investment_target_entity(title) or _investment_target_entity(text)
+        or _condemnation_target_entity(title) or _condemnation_target_entity(text)
+    )
+    if override and not _is_non_entity_candidate(override):
+        return override
+
     candidates = [e for e in (entities or []) if not _is_non_entity_candidate(e)]
-    lead = _condemnation_target_entity(title) or _condemnation_target_entity(text) or _title_lead_entity(title)
+    lead = _title_lead_entity(title)
     if lead and lead not in candidates:
         candidates.append(lead)
     if not candidates:

@@ -165,7 +165,7 @@ def render_production_daily_zh(
     elif len(result.all_stories) < UNDERFILLED_POOL_THRESHOLD:
         lines.append("")
         lines.append(
-            f"[UNDERFILLED_QUALIFIED_POOL] 今日仅有 {len(result.all_stories)} 条动态通过质量筛选，"
+            f"说明：今日仅有 {len(result.all_stories)} 条动态达到质量与来源多样性标准，"
             "未添加低质量或宣传性内容凑数。"
         )
 

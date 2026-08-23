@@ -149,8 +149,8 @@ def render_production_daily(
     elif len(result.all_stories) < UNDERFILLED_POOL_THRESHOLD:
         lines.append("")
         lines.append(
-            f"[UNDERFILLED_QUALIFIED_POOL] Only {len(result.all_stories)} stories cleared the quality bar "
-            "today -- no lower-quality or promotional filler was added to reach a fuller digest."
+            f"Note: only {len(result.all_stories)} stories met today's quality and source-diversity bar "
+            "-- no lower-quality or promotional items were added just to fill out the digest."
         )
 
     if calendar_items:
