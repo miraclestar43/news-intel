@@ -358,3 +358,29 @@ def test_bare_single_letter_token_does_not_merge_unrelated_stories():
         entities=["NVIDIA", "Series A", "Tim Fernholz"],
     )
     assert same_event_story(a, b, generic_terms=_GENERIC_TERMS) is False
+
+
+# 2026-08-23: real defect found via the required Aug 19-21 verification
+# replay (not a delivered digest) -- "Series" (as in "Series A"/"Series B")
+# matched between two COMPLETELY UNRELATED funding-round stories, merging
+# them into one "event" and producing a "newly named (NVIDIA)" novelty
+# note on Starcloud's digest entry that traced back to an unrelated Point2
+# Technology story, not anything about Starcloud itself.
+def test_generic_funding_round_terms_do_not_merge_unrelated_companies():
+    starcloud = _item(
+        "Space data center startup Starcloud raised a $250M extension, at a $2.3B valuation, to its "
+        "March $170M Series A funding round; source: Nvidia invested $25M (Tim Fernholz/TechCrunch)",
+        "AI & Semiconductors",
+        excerpt="Starcloud, a startup developing satellites that can perform AI inference in orbit, told "
+        "TechCrunch that it has added a $250 million extension to its March $170 million Series A round.",
+        entities=["NVIDIA", "Series A", "Tim Fernholz"],
+    )
+    point2 = _item(
+        "Point2 Technology, which develops RF-based data center interconnection tech, raised a $136M "
+        "Series B from LB Investment, Arm, Maverick Silicon, and others (Giacomo Lee/SDxCentral)",
+        "AI & Semiconductors",
+        excerpt="Point2 Technology raised a $136 million Series B round.",
+        entities=["ARM", "Giacomo Lee", "LB Investment", "Maverick Silicon", "Point2", "Point2 Technology",
+                  "Series B"],
+    )
+    assert same_event_story(starcloud, point2, generic_terms=_GENERIC_TERMS) is False

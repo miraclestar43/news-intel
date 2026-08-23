@@ -104,8 +104,22 @@ _MACRO_ACRONYM_TERMS = frozenset(
 # _MACRO_ACRONYM_TERMS's spelled-out names (Price [Index], [Interest]
 # Rate, [Chip] Demand, [Economic] Growth, [Money] Supply) and are exactly
 # as generic on their own.
+# 2026-08-23: "Series" (as in "Series A"/"Series B"/"Series C" funding-
+# round terminology), "Round", "Funding", and "Financing" added -- real
+# defect found via the required Aug 19-21 verification replay (not a
+# delivered digest): "Series" matched between two COMPLETELY UNRELATED
+# funding-round stories (Point2 Technology's $136M Series B and
+# Starcloud's $170M Series A extension) purely because both texts happen
+# to describe a funding round using this generic term, merging them into
+# one "event" and misattributing Point2's details/novelty comparison onto
+# Starcloud's digest entry. Same root cause and fix pattern as the rest of
+# this set: a word naming a funding-round STRUCTURE, not a shared
+# distinctive company/deal.
 _GENERIC_ECONOMIC_TERMS = frozenset(
-    {"Demand", "Price", "Prices", "Rate", "Rates", "Index", "Growth", "Supply", "Cost", "Costs", "Income"}
+    {
+        "Demand", "Price", "Prices", "Rate", "Rates", "Index", "Growth", "Supply", "Cost", "Costs", "Income",
+        "Series", "Round", "Funding", "Financing",
+    }
 )
 
 # 2026-08-14 defect: "PBC" (Public Benefit Corporation, a generic legal
