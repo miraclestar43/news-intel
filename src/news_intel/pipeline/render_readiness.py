@@ -609,6 +609,23 @@ _DOLLAR_ROLE_PHRASES: list[tuple[tuple[str, ...], str]] = [
 ]
 
 
+# 2026-08-23 repair: real production regression (Aug 21 en_global digest,
+# already delivered) -- "Anthropic's bankers said the company could raise
+# $100B+ in its IPO, which could value it at $2T" rendered as "Anthropic
+# valued at $2 trillion" -- stated as settled fact when the source is
+# explicitly prospective (bankers' discussions with potential investors,
+# not a completed raise or confirmed valuation). Only the "valued at" role
+# currently has a modal-safe variant ("could be valued at"); this is
+# deliberately narrow rather than a general modal-rewriting system for
+# every role phrase, which would need per-phrase grammar this deployment's
+# floor doesn't attempt.
+_DOLLAR_UNCERTAINTY_MARKERS = (
+    "could", "might", "may ", "discussed", "in talks", "considering", "exploring",
+    "potential", "reportedly", "sources say", "sources said",
+)
+_DOLLAR_MODAL_VARIANTS = {"valued at": "could be valued at"}
+
+
 def _dollar_role_phrase(text: str, position: int) -> str:
     window_start = max(0, position - _DOLLAR_ROLE_LOOKBACK_CHARS)
     preceding = text[window_start:position].lower()
@@ -616,6 +633,8 @@ def _dollar_role_phrase(text: str, position: int) -> str:
     nearby = preceding + " " + following
     for keywords, phrase in _DOLLAR_ROLE_PHRASES:
         if any(kw in nearby for kw in keywords):
+            if phrase in _DOLLAR_MODAL_VARIANTS and any(m in nearby for m in _DOLLAR_UNCERTAINTY_MARKERS):
+                return _DOLLAR_MODAL_VARIANTS[phrase]
             return phrase
     return "worth"
 
@@ -650,6 +669,9 @@ _ZH_DOLLAR_ROLE_PHRASES: list[tuple[tuple[str, ...], str]] = [
 ]
 
 
+_ZH_DOLLAR_MODAL_VARIANTS = {"估值": "或将估值"}
+
+
 def _dollar_role_phrase_zh(text: str, position: int) -> str:
     window_start = max(0, position - _DOLLAR_ROLE_LOOKBACK_CHARS)
     preceding = text[window_start:position].lower()
@@ -657,6 +679,8 @@ def _dollar_role_phrase_zh(text: str, position: int) -> str:
     nearby = preceding + " " + following
     for keywords, phrase in _ZH_DOLLAR_ROLE_PHRASES:
         if any(kw in nearby for kw in keywords):
+            if phrase in _ZH_DOLLAR_MODAL_VARIANTS and any(m in nearby for m in _DOLLAR_UNCERTAINTY_MARKERS):
+                return _ZH_DOLLAR_MODAL_VARIANTS[phrase]
             return phrase
     return "涉及金额"
 

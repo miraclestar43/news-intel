@@ -477,3 +477,24 @@ def test_chinese_takeaway_ukraine_strike_regression_names_actor_not_agent_ambigu
     result = chinese_takeaway("World", entities=[], primary=primary)
     assert "Ukraine遭俄军袭击" in result
     assert "Ukraine军事打击" not in result
+
+
+def test_why_it_matters_anthropic_preserves_prospective_valuation_language():
+    """2026-08-23: real production regression (Aug 21 en_global digest,
+    already delivered) -- "Anthropic's bankers said the company could raise
+    $100B+ in its IPO, which could value it at $2T" (explicitly prospective
+    -- bankers' discussions with potential investors, not a completed raise
+    or confirmed valuation) rendered as flat, settled fact: "Anthropic
+    valued at $2 trillion"."""
+    primary = {
+        "title": "Sources: Anthropic's bankers said the company could raise $100B+ in its IPO, which "
+        "could value it at $2T, in recent discussions with potential investors (New York Times)",
+        "excerpt": "The offering could value the five-year-old A.I. start-up at $2 trillion, its bankers "
+        "have told potential investors, which would exceed Elon Musk's SpaceX.",
+    }
+    result = why_it_matters(primary, None, "AI & Semiconductors", entities=["Anthropic"])
+    assert "could be valued at $2 trillion" in result
+    assert result.count("Anthropic valued at") == 0
+
+    zh_result = chinese_takeaway("AI & Semiconductors", entities=["Anthropic"], primary=primary)
+    assert "或将估值约$2 trillion" in zh_result
