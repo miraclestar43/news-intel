@@ -335,3 +335,20 @@ def test_why_it_matters_zh_youdao_regression_names_ticker_not_exchange():
     result = why_it_matters_zh(primary, None, "Markets & Economy", entities=["DAO", "NYSE"])
     assert "DAO" in result
     assert "NYSE" not in result
+
+
+def test_bei_passive_entity_zh_rejects_demonstrative_descriptive_phrases():
+    """2026-08-23: real production regression (Samsung SDI's Aug 22 zh_cn
+    digest, not yet delivered) -- "此次股份出售被视为三星 SDI 为中长期增长
+    持续扩大投资的承诺" extracted "此次股份出售" ("this share sale") as if
+    it were the passive-marked entity, since it happens to be the 6 CJK
+    characters immediately before "被" -- a demonstrative/generic
+    descriptive phrase, not a proper entity name."""
+    primary = {
+        "title": "三星 SDI 出售三星显示约 33% 持股套现 4.45 万亿韩元，全力押注储能系统和下一代电池",
+        "excerpt": "IT之家 8 月 22 日消息，三星 SDI 昨日向韩国交易所提交监管文件，将向三星显示出售其所持股份。"
+        "此次股份出售被视为三星 SDI 为中长期增长持续扩大投资的承诺。",
+    }
+    result = why_it_matters_zh(primary, None, "AI & Semiconductors", entities=["SDI", "Synergy Cells", "UPS"])
+    assert "SDI" in result
+    assert "此次股份出售" not in result

@@ -311,6 +311,18 @@ _BEI_PASSIVE_MAX_RUN_CHARS = 6
 _BEI_PASSIVE_MIN_RUN_CHARS = 2
 
 
+# 2026-08-23 repair: real production regression (Samsung SDI's Aug 22
+# zh_cn digest, not yet delivered) -- "此次股份出售被视为三星 SDI 为中长期
+# 增长持续扩大投资的承诺" ("this share sale is seen as...") extracted
+# "此次股份出售" ("this share sale") as if it were the passive-marked
+# entity -- a demonstrative/generic descriptive phrase, not a proper
+# entity name, because it happens to be the 6 CJK characters immediately
+# before "被". General demonstrative-prefix denylist, not specific to this
+# one story: a genuine company/person name never starts with "this"/"that"/
+# "the above"/"the current".
+_BEI_PASSIVE_NON_ENTITY_PREFIXES = ("此次", "该", "这次", "上述", "本次", "这", "那", "其")
+
+
 def _bei_passive_entity_zh(text: str) -> str | None:
     for idx, ch in enumerate(text):
         if ch != "被" or idx < _BEI_PASSIVE_MIN_RUN_CHARS:
@@ -319,8 +331,11 @@ def _bei_passive_entity_zh(text: str) -> str | None:
         while start > 0 and "一" <= text[start - 1] <= "鿿" and idx - start < _BEI_PASSIVE_MAX_RUN_CHARS:
             start -= 1
         run = text[start:idx]
-        if _BEI_PASSIVE_MIN_RUN_CHARS <= len(run) <= _BEI_PASSIVE_MAX_RUN_CHARS:
-            return run
+        if not (_BEI_PASSIVE_MIN_RUN_CHARS <= len(run) <= _BEI_PASSIVE_MAX_RUN_CHARS):
+            continue
+        if any(run.startswith(prefix) for prefix in _BEI_PASSIVE_NON_ENTITY_PREFIXES):
+            continue
+        return run
     return None
 
 
