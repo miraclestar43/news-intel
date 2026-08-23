@@ -77,6 +77,16 @@ _CATEGORY_CONTEXT_ZH = {
 _EVENT_TYPE_LABELS_EN: list[tuple[str, str]] = [
     ("acquisition", "an acquisition"),
     ("merger", "a merger"),
+    # 2026-08-23 repair: mirrors the zh_cn list's same-day addition
+    # (Kakao's spin-off story had no matching event type at all in
+    # either language's list) -- a general corporate-restructuring
+    # category, checked before "earnings" so a spin-off story whose body
+    # also mentions a revenue figure isn't mislabeled as an earnings report.
+    ("spin off", "a corporate spin-off"),
+    ("spin-off", "a corporate spin-off"),
+    ("spins off", "a corporate spin-off"),
+    ("splits into", "a corporate split"),
+    ("split into", "a corporate split"),
     ("earnings", "an earnings report"),
     ("layoff", "layoffs"),
     ("bankrupt", "a bankruptcy"),
@@ -136,6 +146,8 @@ _VICTIM_PRONE_EVENT_LABELS = frozenset({
 
 _EVENT_TYPE_LABELS_ZH: dict[str, str] = {
     "an acquisition": "收购交易",
+    "a corporate spin-off": "公司分拆",
+    "a corporate split": "公司分拆",
     "a merger": "合并交易",
     "an earnings report": "财报结果",
     "layoffs": "裁员",

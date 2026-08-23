@@ -432,3 +432,14 @@ def test_why_it_matters_genuine_labor_strike_non_regression():
     assert "Boeing" in result
     assert "missile" not in result.lower()
     assert "military" not in result.lower()
+
+
+def test_why_it_matters_recognizes_corporate_spin_off_event_type():
+    """Mirrors the zh_cn Kakao regression -- English list gained the same
+    "spin off"/"split into" category the same day."""
+    primary = {
+        "title": "Kakao plans to spin off its chat app-based platform business into a new company",
+        "excerpt": "Kakao said it would spin off its core messaging business into a separately listed entity.",
+    }
+    result = why_it_matters(primary, None, "AI & Semiconductors", entities=["Kakao"])
+    assert "spin-off" in result or "spin off" in result

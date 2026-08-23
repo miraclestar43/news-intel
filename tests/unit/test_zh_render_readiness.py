@@ -270,3 +270,31 @@ def test_why_it_matters_zh_ymtc_regression_names_nand_not_dram():
     )
     assert "NAND" in result
     assert "DRAM" not in result
+
+
+_KAKAO_TITLE = "韩国 IT 巨头 Kakao 计划年内完成分拆，新实体将聚焦 AI 智能体"
+_KAKAO_EXCERPT = (
+    "IT之家 8 月 21 日消息，据韩媒《每日经济新闻》报道，韩国 IT 巨头 Kakao 今日召开董事会，"
+    "宣布通过人事分割方式，将公司拆分为新设公司 Kakao AI 和存续公司 Kakao X。"
+    "按照净资产账面价值计算，拆分比例为 Kakao AI 36%、Kakao X 64%。据报道，Kakao 给出的拆分理由是适应 "
+    "AI 时代资本配置体系。新设立的 Kakao AI 将以 KakaoTalk 和 Kanana 为核心，专注于开发 AI 智能体。"
+    "该公司目标将用户的停留时间提高 50% 以上，并力争在 2030 年实现年均约 20% 的营收增长，"
+    "最终达到 6 万亿韩元（现汇率约合 291.06 亿元人民币）营收。"
+)
+
+
+def test_why_it_matters_zh_kakao_regression_names_split_not_earnings():
+    """2026-08-23: real production regression (Kakao's Aug 21 zh_cn digest,
+    not yet delivered) -- a corporate spin-off announcement had no
+    matching event type at all, so ranking fell through to "营收"
+    (revenue) -- a much-later, secondary mention that is a 2030
+    aspirational TARGET, not a current fact -- rendering "Kakao AI营收
+    业绩，金额约291.1亿" as if it were a reported earnings result."""
+    primary = {"title": _KAKAO_TITLE, "excerpt": _KAKAO_EXCERPT}
+    result = why_it_matters_zh(
+        primary, None, "AI & Semiconductors",
+        entities=["Kakao AI", "Kakao Bank", "Kakao Pay", "Kakao X", "SM Entertainment"],
+    )
+    assert "分拆" in result
+    assert "营收业绩" not in result
+    assert "291" not in result

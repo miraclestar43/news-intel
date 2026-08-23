@@ -89,6 +89,17 @@ _EVENT_TYPE_LABELS_ZH: list[tuple[str, str]] = [
     ("泄露", "安全漏洞"),
     ("上市", "上市/IPO"),
     ("融资", "融资"),
+    # 2026-08-23 repair: real production regression (Kakao's Aug 21 zh_cn
+    # digest, not yet delivered) -- a corporate SPIN-OFF/reorganization
+    # story ("宣布通过人事分割方式，将公司拆分为新设公司...") had no
+    # matching event type at all in this list, so ranking fell through to
+    # "营收" (revenue), a much-later, secondary mention (a 2030 aspirational
+    # target, not even a current fact) -- rendering "Kakao AI营收业绩" for
+    # a split announcement. General corporate-restructuring category, not
+    # specific to Kakao.
+    ("分拆", "公司分拆"),
+    ("拆分", "公司分拆"),
+    ("分立", "公司分拆"),
 ]
 
 
