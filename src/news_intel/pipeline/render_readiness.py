@@ -701,6 +701,26 @@ def _primary_dollar_role_and_value(text: str) -> tuple[str, float] | None:
     return _dollar_role_phrase_zh(text, position), value
 
 
+# 2026-08-24: small public wrappers over this module's existing (deliberately
+# private) extraction primitives, for pipeline/editorial_evidence.py's
+# bounded-LLM evidence-packet builder to reuse -- never re-implements this
+# logic, just exposes it.
+def principal_entity_en(entities: list[str] | None, text: str = "", title: str | None = None) -> str | None:
+    return _principal_entity(entities, text, title=title)
+
+
+def event_type_label_en(text: str) -> str | None:
+    return _event_type_label(text.lower(), _EVENT_TYPE_LABELS_EN)
+
+
+def dollar_facts_with_roles(text: str) -> list[tuple[float, str, int]]:
+    """[(value, role_phrase, position), ...] for every dollar figure found,
+    role-aware the same way _primary_dollar_clause is (never just the
+    winning one) -- the evidence packet offers ALL of them, not just the
+    single figure the deterministic renderer would pick."""
+    return [(value, _dollar_role_phrase(text, pos), pos) for value, pos in dollar_values_with_position(text)]
+
+
 def why_it_matters(
     primary: dict, secondary: dict | None, category: str, entities: list[str] | None = None
 ) -> str:

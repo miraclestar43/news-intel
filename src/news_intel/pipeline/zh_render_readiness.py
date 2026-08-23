@@ -385,6 +385,25 @@ def _principal_entity_zh(entities: list[str] | None, text: str = "") -> str | No
     return min(candidates, key=_position)
 
 
+# 2026-08-24: small public wrappers over this module's existing (deliberately
+# private) extraction primitives, for pipeline/editorial_evidence.py's
+# bounded-LLM evidence-packet builder to reuse -- never re-implements this
+# logic, just exposes it.
+def principal_entity_zh(entities: list[str] | None, text: str = "") -> str | None:
+    return _principal_entity_zh(entities, text)
+
+
+def event_type_label_zh_public(text: str) -> str | None:
+    return _event_type_label_zh(text)
+
+
+def zh_amount_facts(text: str) -> list[float]:
+    """Every 万/亿/万亿-magnitude figure found (not just the one the
+    deterministic renderer would pick as "the" amount) -- the evidence
+    packet offers all of them."""
+    return parse_zh_amounts(text)
+
+
 def why_it_matters_zh(
     primary: dict, secondary: dict | None, category: str, entities: list[str] | None = None
 ) -> str:

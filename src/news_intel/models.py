@@ -91,14 +91,44 @@ class Event(BaseModel):
 # --- LLM provider boundary -------------------------------------------------
 
 
+class EvidenceFact(BaseModel):
+    """One pre-extracted, code-owned fact offered to the model as a citable
+    building block (2026-08-24: bounded story-level editorial layer). Every
+    fact carries a stable `id` so the model's output can cite exactly which
+    facts back which claim -- this is what lets the deterministic validator
+    check "did the model only use facts we actually gave it" without doing
+    its own NLP over the model's prose."""
+
+    id: str
+    kind: str = Field(description='"numeric" | "actor" | "target" | "action" | "uncertainty" | "prior_coverage"')
+    text: str
+    value: float | None = None
+    unit: str | None = None
+    role: str | None = Field(default=None, description='e.g. "loss", "revenue", "valuation", "deal_value"')
+    source_id: str | None = None
+
+
 class EventInput(BaseModel):
     """What we send to the LLM for enrichment: an event id plus its bounded,
     delimited source excerpts. Never includes internal scores or confirmation
-    state — the model only sees facts, not our judgments about them."""
+    state — the model only sees facts, not our judgments about them.
+
+    2026-08-24: extended (additively, existing fields unchanged) with the
+    already-extracted evidence packet the deterministic pipeline itself
+    computed -- deterministic category candidates, actors/targets/action-
+    status, numeric facts with units/semantic roles, uncertainty/
+    attribution, and prior-coverage facts. The model is not asked to
+    extract facts from raw text; it is asked to compose FROM facts we
+    already trust, and to cite which ones it used (see EventEnrichment.
+    cited_fact_ids) -- narrows what an LLM failure mode can actually do
+    (fluent composition, not fact discovery)."""
 
     event_id: str
     candidate_title: str
     sources: list[dict] = Field(description="[{id, publisher, excerpt, published_at}]")
+    edition_id: str = "en_global"
+    category_candidates: list[str] = Field(default_factory=list)
+    facts: list[EvidenceFact] = Field(default_factory=list)
 
 
 class EventEnrichment(BaseModel):
@@ -116,6 +146,11 @@ class EventEnrichment(BaseModel):
     material_facts: list[str] = Field(default_factory=list)
     uncertainties: list[str] = Field(default_factory=list)
     supporting_source_ids: list[str] = Field(default_factory=list)
+    # 2026-08-24: which of the offered EvidenceFact.id values the model
+    # actually drew on -- required so the deterministic validator can
+    # reject an enrichment that cites nothing (unsupported) or cites facts
+    # not in the offered set (fabricated fact reference).
+    cited_fact_ids: list[str] = Field(default_factory=list)
 
 
 class DailyDigestInput(BaseModel):
