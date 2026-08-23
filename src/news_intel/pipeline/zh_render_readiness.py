@@ -103,6 +103,20 @@ _EVENT_TYPE_LABELS_ZH: list[tuple[str, str]] = [
 ]
 
 
+# 2026-08-23 repair: real production complaint (YMTC's Aug 22 zh_cn
+# digest, not yet delivered) -- joining EVERY complete sentence from a
+# long, multi-paragraph excerpt (routinely 6-8 sentences for a detailed
+# IT之家 report) produced a "long source dump" reading as a copied
+# paragraph, not an edited summary. There is no LLM in this deployment to
+# genuinely condense/synthesize (see module docstring), so this caps the
+# join to a character budget instead -- takes complete sentences (never
+# truncates mid-sentence) up to the limit, preferring the LEDE (which
+# routinely carries the most important fact first in this source's house
+# style) over exhaustiveness. Deliberately generous enough that a normal
+# 1-3 sentence lede is never cut short.
+_WHAT_HAPPENED_MAX_CHARS = 160
+
+
 def what_happened_zh(primary: dict, secondary: dict | None = None) -> str | None:
     """The Chinese-aware equivalent of summary_quality.best_available_summary:
     tries the primary source's excerpt first (a real, punctuation-terminated
@@ -122,7 +136,14 @@ def what_happened_zh(primary: dict, secondary: dict | None = None) -> str | None
         excerpt = strip_zh_trailer(excerpt)
         sentences = zh_sentences(excerpt)
         if sentences:
-            return "".join(sentences) if len(sentences) == 1 else " ".join(sentences)
+            kept: list[str] = []
+            total = 0
+            for sentence in sentences:
+                if kept and total + len(sentence) > _WHAT_HAPPENED_MAX_CHARS:
+                    break
+                kept.append(sentence)
+                total += len(sentence)
+            return "".join(kept) if len(kept) == 1 else " ".join(kept)
         fallback = strip_zh_preamble(excerpt).strip()
         if len(fallback) >= _FALLBACK_MIN_CHARS:
             return fallback if fallback[-1] in "。！？；" else fallback + "。"

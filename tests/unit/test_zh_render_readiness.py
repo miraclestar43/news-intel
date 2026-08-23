@@ -298,3 +298,25 @@ def test_why_it_matters_zh_kakao_regression_names_split_not_earnings():
     assert "分拆" in result
     assert "营收业绩" not in result
     assert "291" not in result
+
+
+def test_what_happened_zh_ymtc_regression_is_capped_not_a_full_dump():
+    """2026-08-23: real production complaint (YMTC's Aug 22 zh_cn digest,
+    not yet delivered) -- joining EVERY sentence from a long, detailed
+    excerpt produced a "long source dump" reading as a copied paragraph
+    rather than an edited summary."""
+    excerpt = (
+        "IT之家 8 月 21 日消息，上海证券交易所网站显示，长江存储控股股份有限公司首次公开发行股票并在科创板上市"
+        "的 IPO 审核状态已变更为已受理。 公司拟融资金额为 330 亿元，保荐机构为中信证券和中信建投 。 "
+        "此前 8 月 19 日，长江存储 IPO 辅导状态刚由证监会官网公示变更为辅导验收。 "
+        "中信证券与中信建投于当日签署了辅导工作完成报告。 公司于 2026 年 5 月 19 日在湖北证监局完成 IPO "
+        "辅导备案登记，至验收通过全程约三个月，创下半导体企业 IPO 辅导速度纪录。 "
+        "招股书显示，长江存储自 2024 年扭亏后盈利水平快速提升， 2026 年 1-3 月实现营业收入 470.42 亿元，"
+        "归母净利润 333.79 亿元 。"
+    )
+    primary = {"excerpt": excerpt}
+    result = what_happened_zh(primary)
+    assert result is not None
+    assert "330 亿元" in result  # the key supported figure is preserved
+    assert "归母净利润" not in result  # the tail (background detail) is dropped, not everything
+    assert len(result) < len(excerpt)
