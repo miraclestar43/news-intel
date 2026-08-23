@@ -54,6 +54,12 @@ def _display_url(source: dict) -> str:
 
 
 def _source_labels(story: Story) -> list[tuple[str, str]]:
+    """2026-08-23 repair: real production regression (Aug 22 zh_cn digest,
+    not yet delivered) -- "来源：IT之家，IT之家" for two genuinely
+    different, legitimately corroborating articles (different URLs, same
+    publisher covering an evolving story). Both links are real and worth
+    keeping; disambiguates the second label instead of dropping it, since
+    identical display text gives a reader no way to tell them apart."""
     labels: list[tuple[str, str]] = []
     primary_src = _primary_source(story.primary)
     if primary_src:
@@ -61,7 +67,10 @@ def _source_labels(story: Story) -> list[tuple[str, str]]:
     if story.secondary:
         secondary_src = _primary_source(story.secondary)
         if secondary_src and secondary_src["url"] != (primary_src or {}).get("url"):
-            labels.append((secondary_src.get("publisher") or "来源", _display_url(secondary_src)))
+            name = secondary_src.get("publisher") or "来源"
+            if name == (primary_src or {}).get("publisher"):
+                name = f"{name}（相关报道）"
+            labels.append((name, _display_url(secondary_src)))
     return labels[:2]
 
 

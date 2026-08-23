@@ -57,7 +57,16 @@ def _source_labels(story: Story) -> list[tuple[str, str]]:
     """Up to two (name, url) pairs -- the primary story's source, plus its
     linked secondary source if the family had one (2026-08-11: the second
     Daybreak article is retained as an additional linked source rather
-    than a separate digest slot)."""
+    than a separate digest slot).
+
+    2026-08-23 repair: real production regression (Aug 22 zh_cn digest, not
+    yet delivered -- caught during the required content-integrity review)
+    -- "Source: IT之家, IT之家" for two genuinely different, legitimately
+    corroborating articles (different URLs, same publisher covering an
+    evolving story -- the exact Daybreak-style case this function is
+    designed to retain). The two links ARE both real and worth keeping,
+    but identical display text gives a reader no way to tell them apart.
+    Disambiguates the second label rather than dropping the link."""
     labels: list[tuple[str, str]] = []
     primary_src = _primary_source(story.primary)
     if primary_src:
@@ -65,7 +74,10 @@ def _source_labels(story: Story) -> list[tuple[str, str]]:
     if story.secondary:
         secondary_src = _primary_source(story.secondary)
         if secondary_src and secondary_src["url"] != (primary_src or {}).get("url"):
-            labels.append((secondary_src.get("publisher") or "Source", _display_url(secondary_src)))
+            name = secondary_src.get("publisher") or "Source"
+            if name == (primary_src or {}).get("publisher"):
+                name = f"{name} (related coverage)"
+            labels.append((name, _display_url(secondary_src)))
     return labels[:2]
 
 

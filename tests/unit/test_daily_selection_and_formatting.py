@@ -327,6 +327,12 @@ def test_render_shows_up_to_two_linked_sources_for_a_family():
     rendered = render_production_daily(SelectionResult(top_stories=[story]), "Aug 10", [])
     assert rendered.count('href="https://openai.com/E-1"') == 2  # title link + source link
     assert 'href="https://openai.com/E-2"' in rendered  # secondary source also linked
+    # 2026-08-23 repair: real production regression -- both links used to
+    # render with IDENTICAL display text ("Source: OpenAI News, OpenAI
+    # News"), giving a reader no way to tell them apart even though the
+    # hrefs differ. The second must be disambiguated, not dropped.
+    assert "OpenAI News (related coverage)" in rendered
+    assert rendered.count("OpenAI News</a>") == 1  # bare label appears exactly once (title-link text differs)
 
 
 def test_html_special_characters_are_escaped_safely():
