@@ -94,11 +94,17 @@ def _render_top_story(index: int, story: Story) -> list[str]:
         f"{index}. {_link(story.primary.get('title', '（无标题）'), title_url)}",
         f"分类：{_escape(_category_zh(story.category))}",
     ]
-    summary = what_happened_zh(story.primary, story.secondary)
+    entities = story.primary.get("entities")
+    editorial = story.editorial
+    summary = editorial.chinese_what_happened if editorial else None
+    if summary is None:
+        summary = what_happened_zh(story.primary, story.secondary)
     if summary:
         lines.append(_escape(summary))
-    entities = story.primary.get("entities")
-    lines.append(_escape(why_it_matters_zh(story.primary, story.secondary, story.category, entities)))
+    why = editorial.chinese_takeaway if editorial else why_it_matters_zh(story.primary, story.secondary,
+                                                                          story.category, entities)
+    if why:
+        lines.append(_escape(why))
     if story.update_note:
         lines.append(_escape(story.update_note))
     source_line = _source_line(story)

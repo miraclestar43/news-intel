@@ -49,6 +49,7 @@ def fallback_enrich(event: EventInput) -> EventEnrichment:
         what_happened=primary.get("excerpt", event.candidate_title)[:280],
         why_it_matters="Rule-based fallback: significance not summarized by the LLM.",
         chinese_headline=event.candidate_title[:60],
+        chinese_what_happened="AI 摘要暂不可用，以下为规则排序的原始信息。",
         chinese_takeaway="AI 摘要暂不可用，以下为规则排序的原始信息。",
         significance_proposal=0,
         market_impact_proposal=0,

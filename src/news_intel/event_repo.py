@@ -238,10 +238,30 @@ def _display_title(sources: list[dict], raw_title: str) -> str:
     is the *actual* published headline; otherwise strips a recognized
     aggregator preamble ("Sources:", "Source:", "More:", an "Author /
     Publication:" citation) from the stored title. Never touches the
-    source label or URL -- purely a display-text transform."""
+    source label or URL -- purely a display-text transform.
+
+    2026-08-25 clustering-attribution repair: real production defect (a
+    Ukraine mall-strike event, reproduced against a copy of the
+    production database) -- events.primary_title could go stale relative
+    to a later-merged, better-attributed article (e.g. a wire blurb
+    without an attacker named, later corroborated by an article naming
+    the attacker: "...despicable strike" vs "...despicable Russian
+    strike"), dropping actor attribution from the reader-facing headline.
+    pipeline/cluster.py's find_or_create_event now keeps primary_title
+    updated to the longer (general proxy for "more complete/attributive",
+    not Russian/Ukraine-specific) of the two titles on every merge, so
+    this is primarily a safety net for data merged before that fix
+    existed: also compares against sources[0]'s own raw title (event_
+    sources() orders is_primary DESC, published_at) and keeps whichever
+    is longer. For the common case where titles agree or no merge ever
+    happened, this is a no-op -- raw_title already wins ties (<=)."""
     if sources and sources[0].get("origin_title"):
         return strip_title_suffix(sources[0]["origin_title"])
-    return strip_title_preamble(raw_title)
+    candidates = [(raw_title or "").strip()]
+    if sources and sources[0].get("raw_title"):
+        candidates.append(sources[0]["raw_title"].strip())
+    best = max(candidates, key=len)
+    return strip_title_preamble(best)
 
 
 def event_as_digest_dict(conn: sqlite3.Connection, event_row: sqlite3.Row) -> dict:

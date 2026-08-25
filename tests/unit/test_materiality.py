@@ -95,6 +95,21 @@ def test_abbreviated_dollar_units_are_parsed():
     assert abbreviated > baseline
 
 
+def test_hyphenated_dollar_unit_is_parsed():
+    """2026-08-25 repair: real live-model replay found "HK$80-billion" (a
+    hyphen between the number and the spelled-out unit -- common
+    journalistic style, e.g. "a $6-billion deal") matched only the bare
+    "$80" with no unit, silently dropping the magnitude from $80B to $80 --
+    the resulting evidence packet then couldn't corroborate the model's
+    own (correct) $80,000,000,000 figure, rejecting real, traceable output
+    as unsupported."""
+    from news_intel.pipeline.materiality import dollar_values_with_position
+
+    values = [v for v, _pos in dollar_values_with_position("HK$80-billion ($10.2 billion) share placement")]
+    assert 80_000_000_000.0 in values
+    assert 10_200_000_000.0 in values
+
+
 # 2026-08-18 numeric-role repair: parse_current_dollar_values excludes a
 # figure the text itself frames as a historical/comparison baseline
 # ("down from", "up from", "compared to", "versus") -- real defect found

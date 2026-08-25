@@ -31,6 +31,16 @@ class NullProvider:
 
 def get_provider(config: AppConfig):
     secrets = config.secrets
+    if secrets.llm_provider == "hermes_cli":
+        if not secrets.hermes_bin:
+            return NullProvider()
+        from news_intel.llm.hermes_cli import HermesCliProvider
+
+        return HermesCliProvider(
+            bin_path=secrets.hermes_bin,
+            timeout=secrets.hermes_timeout_seconds or 20.0,
+            model_label=secrets.hermes_model_label,
+        )
     if secrets.llm_base_url and secrets.llm_api_key and secrets.llm_model:
         return OpenAICompatibleProvider(
             base_url=secrets.llm_base_url,

@@ -105,6 +105,22 @@ def find_or_create_event(
     if best_match is not None:
         event_id = best_match["id"]
         merged_entities = sorted(set(item_entities) | set(json.loads(best_match["entities_json"] or "[]")))
+        # 2026-08-25 clustering-attribution repair: real production defect
+        # (a Ukraine mall-strike event) -- events.primary_title was frozen
+        # at whichever title created the event, even when a fuller,
+        # later-merged article named an attacker/affected-party the
+        # original title omitted ("...condemns 'despicable' strike" never
+        # picked up "Russian" from a merged, more complete article). A
+        # longer title is a general (not Russian/Ukraine-specific) proxy
+        # for "more complete" -- it is very rarely the case that a SHORTER
+        # title about the same event carries MORE substantive attribution
+        # than a longer one; any aggregator preamble is stripped later at
+        # display time (event_repo._display_title) regardless of which
+        # raw title wins here, so a longer-but-prefixed title can't win by
+        # padding alone in a way that matters to the reader.
+        current_title = (best_match["primary_title"] or "").strip()
+        candidate_title = (item.title or "").strip()
+        new_primary_title = candidate_title if len(candidate_title) > len(current_title) else current_title
         # Only NEW/CONTENT_CHANGED raw items ever reach find_or_create_event
         # (Phase 1.1 gates UNCHANGED out before this point), so reaching the
         # merge branch always means genuinely new/changed content -- bump
@@ -112,8 +128,10 @@ def find_or_create_event(
         # digest/trend eligibility, without touching the event's original
         # published_anchor_at.
         conn.execute(
-            "UPDATE events SET last_updated_at = ?, entities_json = ?, content_changed_at = ? WHERE id = ?",
-            (now.isoformat(), json.dumps(merged_entities, ensure_ascii=False), now.isoformat(), event_id),
+            "UPDATE events SET last_updated_at = ?, entities_json = ?, content_changed_at = ?, "
+            "primary_title = ? WHERE id = ?",
+            (now.isoformat(), json.dumps(merged_entities, ensure_ascii=False), now.isoformat(),
+             new_primary_title, event_id),
         )
         _attach_source(conn, event_id, raw_item_id, is_primary=False)
         return event_id, False

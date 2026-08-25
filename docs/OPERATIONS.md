@@ -61,6 +61,20 @@ Without these three variables set, `pi-news` always uses the deterministic
 fallback and daily briefs are still produced, just without LLM summarization
 or Chinese takeaways.
 
+### Alternate provider: local Hermes CLI (2026-08-24)
+
+Set `LLM_PROVIDER=hermes_cli` plus `HERMES_BIN=<absolute path to the hermes
+executable>` and `HERMES_TIMEOUT_SECONDS=<bounded seconds>` (optionally
+`HERMES_MODEL_LABEL=<non-secret label for telemetry>`) to use an already-
+configured local Hermes CLI as the model broker instead of the HTTP path
+above -- `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL` may stay empty in this
+mode. This project never reads Hermes's own `~/.hermes/config.yaml` or
+`~/.hermes/.env`; it only shells out to the resolved `hermes` binary with
+`-z <prompt> -t "" --ignore-rules` (one-shot, zero toolsets, no rule/
+memory/skill auto-injection), argv list, `shell=False`, a strict subprocess
+timeout, and bounded prompt/output size. Whichever model Hermes itself is
+configured to use at the time is used as-is.
+
 ## Logs, DB, retention
 
 - SQLite: `data/news-intel.db` (WAL mode). Logs: `data/logs/news-intel.log`

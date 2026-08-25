@@ -30,6 +30,7 @@ from news_intel.llm.provider import get_provider
 from news_intel.models import DailyDigestInput
 from news_intel.pipeline import freshness
 from news_intel.pipeline.daily_selection import SelectionResult, select_daily_stories
+from news_intel.pipeline.editorial_enrichment import build_bounded_provider, enrich_story
 from news_intel.pipeline.entities import known_entities
 from news_intel.pipeline.event_integrity import is_dashboard_like, is_low_consequence_event_type
 from news_intel.pipeline.event_integrity_zh import is_low_consequence_event_type_zh
@@ -386,11 +387,37 @@ def run_daily(
             # Multi-edition: selection/ranking/render-readiness are fully
             # shared core (identical SelectionResult either way) -- only
             # the renderer differs.
+            #
+            # 2026-08-24: bounded story-level editorial layer. Only
+            # attempted when a provider is actually configured -- when
+            # nothing is configured (build_bounded_provider returns None),
+            # every Story.editorial stays None and both renderers fall
+            # straight through to their existing, already-hardened
+            # deterministic why_it_matters()/chinese_takeaway() functions,
+            # UNCHANGED from before this layer existed. This is
+            # deliberately separate from compose_daily above (a single
+            # whole-digest LLM call this project has never actually relied
+            # on in production) -- per-story enrichment, each result
+            # independently validated against its own evidence packet,
+            # is the mechanism this layer commits to.
+            bounded_provider = build_bounded_provider(config)
+            if bounded_provider is not None:
+                for story in selection.top_stories:
+                    story.editorial = enrich_story(
+                        story.primary, story.secondary, story.category, story.primary.get("entities"),
+                        edition_id=edition_id, update_note=story.update_note, provider=bounded_provider,
+                    )
             if edition_id == "zh_cn":
                 body = render_production_daily_zh(selection, date_label, calendar_items)
             else:
                 body = render_production_daily(selection, date_label, calendar_items)
             fallback_used = True
+            validated_stories = [
+                s for s in selection.top_stories if s.editorial and s.editorial.source == "llm_validated"
+            ]
+            if validated_stories:
+                model_used = validated_stories[0].editorial.model_used or "llm"
+                fallback_used = False
 
         # Production heading: only stamped when delivery is being
         # contemplated (chat_id given) -- a pure content-only preview

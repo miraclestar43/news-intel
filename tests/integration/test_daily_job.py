@@ -13,7 +13,8 @@ from news_intel.delivery.splitter import split_at_sections
 from news_intel.delivery.telegram import TelegramSender
 from news_intel.jobs import daily as daily_module
 from news_intel.jobs.daily import run_daily
-from news_intel.models import DailyDigestInput, DigestOutput
+from news_intel.llm.errors import LLMUnavailableError
+from news_intel.models import DailyDigestInput, DigestOutput, EventEnrichment
 from news_intel.pipeline.confirmation import update_confirmation_state
 from news_intel.pipeline.scoring import persist_score, score_event
 from news_intel.scheduled_repo import record_scheduled_events
@@ -146,6 +147,51 @@ def test_daily_brief_falls_back_when_llm_unavailable(config, conn, monkeypatch):
     assert summary.fallback_used is True
     assert "This brief uses rule-ranked source summaries." in summary.rendered_text
     assert summary.top3_count + summary.quick_brief_count >= 4
+
+
+class _FakeStoryEnrichProvider:
+    """2026-08-24: compose_daily unimplemented (matches HermesCliProvider's
+    real behavior) so run_daily falls into the per-story editorial path;
+    enrich_events echoes back a valid, fully evidence-grounded enrichment
+    for each offered event -- no invented numbers/names, cited_fact_ids
+    drawn only from what was actually offered."""
+
+    model = "fake-story-llm"
+
+    def compose_daily(self, inputs):
+        raise LLMUnavailableError("whole-digest composition not used by this provider")
+
+    def enrich_events(self, events):
+        results = []
+        for event in events:
+            fact_ids = [f.id for f in event.facts]
+            category = event.category_candidates[0] if event.category_candidates else "Technology"
+            source_ids = [s["id"] for s in event.sources]
+            results.append(EventEnrichment(
+                event_id=event.event_id, category=category, entities=[],
+                english_headline=event.candidate_title[:140],
+                what_happened=f"{event.candidate_title}, per the source reporting.",
+                why_it_matters="This is significant for the affected market and policy context.",
+                chinese_headline=event.candidate_title[:60],
+                chinese_what_happened=f"{event.candidate_title}，据来源报道。",
+                chinese_takeaway="这一事件对相关市场和政策具有重要影响。",
+                significance_proposal=60, market_impact_proposal=40,
+                supporting_source_ids=source_ids, cited_fact_ids=fact_ids,
+            ))
+        return results
+
+
+def test_daily_brief_uses_per_story_editorial_layer_when_configured(config, conn, monkeypatch):
+    now = datetime(2026, 7, 31, 22, 0, tzinfo=UTC)
+    _seed_events(config, conn, now)
+    monkeypatch.setattr(daily_module, "build_bounded_provider", lambda cfg: _FakeStoryEnrichProvider())
+
+    summary = run_daily(config, conn, dry_run=True, now=now)
+
+    assert summary.fallback_used is False
+    assert summary.model_used == "fake-story-llm"
+    assert "per the source reporting." in summary.rendered_text
+    assert "This is significant for the affected market and policy context." in summary.rendered_text
 
 
 def test_repeated_send_creates_one_delivery(config, conn):

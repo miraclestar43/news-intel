@@ -22,6 +22,10 @@ def config(tmp_path, monkeypatch):
         "LLM_BASE_URL",
         "LLM_API_KEY",
         "LLM_MODEL",
+        "LLM_PROVIDER",
+        "HERMES_BIN",
+        "HERMES_TIMEOUT_SECONDS",
+        "HERMES_MODEL_LABEL",
         "GUARDIAN_API_KEY",
     ):
         monkeypatch.delenv(var, raising=False)

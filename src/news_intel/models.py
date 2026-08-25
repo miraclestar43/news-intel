@@ -140,6 +140,12 @@ class EventEnrichment(BaseModel):
     what_happened: str
     why_it_matters: str
     chinese_headline: str
+    # 2026-08-24: a Chinese "what happened" sentence, distinct from
+    # chinese_takeaway (a "why it matters"-flavored line) -- needed so the
+    # zh_cn renderer never has to display the English what_happened/
+    # why_it_matters fields, which would put English prose in a Chinese
+    # digest. Mirrors the EN what_happened/why_it_matters pairing.
+    chinese_what_happened: str
     chinese_takeaway: str
     significance_proposal: float = Field(ge=0, le=100)
     market_impact_proposal: float = Field(ge=0, le=100)

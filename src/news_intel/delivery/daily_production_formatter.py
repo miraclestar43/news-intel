@@ -111,12 +111,21 @@ def _render_top_story(index: int, story: Story) -> list[str]:
         f"{index}. {_link(story.primary.get('title', '(untitled)'), title_url)}",
         f"Category: {_escape(story.category)}",
     ]
-    summary = _best_available_summary(story)
+    entities = story.primary.get("entities")
+    editorial = story.editorial
+    summary = editorial.what_happened if editorial else None
+    if summary is None:
+        summary = _best_available_summary(story)
     if summary:
         lines.append(_escape(summary))
-    entities = story.primary.get("entities")
-    lines.append(_escape(why_it_matters(story.primary, story.secondary, story.category, entities)))
-    lines.append(_escape(chinese_takeaway(story.category, entities, story.primary, story.secondary)))
+    why = editorial.why_it_matters if editorial else why_it_matters(story.primary, story.secondary, story.category,
+                                                                      entities)
+    if why:
+        lines.append(_escape(why))
+    takeaway = editorial.chinese_takeaway if editorial else chinese_takeaway(story.category, entities, story.primary,
+                                                                              story.secondary)
+    if takeaway:
+        lines.append(_escape(takeaway))
     if story.update_note:
         lines.append(_escape(story.update_note))
     source_line = _source_line(story)

@@ -18,6 +18,7 @@ import json
 import httpx
 
 from news_intel.llm.errors import LLMUnavailableError
+from news_intel.llm.prompt_build import build_enrich_event_prompt
 from news_intel.llm.prompts import load_template, render, render_sources_block
 from news_intel.models import (
     DailyDigestInput,
@@ -82,14 +83,9 @@ class OpenAICompatibleProvider:
         raise LLMUnavailableError(str(last_error))
 
     def enrich_events(self, events: list[EventInput]) -> list[EventEnrichment]:
-        template = load_template("enrich_event.md")
         results = []
         for event in events:
-            prompt = render(
-                template,
-                event_id=event.event_id,
-                sources_block=render_sources_block(event.sources),
-            )
+            prompt = build_enrich_event_prompt(event)
             data = self._complete(prompt)
             data["event_id"] = event.event_id
             results.append(EventEnrichment.model_validate(data))

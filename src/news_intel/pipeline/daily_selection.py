@@ -57,6 +57,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from news_intel.pipeline.editorial_enrichment import EditorialResult
 from news_intel.pipeline.publisher_family import publisher_family_of_url
 from news_intel.pipeline.render_readiness import is_render_ready
 from news_intel.pipeline.story_identity import detect_material_update, same_event_story
@@ -127,6 +128,12 @@ class Story:
     primary: dict
     secondary: dict | None = None
     update_note: str | None = None
+    # 2026-08-24: optional per-story LLM editorial result (validator-gated;
+    # see pipeline.editorial_enrichment). None for every existing caller
+    # that doesn't attempt enrichment -- renderers fall back to their own
+    # deterministic why_it_matters()/chinese_takeaway() functions in that
+    # case, unchanged from before this field existed.
+    editorial: EditorialResult | None = None
 
     @property
     def event_id(self) -> str:

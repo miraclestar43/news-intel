@@ -38,6 +38,7 @@ def _good_enrichment(evidence: EventInput) -> EventEnrichment:
             "The funding extends Starcloud's runway for orbital AI inference amid constrained launch capacity."
         ),
         chinese_headline="Starcloud融资2.5亿美元",
+        chinese_what_happened="Starcloud获得2.5亿美元融资，用于扩建轨道AI数据中心。",
         chinese_takeaway="Starcloud获得2.5亿美元融资，用于轨道AI数据中心扩张。",
         significance_proposal=70, market_impact_proposal=50,
         supporting_source_ids=[s["id"] for s in evidence.sources], cited_fact_ids=fact_ids,
@@ -124,6 +125,17 @@ def test_validate_enrichment_rejects_unsupported_entity_name():
     assert any("Fabricated Rival Corp" in r for r in result.reasons)
 
 
+def test_validate_enrichment_accepts_entity_with_different_capitalization():
+    """2026-08-24: a real live-model replay produced "Starcloud" -- exactly
+    matching the offered fact -- but also independently exposed the same
+    class of bug with "NVIDIA" vs an offered "Nvidia". Case must not cause
+    a false-positive fabrication rejection."""
+    evidence = build_event_input(_primary(), None, "AI & Semiconductors", ["Starcloud"], edition_id="en_global")
+    e = _good_enrichment(evidence).model_copy(update={"entities": ["STARCLOUD"]})
+    result = validate_enrichment(e, evidence)
+    assert result.ok, result.reasons
+
+
 def test_validate_enrichment_rejects_banned_generic_language():
     evidence = build_event_input(_primary(), None, "AI & Semiconductors", ["Starcloud"], edition_id="en_global")
     result = validate_enrichment(_bad_enrichment_generic(evidence), evidence)
@@ -174,7 +186,8 @@ def test_validate_enrichment_requires_hedge_when_uncertainty_flagged():
         event_id="E-1", category="AI & Semiconductors", english_headline="Anthropic valued at $2 trillion",
         what_happened="Anthropic is valued at $2 trillion.",
         why_it_matters="Anthropic is valued at $2 trillion, a huge milestone.",
-        chinese_headline="Anthropic估值2万亿美元", chinese_takeaway="Anthropic估值2万亿美元。",
+        chinese_headline="Anthropic估值2万亿美元", chinese_what_happened="Anthropic估值2万亿美元。",
+        chinese_takeaway="Anthropic估值2万亿美元。",
         significance_proposal=80, market_impact_proposal=60,
         supporting_source_ids=[s["id"] for s in evidence.sources], cited_fact_ids=[f.id for f in evidence.facts],
         entities=["Anthropic"],
@@ -244,6 +257,25 @@ def test_enrich_story_timeout_or_provider_error_produces_safe_fallback():
     assert result.what_happened is not None  # still source-grounded, not empty
 
 
+def test_enrich_story_schema_invalid_json_produces_safe_fallback_not_a_crash():
+    """2026-08-25 repair: a real live-model replay crashed the entire
+    replay run -- a real Hermes/MiMo response was syntactically valid JSON
+    (so the provider's own invalid-JSON retry never triggered) but missing
+    several required EventEnrichment fields, and the resulting
+    pydantic.ValidationError propagated uncaught out of enrich_story(),
+    which would abort an entire production daily job instead of falling
+    back for just this one story."""
+    try:
+        EventEnrichment.model_validate({"event_id": "E-1"})
+    except Exception as exc:  # noqa: BLE001 -- capturing a real ValidationError instance to replay
+        schema_invalid_error = exc
+    provider = _FakeProvider([schema_invalid_error, schema_invalid_error])
+    result = enrich_story(_primary(), None, "AI & Semiconductors", ["Starcloud"], provider=provider)
+    assert result.source == "deterministic_fallback"
+    assert result.what_happened is not None
+    assert "malformed enrichment" in result.fallback_reason
+
+
 def test_enrich_story_never_omits_deterministic_floor_entirely():
     """Even total LLM failure must never leave a story with NO what_happened
     at all -- the deterministic floor is unconditional."""
@@ -261,7 +293,7 @@ def test_enrich_story_works_for_zh_cn_edition_with_no_provider():
     }
     result = enrich_story(primary, None, "Markets & Economy", ["长江存储"], edition_id="zh_cn", provider=None)
     assert result.source == "deterministic_fallback"
-    assert result.what_happened is not None
+    assert result.chinese_what_happened is not None
 
 
 # --- structural safety: the editorial layer cannot itself send Telegram ---
@@ -278,8 +310,8 @@ def test_enrich_story_signature_has_no_telegram_capability():
 
 
 def test_editorial_result_carries_no_delivery_state():
-    result = EditorialResult(what_happened="x", why_it_matters=None, chinese_takeaway=None, category=None,
-                              source="deterministic_fallback")
+    result = EditorialResult(what_happened="x", why_it_matters=None, chinese_what_happened=None,
+                              chinese_takeaway=None, category=None, source="deterministic_fallback")
     assert not hasattr(result, "sent")
     assert not hasattr(result, "chat_id")
 

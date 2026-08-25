@@ -39,6 +39,15 @@ class Secrets(BaseSettings):
     llm_base_url: str | None = Field(default=None, alias="LLM_BASE_URL")
     llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
     llm_model: str | None = Field(default=None, alias="LLM_MODEL")
+    # 2026-08-24: alternate provider mode that shells out to an already-
+    # configured local Hermes CLI instead of an HTTP OpenAI-compatible
+    # endpoint. None of these are secrets -- HERMES_BIN is a filesystem
+    # path this project resolves and stores itself; pi-news-intel never
+    # reads Hermes's own config.yaml/.env to discover or override it.
+    llm_provider: str | None = Field(default=None, alias="LLM_PROVIDER")
+    hermes_bin: str | None = Field(default=None, alias="HERMES_BIN")
+    hermes_timeout_seconds: float | None = Field(default=None, alias="HERMES_TIMEOUT_SECONDS")
+    hermes_model_label: str | None = Field(default=None, alias="HERMES_MODEL_LABEL")
     sec_user_agent: str = Field(
         default="PiNewsIntel contact@example.com", alias="SEC_USER_AGENT"
     )

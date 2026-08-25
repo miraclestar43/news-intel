@@ -35,8 +35,14 @@ from news_intel.pipeline.zh_text import parse_zh_amounts
 # "$<number>" pattern -- see dollar_magnitude_bonus). Unit accepts both
 # spelled-out words and the single-letter abbreviations Techmeme-style
 # headlines actually use ("$575M", "$6B").
+# 2026-08-25: real live-model replay found "HK$80-billion" -- a hyphen
+# between the number and the spelled-out unit (common journalistic
+# formatting, e.g. "a $6-billion deal") -- matched only the bare "$80"
+# with no unit captured, so the actual $80,000,000,000 magnitude was
+# silently dropped to $80. [\s-]? accepts a hyphen the same way \s?
+# already accepted a space.
 _DOLLAR_RE = re.compile(
-    r"\$\s?(\d[\d,]*(?:\.\d+)?)\s?(billion|million|trillion|bn|mn|tn|b|m|t)?\b",
+    r"\$\s?(\d[\d,]*(?:\.\d+)?)[\s-]?(billion|million|trillion|bn|mn|tn|b|m|t)?\b",
     re.IGNORECASE,
 )
 _PERCENT_RE = re.compile(r"\b\d[\d,]*(?:\.\d+)?\s?(?:percent|%)", re.IGNORECASE)
