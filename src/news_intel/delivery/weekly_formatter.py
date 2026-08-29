@@ -3,7 +3,7 @@ structured JSON shape produced by compose_weekly.md."""
 
 from __future__ import annotations
 
-from news_intel.delivery.splitter import label_parts, split_at_sections
+from news_intel.delivery.splitter import split_and_label
 
 _EDITION_WEEKLY_LABELS = {"en_global": "[GLOBAL WEEKLY]", "zh_cn": "[中文周报]"}
 
@@ -75,7 +75,7 @@ def split_weekly(rendered_text: str, week_label: str, max_chars: int, edition_id
     marker = "\nMARKETS & ECONOMY"
     idx = rendered_text.find(marker)
     if idx == -1:
-        return label_parts(split_at_sections(rendered_text, max_chars))
+        return split_and_label(rendered_text, max_chars)
 
     part1_body = rendered_text[:idx].rstrip()
     if part1_body.startswith(header_line):

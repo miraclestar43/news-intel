@@ -1,10 +1,25 @@
 [Unit]
-Description=pi-news-intel: daily brief, Mon-Sat 22:00 America/Los_Angeles
+Description=pi-news-intel: normal production daily trigger, 22:00 America/Los_Angeles (05:00 UTC), every day
 
 [Timer]
-OnCalendar=Mon..Sat *-*-* 22:00:00 America/Los_Angeles
-Persistent=true
-AccuracySec=1min
+# 2026-08-29: this repository copy had drifted from the unit actually
+# INSTALLED in production. The repo said "Mon..Sat *-*-* 22:00:00
+# America/Los_Angeles"; the installed unit (verified with
+# `systemctl --user cat`) has long been "*-*-* 05:00:00 UTC" -- daily,
+# including Sunday. The installed definition is the one that has been
+# running, so the repository is reconciled to it rather than the reverse.
+#
+# 22:00 America/Los_Angeles = 05:00 UTC year-round under current US DST
+# rules (spring-forward/fall-back both keep PT at UTC-7 through the next
+# transition on 2026-11-01); the specific Pacific date is computed inside
+# the application (jobs/daily.py), not by this timer. Sunday is a no-op at
+# the application level (jobs/daily.py returns skipped_sunday=True on
+# pt_weekday == 6, because the weekly brief would replace it) -- never a
+# second send.
+OnCalendar=*-*-* 05:00:00 UTC
+RandomizedDelaySec=0
+Persistent=false
+AccuracySec=30s
 
 [Install]
 WantedBy=timers.target

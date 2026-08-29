@@ -13,7 +13,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from news_intel.delivery.splitter import label_parts, split_at_sections
+from news_intel.delivery.splitter import split_and_label
 
 
 def chat_id_hash(chat_id: int) -> str:
@@ -125,7 +125,7 @@ class TelegramSender:
                     dry_run,
                 )
 
-        chunks = label_parts(split_at_sections(text, max_chars))
+        chunks = split_and_label(text, max_chars)
 
         if dry_run or not self.bot_token:
             placeholder_ids = [f"dry-{i}" for i in range(len(chunks))]

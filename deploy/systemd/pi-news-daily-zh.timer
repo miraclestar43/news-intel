@@ -11,7 +11,16 @@ Description=pi-news-intel: zh_cn daily brief, Mon-Sat 07:00 America/Los_Angeles 
 # in PDT, 23:00 Beijing in PST) stays correct across both the Nov 2026
 # fall-back and any future spring-forward transition with no manual
 # adjustment -- never a hardcoded Beijing-time assumption.
-OnCalendar=Mon..Sat *-*-* 07:00:00 America/Los_Angeles
+# 2026-08-29: was "Mon..Sat", i.e. six days a week rather than daily. The
+# Sunday policy (the weekly brief replaces the daily send) is already
+# enforced in the APPLICATION for BOTH editions -- jobs/daily.py returns
+# skipped_sunday=True on pt_weekday == 6 -- exactly as the en_global timer
+# relies on. Encoding it a second time in this calendar made zh_cn's
+# cadence silently differ from en_global's and put the same policy in two
+# places. Now genuinely daily, like en_global; Sunday remains a no-op at
+# the application level, so this changes cadence consistency, not Sunday
+# output.
+OnCalendar=*-*-* 07:00:00 America/Los_Angeles
 # Persistent=false, matching the EXISTING en_global daily timer's own
 # deliberate choice (see pi-news-daily.timer as actually installed in
 # production) -- daily lacks the tight explicit time-window late-catch-up

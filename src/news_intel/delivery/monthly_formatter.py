@@ -9,7 +9,7 @@ llm/fallback.py's fallback_weekly_digest shape directly."""
 
 from __future__ import annotations
 
-from news_intel.delivery.splitter import label_parts, split_at_sections
+from news_intel.delivery.splitter import split_and_label
 
 MONTHLY_FALLBACK_NOTICE = (
     "AI summarization is not configured for this brief; this monthly report uses rule-ranked "
@@ -113,7 +113,7 @@ def split_monthly(rendered_text: str, month_label: str, max_chars: int, edition_
     marker = "\nMARKETS & ECONOMY"
     idx = rendered_text.find(marker)
     if idx == -1:
-        return label_parts(split_at_sections(rendered_text, max_chars))
+        return split_and_label(rendered_text, max_chars)
 
     part1_body = rendered_text[:idx].rstrip()
     if part1_body.startswith(header_line):

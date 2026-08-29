@@ -34,3 +34,25 @@ def label_parts(chunks: list[str]) -> list[str]:
         return chunks
     total = len(chunks)
     return [f"{chunk}\n\n({i}/{total})" for i, chunk in enumerate(chunks, start=1)]
+
+
+# Worst-case cost label_parts adds to a chunk: "\n\n" plus "(NN/NN)".
+# Generous enough to cover a three-digit part count.
+_LABEL_RESERVE_CHARS = 16
+
+
+def split_and_label(text: str, max_chars: int) -> list[str]:
+    """Split AND label while guaranteeing every returned chunk -- label
+    included -- is at most `max_chars`.
+
+    2026-08-29: label_parts() appends "\\n\\n(i/N)" AFTER splitting, so a
+    chunk that split_at_sections produced at exactly max_chars (its
+    hard-wrap branch does exactly that for an oversized single block) came
+    back at max_chars + 7 and would be rejected by Telegram. Reserving the
+    label's cost before splitting makes the limit hold by construction
+    rather than by luck of where block boundaries happen to fall."""
+    if len(text) <= max_chars:
+        return [text]
+    chunks = label_parts(split_at_sections(text, max_chars - _LABEL_RESERVE_CHARS))
+    # Defensive: never hand the caller something the transport will reject.
+    return [chunk[:max_chars] for chunk in chunks]
