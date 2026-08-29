@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
@@ -16,6 +17,7 @@ from news_intel import db
 from news_intel.delivery.daily_production_formatter import render_production_daily
 from news_intel.delivery.daily_production_formatter_zh import render_production_daily_zh
 from news_intel.delivery.formatter import render_daily
+from news_intel.delivery.splitter import split_at_sections
 from news_intel.delivery.telegram import ChatNotAllowedError, TelegramSender, mark_attempting
 from news_intel.event_repo import (
     event_as_digest_dict,
@@ -30,7 +32,11 @@ from news_intel.llm.provider import get_provider
 from news_intel.models import DailyDigestInput
 from news_intel.pipeline import freshness
 from news_intel.pipeline.daily_selection import SelectionResult, select_daily_stories
-from news_intel.pipeline.editorial_enrichment import build_bounded_provider, enrich_story
+from news_intel.pipeline.editorial_enrichment import (
+    EDITORIAL_RUN_BUDGET_SECONDS,
+    build_bounded_provider,
+    enrich_story,
+)
 from news_intel.pipeline.entities import known_entities
 from news_intel.pipeline.event_integrity import is_dashboard_like, is_low_consequence_event_type
 from news_intel.pipeline.event_integrity_zh import is_low_consequence_event_type_zh
@@ -51,6 +57,14 @@ _EXCLUDED_CATEGORIES = {"noise", "Unclassified", "uncategorized", None}
 _MACHINE_FEED_SUFFIXES = (".ics", ".json", ".xml", ".rss")
 
 _EDITION_DAILY_LABELS = {"en_global": "[GLOBAL DAILY]", "zh_cn": "[中文日报]"}
+
+# 2026-08-29 production incident: a daily brief may span at most this many
+# Telegram messages. Two parts is a normal, readable daily; more than that
+# means the digest is anomalously large (a runaway candidate window, a
+# renderer defect) and is worth failing closed on rather than flooding the
+# recipient. delivery/telegram.py's sender does the actual splitting and
+# "(i/N)" labelling -- this only bounds it.
+_MAX_DAILY_MESSAGE_PARTS = 2
 
 
 def _daily_idempotency_key(edition_id: str, date_iso: str, chat_suffix: str) -> str:
@@ -317,7 +331,14 @@ def run_daily(
     if not db.acquire_job_lock(conn, lock_name):
         return DailySummary("", 0, 0, 0, False, "", "", True, False, skipped_lock=True)
 
-    run_id = job_runs.start(conn, "daily")
+    # 2026-08-29 production incident: daily was the only job recording its
+    # run with edition_id=None (weekly_production/monthly_production always
+    # passed it), so en_global and zh_cn runs were indistinguishable in
+    # job_runs -- during this incident the en_global failures and the zh_cn
+    # successes were interleaved under an identical job_name='daily',
+    # edition_id=NULL, and could only be told apart by correlating
+    # timestamps against the journal.
+    run_id = job_runs.start(conn, "daily", edition_id=edition_id)
     try:
         window_start, selection = _select_events(conn, config, now, edition_id=edition_id)
         top3 = [s.primary for s in selection.top_stories]
@@ -402,10 +423,17 @@ def run_daily(
             # is the mechanism this layer commits to.
             bounded_provider = build_bounded_provider(config)
             if bounded_provider is not None:
+                # 2026-08-29: whole-run deadline, not just a per-call
+                # timeout -- see EDITORIAL_RUN_BUDGET_SECONDS. Stories
+                # reached after the budget is gone take the source-grounded
+                # floor without a provider call, so the editorial layer can
+                # never push this job past its systemd TimeoutStartSec.
+                editorial_deadline = time.monotonic() + EDITORIAL_RUN_BUDGET_SECONDS
                 for story in selection.top_stories:
                     story.editorial = enrich_story(
                         story.primary, story.secondary, story.category, story.primary.get("entities"),
                         edition_id=edition_id, update_note=story.update_note, provider=bounded_provider,
+                        deadline=editorial_deadline,
                     )
             if edition_id == "zh_cn":
                 body = render_production_daily_zh(selection, date_label, calendar_items)
@@ -427,9 +455,32 @@ def run_daily(
         rendered_text = f"{header}\n{body}" if chat_id is not None else body
 
         if chat_id is not None:
+            # 2026-08-29 production incident: this gate previously rejected
+            # ANY digest over the single-message limit, even though
+            # delivery/telegram.py's sender already splits at blank-line
+            # section boundaries and labels the parts "(1/2)"/"(2/2)" --
+            # the exact mechanism weekly_formatter.py and monthly_
+            # formatter.py have always relied on. The result was a
+            # COMPOUNDING permanent stall for en_global: fail-closed
+            # returns before record_digest(), so last_digest_window_end
+            # never advanced, so the next run's candidate window was one
+            # day wider, so the digest was longer, so it fail-closed
+            # again. Three consecutive nights (Aug 27/28/29) produced
+            # 4644/4455/4910-char digests and zero English deliveries,
+            # with no path to self-recovery.
+            #
+            # A digest that merely needs splitting is not unsafe -- being
+            # truncated or garbled would be, and the splitter does
+            # neither. Fail closed only when the split would exceed a
+            # bounded number of parts, which is the real "something is
+            # wrong with this digest" signal.
             max_chars = config.policy.digests.telegram_hard_limit_chars
-            if len(rendered_text) > max_chars:
-                reason = f"rendered digest is {len(rendered_text)} chars, exceeds {max_chars}"
+            parts = split_at_sections(rendered_text, max_chars)
+            if len(parts) > _MAX_DAILY_MESSAGE_PARTS:
+                reason = (
+                    f"rendered digest is {len(rendered_text)} chars and would split into {len(parts)} "
+                    f"messages, exceeding the {_MAX_DAILY_MESSAGE_PARTS}-part limit"
+                )
                 job_runs.finish(conn, run_id, "failed", {"fail_closed_reason": reason})
                 return DailySummary(
                     "", 0, 0, 0, False, "", idempotency_key, True, False,

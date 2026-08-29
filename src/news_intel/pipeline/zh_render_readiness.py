@@ -116,6 +116,40 @@ _EVENT_TYPE_LABELS_ZH: list[tuple[str, str]] = [
 # 1-3 sentence lede is never cut short.
 _WHAT_HAPPENED_MAX_CHARS = 160
 
+# 2026-08-29 production incident (Aug 28 zh_cn digest, DELIVERED): the BYD
+# item rendered as an unedited dump of eight consecutive metric/value pairs
+# -- "营业总收入 ：3448.15 亿元，同比下降 7.13% 毛利润 ：649.89 亿元，...
+# 稀释每股收益 ：1.35 元，同比下降 21.05%". The per-sentence budget above
+# never applied because an IT之家 earnings post is ONE unpunctuated
+# "sentence": the loop keeps the first sentence unconditionally (`if kept
+# and ...`), so a single 300-char figure dump passed through whole.
+#
+# Condensing at a clause boundary keeps the leading, most newsworthy
+# metrics (which is what the headline is about) and drops the tail of the
+# table. General over-long-sentence handling -- not specific to earnings
+# posts or to any publisher.
+_ZH_CLAUSE_SEPARATORS = "，,、；;。！？"
+
+
+def _condense_zh(text: str, max_chars: int = _WHAT_HAPPENED_MAX_CHARS) -> str:
+    """Trim an over-long single sentence back to the last clause boundary
+    that fits, so a metric table becomes a readable lede instead of a dump.
+    Returns `text` unchanged when it already fits."""
+    if len(text) <= max_chars:
+        return text
+    window = text[:max_chars]
+    cut = max(window.rfind(sep) for sep in _ZH_CLAUSE_SEPARATORS)
+    if cut <= 0:
+        # No clause boundary at all -- keep the whole window rather than
+        # inventing one mid-token.
+        condensed = window.rstrip()
+    else:
+        condensed = window[:cut].rstrip()
+    condensed = condensed.rstrip("".join(_ZH_CLAUSE_SEPARATORS)).rstrip()
+    if not condensed:
+        return text
+    return condensed if condensed[-1] in "。！？" else condensed + "。"
+
 
 def what_happened_zh(primary: dict, secondary: dict | None = None) -> str | None:
     """The Chinese-aware equivalent of summary_quality.best_available_summary:
@@ -143,7 +177,8 @@ def what_happened_zh(primary: dict, secondary: dict | None = None) -> str | None
                     break
                 kept.append(sentence)
                 total += len(sentence)
-            return "".join(kept) if len(kept) == 1 else " ".join(kept)
+            joined = "".join(kept) if len(kept) == 1 else " ".join(kept)
+            return _condense_zh(joined)
         fallback = strip_zh_preamble(excerpt).strip()
         if len(fallback) >= _FALLBACK_MIN_CHARS:
             return fallback if fallback[-1] in "。！？；" else fallback + "。"

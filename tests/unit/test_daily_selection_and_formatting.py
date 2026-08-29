@@ -566,7 +566,7 @@ def test_underfilled_pool_marker_appears_below_threshold():
     story = Story(primary=_item("E1", "A real story happens", "Markets & Economy", 80.0))
     result = SelectionResult(top_stories=[story], more_to_know=[])
     rendered = render_production_daily(result, "Aug 22", [])
-    assert "only" in rendered and "quality and source-diversity" in rendered
+    assert "only" in rendered and "quality bar" in rendered
 
 
 def test_underfilled_pool_marker_absent_at_full_strength():
@@ -576,4 +576,4 @@ def test_underfilled_pool_marker_absent_at_full_strength():
     ]
     result = SelectionResult(top_stories=stories[:3], more_to_know=stories[3:])
     rendered = render_production_daily(result, "Aug 22", [])
-    assert "quality and source-diversity" not in rendered
+    assert "quality bar" not in rendered

@@ -60,6 +60,49 @@ _CONSEQUENCE_TERMS_ZH = frozenset(
 )
 
 
+# 2026-08-29 production incident (Aug 28 zh_cn digest, DELIVERED): the
+# Siemens item "工业Agent不是「套壳」大模型！西门子百年经验灌进工业AI"
+# occupied a TOP slot with body text that is pure vendor marketing --
+# "西门子Xcelerator与普通软件货架最本质的区别... 要解决的是「让产品在真实
+# 工业场景中持续生长」". A named commercial platform plus capability/
+# value-proposition language, with no transaction, customer, regulator,
+# number, or measurable outcome, is a vendor pitch rather than news.
+# General marketing-register vocabulary, not a Siemens-specific rule.
+_PROMOTIONAL_TERMS_ZH = frozenset(
+    {
+        "赋能", "助力", "打造", "全新升级", "重磅发布", "行业领先", "一站式", "解决方案", "生态",
+        "深度融合", "全面布局", "持续生长", "本质区别", "核心竞争力", "护城河", "标杆", "引领行业",
+        "开启新篇章", "新范式", "首发上线", "焕新", "加持",
+        # Vendor value-proposition / differentiation framing ("the essential
+        # difference is...", "what X solves is...", "a century of
+        # experience") -- the register a marketing page uses to position a
+        # named product against alternatives, rather than report an event.
+        "本质的区别", "解决的是", "百年经验", "真实工业场景", "真实场景",
+    }
+)
+
+# 2026-08-29 production incident (Aug 26 zh_cn digest, DELIVERED): the
+# Nvidia item "华尔街高度关注英伟达第二财季业绩，盼其能继续引领 AI 板块"
+# took the TOP slot. It is pre-earnings market anticipation -- "将在...
+# 公布第二财季业绩", "市场对这份财报的期待很高" -- not a completed material
+# event. Anticipation of a future disclosure is not itself a development;
+# the disclosure is. General forward-looking/expectation vocabulary.
+_ANTICIPATION_TERMS_ZH = frozenset(
+    {
+        "即将公布", "将公布", "将发布", "即将发布", "备受关注", "高度关注", "market期待", "市场期待",
+        "期待很高", "预计将", "有望", "盼其", "拭目以待", "前瞻", "预热", "剧透", "曝光", "或将推出",
+        "传将", "料将",
+    }
+)
+
+# A completed-event signal strong enough to rescue a story that also
+# happens to contain anticipation language (e.g. an article that reports
+# actual results AND previews the next quarter).
+_COMPLETED_EVENT_TERMS_ZH = frozenset(
+    {"已发布", "今日发布", "正式发布", "宣布", "公布了", "已完成", "达成", "签署", "获批", "生效", "落地"}
+)
+
+
 def _has_material_consequence_signal_zh(text: str) -> bool:
     """Shared "is there an independently material consequence" check for
     Chinese text -- a real 万/亿-magnitude figure or a decision/consequence
@@ -89,13 +132,45 @@ def is_unqualified_recognition_story_zh(title: str, excerpt: str | None) -> bool
     return not _has_material_consequence_signal_zh(text)
 
 
+def is_vendor_promotional_zh(title: str, excerpt: str | None) -> bool:
+    """True if this reads as vendor/product marketing rather than news:
+    marketing-register vocabulary with no transaction, regulator, measurable
+    figure, or other independently material consequence behind it.
+
+    Requires TWO distinct promotional markers so an ordinary story that
+    happens to use one common business word ("解决方案", "生态") is not
+    swept up -- a single marketing word is normal business writing; a
+    cluster of them with nothing concrete attached is a pitch."""
+    text = f"{title or ''} {excerpt or ''}"
+    hits = sum(1 for term in _PROMOTIONAL_TERMS_ZH if term in text)
+    if hits < 2:
+        return False
+    return not _has_material_consequence_signal_zh(text)
+
+
+def is_pre_event_anticipation_zh(title: str, excerpt: str | None) -> bool:
+    """True if the story is anticipation of a future disclosure/launch
+    rather than a completed development. A story that ALSO reports a
+    completed action (results actually published, deal actually signed) is
+    not suppressed -- only pure "everyone is waiting for X" coverage is."""
+    text = f"{title or ''} {excerpt or ''}"
+    if not any(term in text for term in _ANTICIPATION_TERMS_ZH):
+        return False
+    if any(term in text for term in _COMPLETED_EVENT_TERMS_ZH):
+        return False
+    return True
+
+
 def is_low_consequence_event_type_zh(title: str, excerpt: str | None) -> bool:
     """Combined Chinese event-type/consequence gate: true if this
     candidate is a normally non-material event type -- conference/
-    exhibition appearance, or award/ranking/list inclusion -- with no
-    independently material consequence attached. General event-type logic
-    only; never a title-specific exclusion."""
+    exhibition appearance, award/ranking/list inclusion, vendor-promotional
+    copy, or pre-event anticipation -- with no independently material
+    consequence attached. General event-type logic only; never a
+    title-specific exclusion."""
     return (
         is_conference_appearance_without_event_zh(title, excerpt)
         or is_unqualified_recognition_story_zh(title, excerpt)
+        or is_vendor_promotional_zh(title, excerpt)
+        or is_pre_event_anticipation_zh(title, excerpt)
     )

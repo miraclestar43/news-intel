@@ -145,6 +145,20 @@ def _has_event_type_signal(lowered: str) -> bool:
     return any(term in lowered for term in HIGH_IMPACT_TERMS)
 
 
+def _has_high_impact_signal(text: str, lowered: str) -> bool:
+    """Bilingual consequence check: materiality.HIGH_IMPACT_TERMS is an
+    English vocabulary and never matches Chinese text, so a Chinese-only
+    story would otherwise register as having no consequence at all.
+    Reuses pipeline/event_integrity_zh's already-curated Chinese
+    consequence vocabulary rather than maintaining a second, divergent
+    list."""
+    if _has_event_type_signal(lowered):
+        return True
+    from news_intel.pipeline.event_integrity_zh import _CONSEQUENCE_TERMS_ZH
+
+    return any(term in text for term in _CONSEQUENCE_TERMS_ZH)
+
+
 CHINA_POLICY_BUCKET = "us_china_policy_geopolitics"
 
 # 2026-08-21 repair: "中国"/"China" (and "北京"/"Beijing") are the ISSUING-
@@ -172,6 +186,45 @@ _CHINA_INTL_SIGNAL_TERMS = (
     "出口管制", "实体清单", "制裁", "关税", "贸易战", "外交", "条约", "世贸组织", "美国", "华盛顿", "欧盟", "新加坡",
 )
 
+# 2026-08-29 production incident (Aug 28 zh_cn digest, DELIVERED): a purely
+# DOMESTIC Chinese story -- the Chengdu Hi-Tech Disaster Reduction
+# Institute apologising for a magnitude error in an earthquake early
+# warning -- was classified "US / China / World" and rendered under the
+# 国际与中美 (International & US-China) section. Reproduction: its only
+# china-group hit was the generic "中国" (inside the domestic institution
+# names 中国地震预警网/中国地震局), and the ONLY thing that then satisfied
+# the international-signal requirement was an incidental "美国" mention in
+# the article body.
+#
+# A bare foreign COUNTRY NAME is exactly the "bare mention proves nothing"
+# problem _CHINA_GENERIC_TERMS already guards against on the China side --
+# it just wasn't applied symmetrically to the other side of the pair. Split
+# out here: a generic-only China hit now needs either genuine
+# international-RELATIONS vocabulary (below), or a bare country name
+# ALONGSIDE a materially consequential event type -- the same
+# "country + consequence" rule _world_politics_bucket already enforces.
+# Never a story-specific exclusion.
+_CHINA_INTL_BARE_COUNTRY_TERMS = frozenset(
+    {
+        "united states", "u.s.", "washington", "european union", "singapore", "japan",
+        "south korea", "britain", "u.k.",
+        "美国", "华盛顿", "欧盟", "新加坡",
+    }
+)
+
+# Cross-border ACTION vocabulary: what separates "a Chinese party is doing
+# something across a border" (a genuine US/China/World story, even with no
+# sanctions/tariff/treaty language) from "a foreign country is mentioned in
+# passing" (the Chengdu regression, where 美国 appeared only as a
+# comparison in a domestic regulatory apology). A bare country name counts
+# as an international signal when paired with one of these, or with a
+# materially consequential event type.
+_CHINA_CROSS_BORDER_ACTION_TERMS = (
+    "expand into", "expansion into", "enter the market", "entering the market", "overseas", "cross-border",
+    "abroad", "foreign market", "global market", "international market", "exports to", "imports from",
+    "海外", "出海", "进军", "拓展", "国际市场", "全球市场", "跨境", "对外投资", "海外市场",
+)
+
 
 def _china_policy_bucket(text: str, lowered: str, topics: TopicsConfig) -> tuple[str, list[str]] | None:
     """General US/China/World classification: a china-group vocabulary hit
@@ -192,7 +245,24 @@ def _china_policy_bucket(text: str, lowered: str, topics: TopicsConfig) -> tuple
     foreign_country_hit = any(
         _term_matches(term, lowered, text) for term in _all_terms(world_politics_group)
     )
-    intl_signal = foreign_country_hit or any(_term_matches(term, lowered, text) for term in _CHINA_INTL_SIGNAL_TERMS)
+    # Genuine international-RELATIONS vocabulary (export controls, entity
+    # list, sanctions, tariffs, trade war, diplomacy, treaties, WTO) is a
+    # signal on its own. A bare foreign COUNTRY NAME is not -- see
+    # _CHINA_INTL_BARE_COUNTRY_TERMS.
+    relations_hit = any(
+        _term_matches(term, lowered, text)
+        for term in _CHINA_INTL_SIGNAL_TERMS
+        if term not in _CHINA_INTL_BARE_COUNTRY_TERMS
+    )
+    bare_country_hit = foreign_country_hit or any(
+        _term_matches(term, lowered, text) for term in _CHINA_INTL_BARE_COUNTRY_TERMS
+    )
+    cross_border_action = any(
+        _term_matches(term, lowered, text) for term in _CHINA_CROSS_BORDER_ACTION_TERMS
+    )
+    intl_signal = relations_hit or (
+        bare_country_hit and (cross_border_action or _has_high_impact_signal(text, lowered))
+    )
     if not intl_signal:
         return None
     return CHINA_POLICY_BUCKET, matched

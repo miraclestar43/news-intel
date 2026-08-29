@@ -169,10 +169,28 @@ def render_production_daily(
         lines.append("No qualifying developments were found in the last 24 hours.")
     elif len(result.all_stories) < UNDERFILLED_POOL_THRESHOLD:
         lines.append("")
-        lines.append(
-            f"Note: only {len(result.all_stories)} stories met today's quality and source-diversity bar "
-            "-- no lower-quality or promotional items were added just to fill out the digest."
-        )
+        # 2026-08-29 production incident: see the zh_cn formatter -- this
+        # note must distinguish a genuinely thin candidate pool from source
+        # concentration and from the per-publisher cap, rather than always
+        # implying the quality bar was the binding constraint.
+        shown = len(result.all_stories)
+        cause = result.underfill_cause
+        if cause == "source_concentration":
+            lines.append(
+                f"Note: {result.qualified_family_count} stories met today's quality bar, but they came from "
+                f"only {result.distinct_publisher_families} publisher(s); {shown} are shown to preserve "
+                "source diversity."
+            )
+        elif cause == "publisher_cap":
+            lines.append(
+                f"Note: {result.qualified_family_count} stories met today's quality bar; {shown} are shown "
+                "after the per-publisher cap."
+            )
+        else:
+            lines.append(
+                f"Note: only {shown} stories met today's quality bar -- no lower-quality or promotional "
+                "items were added just to fill out the digest."
+            )
 
     if calendar_items:
         lines.append("")

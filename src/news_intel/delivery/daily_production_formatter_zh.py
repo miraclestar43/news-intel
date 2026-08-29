@@ -179,10 +179,29 @@ def render_production_daily_zh(
         lines.append("过去24小时内未发现符合条件的重大动态。")
     elif len(result.all_stories) < UNDERFILLED_POOL_THRESHOLD:
         lines.append("")
-        lines.append(
-            f"说明：今日仅有 {len(result.all_stories)} 条动态达到质量与来源多样性标准，"
-            "未添加低质量或宣传性内容凑数。"
-        )
+        # 2026-08-29 production incident: this note previously always
+        # blamed "质量与来源多样性标准" (the quality bar), even when the
+        # real cause was that every qualified candidate came from one or
+        # two publishers -- telling the reader their feed was low-quality
+        # when it was actually narrow. Now reports the cause selection
+        # actually observed.
+        shown = len(result.all_stories)
+        cause = result.underfill_cause
+        if cause == "source_concentration":
+            lines.append(
+                f"说明：今日共有 {result.qualified_family_count} 条动态达到质量标准，"
+                f"但集中来自 {result.distinct_publisher_families} 家媒体；"
+                f"为保证来源多样性，实际展示 {shown} 条。"
+            )
+        elif cause == "publisher_cap":
+            lines.append(
+                f"说明：今日共有 {result.qualified_family_count} 条动态达到质量标准，"
+                f"受单一来源数量上限限制，实际展示 {shown} 条。"
+            )
+        else:
+            lines.append(
+                f"说明：今日仅有 {shown} 条动态达到质量标准，未添加低质量或宣传性内容凑数。"
+            )
 
     if calendar_items:
         lines.append("")

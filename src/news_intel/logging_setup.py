@@ -51,6 +51,35 @@ def _redaction_processor(logger, method_name, event_dict):  # noqa: ARG001
     return event_dict
 
 
+class _StdlibRedactionFilter(logging.Filter):
+    """2026-08-29 production incident (security): the Telegram bot token
+    was written to the systemd journal in PLAINTEXT on every successful
+    send -- httpx logs "HTTP Request: POST
+    https://api.telegram.org/bot<TOKEN>/sendMessage" at INFO level through
+    the STANDARD library logger, which never passes through structlog's
+    _redaction_processor. The redaction patterns were already correct;
+    they were simply never applied to third-party stdlib log records.
+
+    Attached to every root handler so any library (httpx, telegram, urllib3,
+    ...) that logs a URL or header containing a credential is redacted at
+    the handler boundary, rather than requiring each library to be
+    individually silenced."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = redact_text(record.msg)
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {
+                    k: redact_text(v) if isinstance(v, str) else v for k, v in record.args.items()
+                }
+            else:
+                record.args = tuple(
+                    redact_text(a) if isinstance(a, str) else a for a in record.args
+                )
+        return True
+
+
 def configure_logging(log_dir: Path | None = None, level: int = logging.INFO) -> None:
     handlers: list[logging.Handler] = [logging.StreamHandler()]
     if log_dir is not None:
@@ -66,6 +95,22 @@ def configure_logging(log_dir: Path | None = None, level: int = logging.INFO) ->
         )
 
     logging.basicConfig(level=level, format="%(message)s", handlers=handlers)
+
+    # Attach to the handlers actually installed on the root logger, not to
+    # the list built above: logging.basicConfig() is a NO-OP when the root
+    # logger already has handlers (another library, an embedding host, or a
+    # test runner got there first), in which case the handlers above are
+    # discarded and filtering them would silently protect nothing.
+    redaction_filter = _StdlibRedactionFilter()
+    for handler in logging.getLogger().handlers:
+        if not any(isinstance(f, _StdlibRedactionFilter) for f in handler.filters):
+            handler.addFilter(redaction_filter)
+
+    # Defense in depth alongside the redaction filter: httpx's INFO-level
+    # request line has no diagnostic value here and is exactly where the
+    # bot token leaked from.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     structlog.configure(
         processors=[

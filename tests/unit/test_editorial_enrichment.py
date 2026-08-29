@@ -321,3 +321,66 @@ def test_build_bounded_provider_returns_none_when_unconfigured(config):
 
     assert config.secrets.llm_base_url in (None, "")
     assert build_bounded_provider(config) is None
+
+
+# --- whole-run budget (2026-08-29 production incident) --------------------
+
+
+def test_enrich_story_skips_provider_entirely_once_deadline_passed():
+    """A per-CALL timeout does not bound the JOB: 3 stories x 2 enrich
+    attempts x 2 internal JSON-repair calls x 60s = 720s, against a systemd
+    TimeoutStartSec of 280s on both daily units. Past the deadline a story
+    must take the source-grounded floor WITHOUT calling the provider."""
+    import time as _time
+
+    provider = _FakeProvider([RuntimeError("provider must not be called past the deadline")])
+    result = enrich_story(
+        _primary(), None, "AI & Semiconductors", ["Starcloud"],
+        provider=provider, deadline=_time.monotonic() - 1,
+    )
+    assert result.source == "deterministic_fallback"
+    assert result.fallback_reason == "editorial run budget exhausted"
+    assert provider.calls == []  # structural proof: zero provider contact
+
+
+def test_enrich_story_still_calls_provider_before_the_deadline():
+    import time as _time
+
+    primary = _primary()
+    evidence = build_event_input(primary, None, "AI & Semiconductors", ["Starcloud"], edition_id="en_global")
+    provider = _FakeProvider([_good_enrichment(evidence)])
+    result = enrich_story(
+        primary, None, "AI & Semiconductors", ["Starcloud"],
+        provider=provider, deadline=_time.monotonic() + 120,
+    )
+    assert result.source == "llm_validated"
+    assert len(provider.calls) == 1
+
+
+def test_enrich_story_skips_the_retry_when_the_budget_runs_out_mid_story():
+    """The validation-guided retry costs another full provider timeout;
+    once the budget is gone it must be skipped rather than overrunning."""
+    import time as _time
+
+    primary = _primary()
+    evidence = build_event_input(primary, None, "AI & Semiconductors", ["Starcloud"], edition_id="en_global")
+    bad = _bad_enrichment_generic(evidence)
+    provider = _FakeProvider([bad, _good_enrichment(evidence)])
+    # Deadline already past: the first attempt is skipped outright.
+    result = enrich_story(
+        primary, None, "AI & Semiconductors", ["Starcloud"],
+        provider=provider, deadline=_time.monotonic() - 1,
+    )
+    assert result.source == "deterministic_fallback"
+    assert provider.calls == []
+
+
+def test_editorial_run_budget_fits_inside_the_systemd_start_timeout():
+    """Pins the arithmetic the incident exposed: the editorial budget plus
+    realistic selection/render/send/teardown overhead must stay under the
+    280s TimeoutStartSec configured on pi-news-daily{,-zh}.service."""
+    from news_intel.pipeline.editorial_enrichment import EDITORIAL_RUN_BUDGET_SECONDS
+
+    systemd_timeout_start_sec = 280
+    non_editorial_overhead_headroom = 60
+    assert EDITORIAL_RUN_BUDGET_SECONDS + non_editorial_overhead_headroom < systemd_timeout_start_sec

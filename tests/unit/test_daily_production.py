@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 
 from news_intel import db
 from news_intel.delivery.formatter import render_daily
+from news_intel.delivery.splitter import split_at_sections
 from news_intel.jobs.daily import run_daily
 from news_intel.llm.fallback import FALLBACK_NOTICE, _complete_sentence_summary, fallback_daily_digest
 from news_intel.models import DailyDigestInput
@@ -199,15 +200,57 @@ def _seed_event(conn, config, *, event_id, title, category, now=_NOW, url="https
 # --- 4096-char enforcement ---------------------------------------------------
 
 
-def test_run_daily_fails_closed_when_rendered_exceeds_hard_limit(config, conn):
+def test_run_daily_fails_closed_when_rendered_needs_too_many_parts(config, conn):
     _seed_event(conn, config, event_id="E-1", title="A" * 30, category="AI & Semiconductors")
     config.policy.digests.telegram_hard_limit_chars = 10  # trivially exceeded by any real digest
 
     summary = run_daily(config, conn, chat_id=555, dry_run=True, now=_NOW)
 
     assert summary.fail_closed is True
-    assert "exceeds" in summary.fail_reason
+    assert "part limit" in summary.fail_reason
     assert conn.execute("SELECT COUNT(*) AS n FROM deliveries").fetchone()["n"] == 0
+
+
+def test_run_daily_splits_instead_of_failing_when_slightly_over_one_message(config, conn):
+    """2026-08-29 production incident regression: a digest a little over the
+    single-message limit was fail-closed outright, even though
+    delivery/telegram.py's sender already splits at section boundaries and
+    labels the parts (the mechanism weekly/monthly have always used). Three
+    consecutive nights of en_global (4644/4455/4910 chars) were dropped
+    this way -- and because the fail-closed return happens BEFORE
+    record_digest(), the window cursor never advanced, so each night's
+    candidate window grew and the digest got longer: a compounding stall
+    with no path to self-recovery."""
+    for i in range(3):
+        _seed_event(conn, config, event_id=f"E-{i}", title=f"Story number {i} " + "B" * 40,
+                     category="AI & Semiconductors")
+    # Chosen so a real rendered digest needs exactly 2 messages, not 1 --
+    # the situation production hit at 4455-4910 chars against a 4096 limit.
+    limit = 450
+    config.policy.digests.telegram_hard_limit_chars = limit
+
+    summary = run_daily(config, conn, chat_id=555, dry_run=True, now=_NOW)
+
+    assert summary.fail_closed is False, summary.fail_reason
+    assert summary.character_count > limit  # genuinely multi-part
+    assert len(split_at_sections(summary.rendered_text, limit)) == 2
+    assert conn.execute("SELECT COUNT(*) AS n FROM deliveries").fetchone()["n"] == 1
+
+
+def test_run_daily_advances_window_cursor_after_a_multipart_send(config, conn):
+    """The compounding half of the same incident: a run that produces a
+    digest must record it, so the next run's window starts where this one
+    ended instead of re-accumulating days of candidates."""
+    from news_intel.event_repo import last_digest_window_end
+
+    for i in range(3):
+        _seed_event(conn, config, event_id=f"E-{i}", title=f"Story number {i} " + "B" * 40,
+                     category="AI & Semiconductors")
+    config.policy.digests.telegram_hard_limit_chars = 450
+
+    run_daily(config, conn, chat_id=555, dry_run=True, now=_NOW)
+
+    assert last_digest_window_end(conn, "daily", edition_id="en_global") is not None
 
 
 # --- production-date idempotency / no retry ---------------------------------

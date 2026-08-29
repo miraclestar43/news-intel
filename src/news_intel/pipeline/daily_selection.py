@@ -258,10 +258,35 @@ def group_story_families(candidates: list[dict], *, generic_terms: set[str]) -> 
 class SelectionResult:
     top_stories: list[Story] = field(default_factory=list)
     more_to_know: list[Story] = field(default_factory=list)
+    # 2026-08-29 production incident: the delivered zh_cn digests told the
+    # reader "今日仅有 2 条动态达到质量与来源多样性标准" -- i.e. only two
+    # stories met the QUALITY bar -- when the real cause was source
+    # concentration (every candidate came from IT之家/量子位, and
+    # MAX_STORIES_PER_DOMAIN then capped how many could be shown). Blaming
+    # quality for what is actually a publisher-cap outcome misleads the
+    # reader about their own feed. These carry the honest counts so the
+    # renderer can say which of the three it actually was.
+    qualified_family_count: int = 0
+    distinct_publisher_families: int = 0
 
     @property
     def all_stories(self) -> list[Story]:
         return self.top_stories + self.more_to_know
+
+    @property
+    def underfill_cause(self) -> str:
+        """"quality" | "source_concentration" | "publisher_cap".
+
+        source_concentration: plenty of qualified stories existed but they
+        came from very few publishers. publisher_cap: enough publishers,
+        but the per-domain cap still bound. quality: the candidate pool
+        itself was genuinely thin."""
+        shown = len(self.all_stories)
+        if self.qualified_family_count <= shown:
+            return "quality"
+        if self.distinct_publisher_families <= 2:
+            return "source_concentration"
+        return "publisher_cap"
 
 
 def _is_ai(story: Story) -> bool:
@@ -448,4 +473,9 @@ def select_daily_stories(
 
     selected = _apply_render_readiness_gate(selected, families)
     top_stories, more_to_know = _finalize_top_and_more(selected, max_total)
-    return SelectionResult(top_stories=top_stories, more_to_know=more_to_know)
+    return SelectionResult(
+        top_stories=top_stories,
+        more_to_know=more_to_know,
+        qualified_family_count=len(families),
+        distinct_publisher_families=len({f.domain for f in families if f.domain}),
+    )

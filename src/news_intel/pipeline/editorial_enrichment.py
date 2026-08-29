@@ -48,6 +48,20 @@ _STORY_TIMEOUT_SECONDS = 12.0
 # rather than an untested guess.
 _HERMES_CLI_STORY_TIMEOUT_SECONDS = 60.0
 
+# 2026-08-29 production incident: a per-CALL timeout alone does not bound
+# the JOB. enrich_story() makes up to 2 provider attempts, and
+# HermesCliProvider._complete() internally makes up to 2 subprocess calls
+# (one JSON-repair retry), so a single story's worst case is 2 x 2 x 60s =
+# 240s, and a 3-story TOP section is 720s -- against a systemd
+# TimeoutStartSec of 280s on both daily units. A run that hit the worst
+# case would be SIGTERMed mid-flight, producing no digest, no delivery and
+# a truncated run record. This is a whole-run deadline: once it passes,
+# every remaining story goes straight to the source-grounded floor without
+# calling the provider at all, so the editorial layer can never push the
+# job past its service budget. Sized to leave headroom for selection,
+# rendering, Telegram, and process teardown inside 280s.
+EDITORIAL_RUN_BUDGET_SECONDS = 150.0
+
 
 def build_bounded_provider(config):
     """Constructs a per-story provider with a STRICTER timeout than the
@@ -126,13 +140,21 @@ def _source_grounded_fallback(primary: dict, secondary: dict | None, reason: str
 def enrich_story(
     primary: dict, secondary: dict | None, category: str, entities: list[str] | None,
     *, edition_id: str = "en_global", update_note: str | None = None, provider=None,
+    deadline: float | None = None,
 ) -> EditorialResult:
     """`provider` is injected (never constructed here from config) so
     callers control exactly what -- if anything -- this can reach; tests
     always pass a fake. A None/unconfigured provider is the same as any
-    other failure mode: falls straight to the source-grounded floor."""
+    other failure mode: falls straight to the source-grounded floor.
+
+    `deadline` is a time.monotonic() instant after which this story is NOT
+    sent to the provider at all (see EDITORIAL_RUN_BUDGET_SECONDS) -- the
+    whole-run bound that keeps a slow/timing-out provider from pushing the
+    job past its systemd TimeoutStartSec."""
     if provider is None:
         return _source_grounded_fallback(primary, secondary, "no provider configured")
+    if deadline is not None and time.monotonic() >= deadline:
+        return _source_grounded_fallback(primary, secondary, "editorial run budget exhausted")
 
     evidence = build_event_input(
         primary, secondary, category, entities, edition_id=edition_id, update_note=update_note
@@ -142,6 +164,11 @@ def enrich_story(
     last_reasons: list[str] = []
     retry_count = 0
     for _attempt in range(2):  # one original attempt + one validation-error-guided retry
+        # A validation-guided retry costs another full provider timeout;
+        # skip it (keeping the already-collected rejection reasons) once
+        # the whole-run budget is gone, rather than overrunning the job.
+        if _attempt > 0 and deadline is not None and time.monotonic() >= deadline:
+            break
         try:
             enrichment = _call_provider_bounded(provider, evidence, last_reasons)
         except LLMUnavailableError as exc:
