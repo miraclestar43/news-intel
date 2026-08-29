@@ -181,7 +181,12 @@ def what_happened_zh(primary: dict, secondary: dict | None = None) -> str | None
             return _condense_zh(joined)
         fallback = strip_zh_preamble(excerpt).strip()
         if len(fallback) >= _FALLBACK_MIN_CHARS:
-            return fallback if fallback[-1] in "。！？；" else fallback + "。"
+            # Condensed on this path too: the real production BYD earnings
+            # row parses into ZERO zh_sentences (the whole figure table is
+            # one run of metric/value pairs with no interior 。), so it
+            # reaches HERE, not the sentence path above. Condensing only
+            # the sentence branch left the delivered dump unchanged.
+            return _condense_zh(fallback if fallback[-1] in "。！？；" else fallback + "。")
     return None
 
 
