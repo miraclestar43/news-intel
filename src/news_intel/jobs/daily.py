@@ -316,11 +316,19 @@ def run_daily(
 
     now_pt_date = now.astimezone(ZoneInfo(edition.schedule.timezone)).date()
     pt_weekday = now_pt_date.weekday()
-    if pt_weekday == 6:  # Sunday: the weekly brief replaces the daily send entirely
+    # 2026-09-07 production incident: these two skips were UNCONDITIONAL --
+    # daily stood aside for a weekly brief on Sunday and a monthly brief on
+    # the first Monday of the month. Both of those timers are disabled for
+    # this release, so instead of being replaced the digest was simply never
+    # produced: Sep 6 (Sunday) and Sep 7 (first Monday) delivered nothing for
+    # EITHER edition, while systemd recorded "success" in about one second.
+    # Standing aside is only correct when something is actually going to take
+    # the slot, so it is now explicit per-edition policy (default False).
+    if pt_weekday == 6 and edition.schedule.weekly_replaces_daily:
         return DailySummary(
             "", 0, 0, 0, False, "", "", True, False, skipped_sunday=True
         )
-    if pt_weekday == 0 and now_pt_date.day <= 7:  # first Monday: the monthly brief replaces the daily send
+    if pt_weekday == 0 and now_pt_date.day <= 7 and edition.schedule.monthly_replaces_daily:
         return DailySummary(
             "", 0, 0, 0, False, "", "", True, False, skipped_monthly_slot=True
         )

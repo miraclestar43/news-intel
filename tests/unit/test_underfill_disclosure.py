@@ -39,8 +39,10 @@ def test_source_concentration_is_not_reported_as_a_quality_failure_en():
     assert result.underfill_cause == "source_concentration"
     rendered = render_production_daily(result, "Aug 28", [])
     assert "21 stories met today's quality bar" in rendered
-    assert "source diversity" in rendered
+    assert "concentrated, not diverse" in rendered
     assert "only 1 stories met" not in rendered
+    # 2026-09-07: must not claim diversity it does not have
+    assert "to preserve source diversity" not in rendered
 
 
 def test_source_concentration_is_not_reported_as_a_quality_failure_zh():
@@ -48,8 +50,11 @@ def test_source_concentration_is_not_reported_as_a_quality_failure_zh():
                               qualified_family_count=21, distinct_publisher_families=2)
     rendered = render_production_daily_zh(result, "Aug 28", [])
     assert "共有 21 条动态达到质量标准" in rendered
-    assert "集中来自 2 家媒体" in rendered
+    assert "全部来自 2 家媒体" in rendered
+    assert "并不具备来源多样性" in rendered
     assert "仅有" not in rendered  # never implies the quality bar was the constraint
+    # 2026-09-07: must not claim diversity it does not have
+    assert "为保证来源多样性" not in rendered
 
 
 def test_publisher_cap_is_distinguished_from_both():

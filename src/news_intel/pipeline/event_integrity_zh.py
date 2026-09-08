@@ -98,6 +98,22 @@ _ANTICIPATION_TERMS_ZH = frozenset(
 # A completed-event signal strong enough to rescue a story that also
 # happens to contain anticipation language (e.g. an article that reports
 # actual results AND previews the next quarter).
+# 2026-09-07 production incident (Sep 5 zh_cn digest, DELIVERED): the TOP
+# #1 slot was "长安汽车：智驾行业 2028 年完成首轮洗牌，我们和引望会留下来" --
+# a Changan vice-president PREDICTING industry consolidation by 2028 and
+# asserting his own company would survive it. That is an executive forecast
+# and self-positioning, not a completed AI/semiconductor event, and it
+# outranked genuine same-day developments. General forward-looking
+# executive-forecast vocabulary, not a Changan- or autos-specific rule.
+_EXECUTIVE_FORECAST_TERMS_ZH = frozenset(
+    {
+        "预计", "预测", "将在", "有望在", "认为", "表示将", "预判", "展望",
+        "洗牌", "格局将", "未来几年", "长期来看", "趋势将", "会留下来", "将迎来",
+    }
+)
+
+# A concrete year far enough out that the statement is necessarily a
+# projection rather than a report of something that happened.
 _COMPLETED_EVENT_TERMS_ZH = frozenset(
     {"已发布", "今日发布", "正式发布", "宣布", "公布了", "已完成", "达成", "签署", "获批", "生效", "落地"}
 )
@@ -161,6 +177,26 @@ def is_pre_event_anticipation_zh(title: str, excerpt: str | None) -> bool:
     return True
 
 
+def is_executive_forecast_zh(title: str, excerpt: str | None) -> bool:
+    """True if the story is an executive's forward-looking prediction about
+    how an industry will develop, with no completed action behind it.
+
+    Requires BOTH forecast vocabulary AND a future year, so an ordinary
+    report that merely mentions a plan ("预计本季度交付") is not swept up,
+    while "2028 年完成首轮洗牌" is."""
+    import re as _re
+
+    text = f"{title or ''} {excerpt or ''}"
+    if not any(term in text for term in _EXECUTIVE_FORECAST_TERMS_ZH):
+        return False
+    future_year = _re.search(r"20(2[7-9]|[3-9]\d)\s*年", text)
+    if not future_year:
+        return False
+    if any(term in text for term in _COMPLETED_EVENT_TERMS_ZH):
+        return False
+    return not _has_material_consequence_signal_zh(text)
+
+
 def is_low_consequence_event_type_zh(title: str, excerpt: str | None) -> bool:
     """Combined Chinese event-type/consequence gate: true if this
     candidate is a normally non-material event type -- conference/
@@ -173,4 +209,5 @@ def is_low_consequence_event_type_zh(title: str, excerpt: str | None) -> bool:
         or is_unqualified_recognition_story_zh(title, excerpt)
         or is_vendor_promotional_zh(title, excerpt)
         or is_pre_event_anticipation_zh(title, excerpt)
+        or is_executive_forecast_zh(title, excerpt)
     )

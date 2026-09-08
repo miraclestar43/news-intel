@@ -27,6 +27,19 @@ _BANNED_PATTERNS = [
     re.compile(r"属.{0,20}重要动态$"),
     re.compile(r"newly named \("),
     re.compile(r"^worth \$", re.IGNORECASE),  # "worth $X" as the ENTIRE clause -- a bare, roleless amount
+    # 2026-09-07 production incident (Sep 5 en_global, DELIVERED): the
+    # Insider Monkey item's "why it matters" was "This trend could indicate
+    # that investor interest ... potentially affecting valuations across
+    # chip manufacturing equipment and materials companies." That is a
+    # tautology -- any market story "could affect valuations" -- not a
+    # story-specific consequence. Generic hedged market-implication
+    # boilerplate is rejected the same way the category-label templates are.
+    re.compile(r"could (?:affect|impact|influence) (?:valuations|share prices|stock prices|sentiment)",
+               re.IGNORECASE),
+    re.compile(r"potentially affecting valuations", re.IGNORECASE),
+    re.compile(r"may (?:affect|impact) (?:valuations|investor sentiment)", re.IGNORECASE),
+    re.compile(r"或将?影响.{0,10}估值"),
+    re.compile(r"可能会?影响.{0,10}估值"),
 ]
 
 _NUMBER_RE = re.compile(r"[\d,]+(?:\.\d+)?")

@@ -175,6 +175,11 @@ def test_sunday_scheduler_repeated_calls_create_one_weekly_and_zero_daily_duplic
     weekly_digest_count = conn.execute("SELECT COUNT(*) AS n FROM digests WHERE kind='weekly'").fetchone()["n"]
     assert weekly_digest_count == 1
 
+    # 2026-09-07: standing aside on Sunday is now explicit policy rather
+    # than an assumption -- this test covers the case where the weekly
+    # brief IS enabled and genuinely takes the slot, so it opts in.
+    for edition in config.editions.editions:
+        edition.schedule.weekly_replaces_daily = True
     daily_1 = run_daily(config, conn, dry_run=True, now=now_utc)
     daily_2 = run_daily(config, conn, dry_run=False, now=now_utc + timedelta(minutes=5))
     assert daily_1.skipped_sunday is True

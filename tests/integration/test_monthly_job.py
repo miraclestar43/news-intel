@@ -142,6 +142,11 @@ def test_first_monday_repeated_calls_create_one_monthly_and_zero_daily_duplicate
     monthly_digest_count = conn.execute("SELECT COUNT(*) AS n FROM digests WHERE kind='monthly'").fetchone()["n"]
     assert monthly_digest_count == 1
 
+    # 2026-09-07: standing aside on the first Monday is now explicit policy
+    # rather than an assumption -- this test covers the case where the
+    # monthly brief IS enabled and genuinely takes the slot, so it opts in.
+    for edition in config.editions.editions:
+        edition.schedule.monthly_replaces_daily = True
     daily_1 = run_daily(config, conn, dry_run=True, now=now_utc)
     daily_2 = run_daily(config, conn, dry_run=False, now=now_utc + timedelta(minutes=5))
     assert daily_1.skipped_monthly_slot is True

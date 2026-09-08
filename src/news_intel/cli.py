@@ -40,6 +40,36 @@ def _load() -> tuple:
     return config, conn
 
 
+@app.command("health")
+def health(days: int = typer.Option(7, help="How many Pacific days back to reconstruct.")) -> None:
+    """Per-edition daily-delivery health -- what actually reached the reader.
+
+    2026-09-07: added after two incidents in a row were noticed only
+    because Telegram went quiet. Distinguishes a genuinely empty day from a
+    run that never happened, which previously looked identical from the
+    outside (systemd said "success" both times).
+    """
+    from news_intel.jobs.daily_health import daily_health_report
+
+    config, conn = _load()
+    try:
+        rows = daily_health_report(conn, config, days=days)
+    finally:
+        conn.close()
+
+    problems = [r for r in rows if not r.ok]
+    for row in rows:
+        marker = "ok  " if row.ok else "FAIL"
+        typer.echo(f"{marker} {row.pt_date} {row.edition_id:<10} {row.status:<20} {row.detail}")
+    typer.echo("")
+    if problems:
+        typer.echo(f"{len(problems)} edition/date(s) did not deliver:")
+        for row in problems:
+            typer.echo(f"  - {row.pt_date} {row.edition_id}: {row.status}")
+        raise typer.Exit(code=1)
+    typer.echo(f"All {len(rows)} edition/date(s) accounted for.")
+
+
 @app.command()
 def doctor() -> None:
     """Environment/config readiness check. Never prints secret values."""

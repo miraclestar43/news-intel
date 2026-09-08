@@ -297,6 +297,18 @@ class EditionScheduleConfig(BaseModel):
     daily_hour: int = 22
     weekly_hour: int = 22
     monthly_hour: int = 22
+    # 2026-09-07 production incident: jobs/daily.py unconditionally skipped
+    # Sunday ("the weekly brief replaces the daily send") and the first
+    # Monday of the month ("the monthly brief replaces it"). Both weekly and
+    # monthly timers are DISABLED for this release, so those days produced
+    # NOTHING AT ALL: Sep 6 (Sunday) and Sep 7 (first Monday) were silently
+    # dropped for both editions, and because the skip returns before
+    # job_runs.start()/record_digest() it left no run record and froze both
+    # window cursors. The deferral is only ever correct when the replacing
+    # brief is actually going to run, so it is now explicit policy rather
+    # than an assumption -- default False, matching what is deployed.
+    weekly_replaces_daily: bool = False
+    monthly_replaces_daily: bool = False
 
 
 class EditionEntry(BaseModel):

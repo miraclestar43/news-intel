@@ -190,8 +190,8 @@ def render_production_daily_zh(
         if cause == "source_concentration":
             lines.append(
                 f"说明：今日共有 {result.qualified_family_count} 条动态达到质量标准，"
-                f"但集中来自 {result.distinct_publisher_families} 家媒体；"
-                f"为保证来源多样性，实际展示 {shown} 条。"
+                f"但全部来自 {result.distinct_publisher_families} 家媒体；"
+                f"受单一来源上限限制，实际展示 {shown} 条——本期来源集中，并不具备来源多样性。"
             )
         elif cause == "publisher_cap":
             lines.append(

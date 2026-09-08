@@ -198,6 +198,52 @@ def is_corporate_vision_content_without_event(title: str, excerpt: str | None) -
     return not any(term in lowered for term in _CONCRETE_EVENT_VERB_TERMS)
 
 
+# 2026-09-07 production incident (Sep 5 en_global digest, DELIVERED): the
+# TOP #2 slot was Insider Monkey's "Two Chip-Equipment Stocks Just Crushed
+# Nvidia. Is the AI Rally Broadening?" -- speculative stock commentary
+# posed as a question, with no transaction, filing, regulator, product or
+# other concrete primary event behind it. Its "why it matters" was the
+# tautology "could affect valuations", now separately banned.
+#
+# An interrogative headline is a strong, language-general signal that the
+# piece is posing a question rather than reporting an answer. Gated only
+# when NO concrete event verb and no material figure accompany it, so a
+# genuine story that happens to end in a question ("Nvidia acquired X for
+# $2B. What comes next?") still qualifies.
+_SPECULATIVE_COMMENTARY_TERMS = frozenset(
+    {
+        "is the", "are the", "should you", "what to know", "what it means", "here's why",
+        "heres why", "could this", "will this", "is it time", "what's next", "whats next",
+        "outlook", "forecast", "prediction", "rally", "bull case", "bear case",
+    }
+)
+
+
+def is_speculative_market_commentary(title: str, excerpt: str | None) -> bool:
+    """True if this is question-framed market/stock commentary with no
+    concrete primary event or material figure behind it."""
+    title = title or ""
+    text = f"{title} {excerpt or ''}"
+    lowered = text.lower()
+    if "?" not in title:
+        return False
+    if not any(term in lowered for term in _SPECULATIVE_COMMENTARY_TERMS):
+        return False
+    # _CONCRETE_EVENT_VERB_TERMS are deliberately STEMS ("acqui", "announc"),
+    # so they must stay substring-matched. The one problem case is the hedge
+    # "reportedly", which contains the stem "reported" while meaning the
+    # opposite -- an unconfirmed claim, not a completed action. Neutralise
+    # the hedge first rather than breaking stem matching for everything.
+    deheged = lowered.replace("reportedly", " ")
+    if any(term in deheged for term in _CONCRETE_EVENT_VERB_TERMS):
+        return False
+    # Deliberately NOT gated on _has_material_consequence_signal: that
+    # measures MAGNITUDE, and stock commentary is saturated with market
+    # vocabulary, so it always looks "material". What distinguishes
+    # commentary from news is whether a concrete event happened at all.
+    return True
+
+
 def is_low_consequence_event_type(title: str, excerpt: str | None) -> bool:
     """Combined event-type/consequence gate (stage 2 of selection): true if
     this candidate is a normally non-material event type -- recognition/
@@ -210,4 +256,5 @@ def is_low_consequence_event_type(title: str, excerpt: str | None) -> bool:
         or is_routine_tutorial_or_promotional_content(title, excerpt)
         or is_individual_enforcement_without_consequence(title, excerpt)
         or is_corporate_vision_content_without_event(title, excerpt)
+        or is_speculative_market_commentary(title, excerpt)
     )

@@ -177,9 +177,9 @@ def render_production_daily(
         cause = result.underfill_cause
         if cause == "source_concentration":
             lines.append(
-                f"Note: {result.qualified_family_count} stories met today's quality bar, but they came from "
-                f"only {result.distinct_publisher_families} publisher(s); {shown} are shown to preserve "
-                "source diversity."
+                f"Note: {result.qualified_family_count} stories met today's quality bar, but all came from "
+                f"only {result.distinct_publisher_families} publisher(s); the per-publisher cap limits this "
+                f"edition to {shown}. Today's sources are concentrated, not diverse."
             )
         elif cause == "publisher_cap":
             lines.append(

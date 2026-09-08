@@ -131,6 +131,31 @@ _WHAT_HAPPENED_MAX_CHARS = 160
 _ZH_CLAUSE_SEPARATORS = "，,、；;。！？"
 
 
+# 2026-09-07 production incident (Sep 5 zh_cn digest, DELIVERED): the TOP
+# #2 slot's entire summary was `如此“反骨”的方法，具体又是怎么实现的？` --
+# a rhetorical teaser inviting the reader to click, with no actor, action,
+# number or outcome. It was not truncated: that ONE question was the whole
+# stored excerpt, so there was no better sentence to fall back to.
+#
+# A summary that is nothing but an interrogative teaser carries no
+# information, so it is rejected outright rather than rendered; the story
+# then fails the render-readiness gate and is demoted out of TOP instead of
+# occupying a slot with content-free copy. Requires the WHOLE candidate to
+# be interrogative AND carry no digits, so a genuine sentence that merely
+# contains a question ("...同比增长 51.98%，这意味着什么？") still passes.
+_ZH_QUESTION_ENDINGS = ("？", "?")
+
+
+def _is_teaser_question_zh(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped.endswith(_ZH_QUESTION_ENDINGS):
+        return False
+    if any(ch.isdigit() for ch in stripped):
+        return False
+    # More than one sentence means real content precedes the question.
+    return sum(stripped.count(p) for p in "。！") == 0
+
+
 def _condense_zh(text: str, max_chars: int = _WHAT_HAPPENED_MAX_CHARS) -> str:
     """Trim an over-long single sentence back to the last clause boundary
     that fits, so a metric table becomes a readable lede instead of a dump.
@@ -178,8 +203,12 @@ def what_happened_zh(primary: dict, secondary: dict | None = None) -> str | None
                 kept.append(sentence)
                 total += len(sentence)
             joined = "".join(kept) if len(kept) == 1 else " ".join(kept)
+            if _is_teaser_question_zh(joined):
+                continue  # content-free teaser -- try the next source instead
             return _condense_zh(joined)
         fallback = strip_zh_preamble(excerpt).strip()
+        if _is_teaser_question_zh(fallback):
+            continue  # content-free teaser -- try the next source instead
         if len(fallback) >= _FALLBACK_MIN_CHARS:
             # Condensed on this path too: the real production BYD earnings
             # row parses into ZERO zh_sentences (the whole figure table is
