@@ -288,3 +288,49 @@ def test_plain_cli_rendering_has_no_markup():
     assert TITLE in plain and "AI & Semiconductors" in plain
     for bad in ("<", ">", "&#x27;", "&amp;"):
         assert bad not in plain
+
+
+# --- the sender refuses to send anything a reader would see as markup --------------
+
+def test_sender_refuses_html_without_parse_mode_and_invalid_html(conn):
+    import asyncio
+
+    from news_intel.delivery.telegram import TelegramSender
+    from news_intel.delivery.telegram_html import TelegramHTMLError
+
+    sender = TelegramSender(bot_token=None, allowed_chat_ids=[CHAT])
+    good = '<a href="https://x.test/a?b=1&amp;c=2">AMD&#x27;s market cap &amp; AI demand</a>'
+
+    def send(text, key, mode):
+        return asyncio.run(sender.send(conn, chat_id=CHAT, text=text, kind="daily", idempotency_key=key,
+                                       max_chars=4000, dry_run=True, parse_mode=mode))
+
+    with pytest.raises(TelegramHTMLError):
+        send(good, "k1", None)                       # the exact Sep 21 failure shape
+    with pytest.raises(TelegramHTMLError):
+        send("AMD's cap & AI <b>demand", "k2", "HTML")   # unescaped / unbalanced
+    assert send(good, "k3", "HTML").message_ids       # correct form goes through
+    assert send("AMD's market cap & AI demand", "k4", None).message_ids   # true plain text is fine
+
+
+def test_legacy_entity_row_is_not_resurfaced_as_changed_content(config, conn):
+    """A row stored before canonicalisation ("Q&amp;A") must not look like
+    CONTENT_CHANGED when the same article is fetched again."""
+    from news_intel.pipeline.dedupe import UpsertResult, upsert_raw_item
+
+    now = datetime(2026, 9, 21, tzinfo=UTC)
+    insert_source_row(conn, "nv", 0)
+    conn.execute(
+        "INSERT INTO raw_items (source_id, external_id, canonical_url, url_hash, title, normalized_title, "
+        "summary_excerpt, language, fetched_at, content_hash, origin_family) VALUES "
+        "('nv', 'q1', 'https://nv.test/qa', ?, 'Q&amp;A: Path Tracing', 'q&amp;a: path tracing', "
+        "'Q&amp;A with the team', 'en', ?, 'legacy-hash', 'nv.test')",
+        (normalize(CollectedItem(source_id="nv", external_id="q1", canonical_url="https://nv.test/qa", title="x",
+                                 summary_excerpt=None, language="en", published_at=None, origin_family="nv",
+                                 metadata={}), excerpt_max_chars=500).url_hash, now.isoformat()),
+    )
+    again = normalize(CollectedItem(source_id="nv", external_id="q1", canonical_url="https://nv.test/qa",
+                                    title="Q&amp;A: Path Tracing", summary_excerpt="Q&amp;A with the team",
+                                    language="en", published_at=now, origin_family="nv", metadata={}),
+                      excerpt_max_chars=500, now=now)
+    assert upsert_raw_item(conn, again).result == UpsertResult.UNCHANGED

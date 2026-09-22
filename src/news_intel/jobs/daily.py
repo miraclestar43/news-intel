@@ -19,6 +19,9 @@ from news_intel.delivery.daily_production_formatter_zh import render_production_
 from news_intel.delivery.formatter import render_daily
 from news_intel.delivery.splitter import split_at_sections
 from news_intel.delivery.telegram import ChatNotAllowedError, TelegramSender, mark_attempting
+from news_intel.delivery.telegram_html import PARSE_MODE as TELEGRAM_PARSE_MODE
+from news_intel.delivery.telegram_html import TelegramHTMLError, escape_text, plain_to_html
+from news_intel.delivery.telegram_html import validate as validate_telegram_html
 from news_intel.event_repo import (
     event_as_digest_dict,
     last_digest_window_end,
@@ -410,7 +413,10 @@ def run_daily(
                 ev.setdefault("sources", [s["publisher"] for s in source_dict["sources"]])
             for ev, source_dict in zip(output.structured.get("quick_briefs", []), quick, strict=False):
                 ev.setdefault("sources", [s["publisher"] for s in source_dict["sources"]])
-            body = render_daily(date_label, output.structured)
+            # whole-digest path renders PLAIN text: converted to Telegram
+            # HTML by escaping it exactly once, so every daily message has
+            # one format and one parse mode (delivery/telegram_html.py)
+            body = plain_to_html(render_daily(date_label, output.structured))
             model_used = getattr(provider, "model", "llm")
         except LLMUnavailableError:
             # Multi-edition: selection/ranking/render-readiness are fully
@@ -460,7 +466,7 @@ def run_daily(
         # (chat_id=None) stays unprefixed. Edition-distinct reader-facing
         # header ([GLOBAL DAILY]/[中文日报]).
         header = _EDITION_DAILY_LABELS.get(edition_id, "[GLOBAL DAILY]")
-        rendered_text = f"{header}\n{body}" if chat_id is not None else body
+        rendered_text = f"{escape_text(header)}\n{body}" if chat_id is not None else body
 
         if chat_id is not None:
             # 2026-08-29 production incident: this gate previously rejected
@@ -482,6 +488,17 @@ def run_daily(
             # neither. Fail closed only when the split would exceed a
             # bounded number of parts, which is the real "something is
             # wrong with this digest" signal.
+            # 2026-09-22: never contemplate sending markup Telegram would
+            # reject (or display literally) -- checked before the durable
+            # attempt marker, so a bad render can be fixed and re-run
+            try:
+                validate_telegram_html(rendered_text)
+            except TelegramHTMLError as exc:
+                reason = f"rendered digest is not valid Telegram HTML: {exc}"
+                job_runs.finish(conn, run_id, "failed", {"fail_closed_reason": reason})
+                return DailySummary(
+                    "", 0, 0, 0, False, "", idempotency_key, True, False, fail_closed=True, fail_reason=reason,
+                )
             max_chars = config.policy.digests.telegram_hard_limit_chars
             parts = split_at_sections(rendered_text, max_chars)
             if len(parts) > _MAX_DAILY_MESSAGE_PARTS:
@@ -521,11 +538,12 @@ def run_daily(
                         idempotency_key=idempotency_key,
                         max_chars=config.policy.digests.telegram_hard_limit_chars,
                         dry_run=dry_run,
-                        # Only render_production_daily's output is HTML-escaped
-                        # with well-formed <a> tags; the dormant LLM-composed
-                        # path (render_daily) is plain text and must not be
-                        # sent as HTML without its own escaping.
-                        parse_mode="HTML" if fallback_used else None,
+                        # 2026-09-22 incident: this was `"HTML" if fallback_used
+                        # else None`, so every brief with a validated LLM story
+                        # (en since Sep 1, zh from Sep 21) went out with no
+                        # parse mode and readers saw raw <a href> and &#x27;.
+                        # The body is ALWAYS Telegram HTML now (see above).
+                        parse_mode=TELEGRAM_PARSE_MODE,
                     )
                 )
                 sent = not result.dry_run

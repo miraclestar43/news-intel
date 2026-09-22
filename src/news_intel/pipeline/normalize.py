@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from news_intel.adapters.base import CollectedItem
+from news_intel.pipeline.text import canonical_text
 
 _TRACKING_PARAM_PREFIXES = ("utm_", "ref", "fbclid", "gclid", "mc_cid", "mc_eid", "igshid")
 
@@ -81,14 +82,17 @@ def normalize(
     item: CollectedItem, *, excerpt_max_chars: int, now: datetime | None = None, edition_id: str = "en_global"
 ) -> NormalizedItem:
     canonical = canonicalize_url(item.canonical_url)
-    norm_title = normalize_title(item.title)
-    excerpt = (item.summary_excerpt or "")[:excerpt_max_chars] or None
+    # canonical plain Unicode (pipeline/text.py): markup removed, entities
+    # decoded exactly once -- before hashing, so content_hash reflects text
+    title = canonical_text(item.title) or ""
+    norm_title = normalize_title(title)
+    excerpt = (canonical_text(item.summary_excerpt) or "")[:excerpt_max_chars] or None
     return NormalizedItem(
         source_id=item.source_id,
         external_id=item.external_id,
         canonical_url=canonical,
         url_hash=url_hash(canonical),
-        title=item.title.strip(),
+        title=title,
         normalized_title=norm_title,
         summary_excerpt=excerpt,
         language=item.language,
@@ -97,7 +101,7 @@ def normalize(
         content_hash=content_hash(norm_title, excerpt),
         origin_family=item.origin_family,
         origin_url=item.origin_url,
-        origin_title=item.origin_title,
+        origin_title=canonical_text(item.origin_title),
         origin_published_at=item.origin_published_at,
         edition_id=edition_id,
         metadata=item.metadata,

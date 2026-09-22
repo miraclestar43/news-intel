@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from news_intel.pipeline.normalize import NormalizedItem
+from news_intel.pipeline.text import canonical_text
 
 
 class UpsertResult(StrEnum):
@@ -134,6 +135,21 @@ def _update_in_place(conn: sqlite3.Connection, raw_item_id: int, item: Normalize
     )
 
 
+def _only_canonicalization_differs(conn: sqlite3.Connection, identity_row, item: NormalizedItem) -> bool:
+    """2026-09-22: normalization now decodes entities / strips markup BEFORE
+    hashing. A row stored earlier as "Q&amp;A" would otherwise hash
+    differently on its next fetch and be treated as CONTENT_CHANGED --
+    refreshing its eligibility time and re-surfacing an old article. Same
+    text after canonicalization is the same content. (The stored row is left
+    as-is; readers canonicalise it -- pipeline/text.py.)"""
+    row = conn.execute("SELECT title, summary_excerpt FROM raw_items WHERE id = ?", (identity_row["id"],)).fetchone()
+    if row is None:
+        return False
+    return (canonical_text(row["title"]) or "") == (item.title or "") and (
+        (canonical_text(row["summary_excerpt"]) or None) == (item.summary_excerpt or None)
+    )
+
+
 def upsert_raw_item(conn: sqlite3.Connection, item: NormalizedItem) -> UpsertOutcome:
     """Only NEW and CONTENT_CHANGED outcomes should ever be fed onward into
     normalization/clustering/confirmation/scoring by the caller -- UNCHANGED
@@ -141,7 +157,8 @@ def upsert_raw_item(conn: sqlite3.Connection, item: NormalizedItem) -> UpsertOut
     processed on a prior cycle."""
     identity_row = find_existing_identity(conn, item)
     if identity_row is not None:
-        if identity_row["content_hash"] == item.content_hash:
+        same = identity_row["content_hash"] == item.content_hash
+        if same or _only_canonicalization_differs(conn, identity_row, item):
             return UpsertOutcome(identity_row["id"], UpsertResult.UNCHANGED)
         _update_in_place(conn, identity_row["id"], item)
         return UpsertOutcome(identity_row["id"], UpsertResult.CONTENT_CHANGED)

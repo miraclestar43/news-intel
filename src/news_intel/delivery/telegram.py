@@ -9,11 +9,14 @@ and confirms a new bot token/chat id (design doc section 17, operating rule 10).
 from __future__ import annotations
 
 import hashlib
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from news_intel.delivery.splitter import split_and_label
+from news_intel.delivery.telegram_html import PARSE_MODE, TelegramHTMLError
+from news_intel.delivery.telegram_html import validate as validate_telegram_html
 
 
 def chat_id_hash(chat_id: int) -> str:
@@ -86,6 +89,28 @@ class ChatNotAllowedError(Exception):
     pass
 
 
+_MARKUP_IN_PLAIN_RE = re.compile(r"<a\s+href=|</a>|&(?:#\d+|#x[0-9a-fA-F]+|amp|lt|gt|quot);")
+
+
+def _enforce_rendering_contract(chunks: list[str], parse_mode: str | None) -> None:
+    """2026-09-22 incident: HTML was sent without parse_mode and readers saw
+    `<a href=...>` and `&#x27;`. Every part is checked BEFORE anything is
+    recorded or sent: HTML parts must be valid Telegram HTML; a plain part
+    must not contain markup or entities (it would be displayed literally)."""
+    for i, chunk in enumerate(chunks, start=1):
+        if parse_mode == PARSE_MODE:
+            try:
+                validate_telegram_html(chunk)
+            except TelegramHTMLError as exc:
+                raise TelegramHTMLError(f"part {i}/{len(chunks)}: {exc}") from exc
+        elif parse_mode is None:
+            if _MARKUP_IN_PLAIN_RE.search(chunk):
+                raise TelegramHTMLError(f"part {i}/{len(chunks)}: HTML markup/entities in a message sent "
+                                        "without parse_mode -- the reader would see them literally")
+        else:
+            raise TelegramHTMLError(f"unsupported parse_mode {parse_mode!r}")
+
+
 class TelegramSender:
     def __init__(self, bot_token: str | None, allowed_chat_ids: list[int]):
         self.bot_token = bot_token
@@ -126,6 +151,7 @@ class TelegramSender:
                 )
 
         chunks = split_and_label(text, max_chars)
+        _enforce_rendering_contract(chunks, parse_mode)
 
         if dry_run or not self.bot_token:
             placeholder_ids = [f"dry-{i}" for i in range(len(chunks))]

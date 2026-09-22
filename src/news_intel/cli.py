@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import typer
 
 from news_intel import db
+from news_intel.delivery.telegram_html import html_to_plain
 from news_intel.jobs import job_runs
 from news_intel.jobs.alert_shadow import run_alert_shadow_check
 from news_intel.jobs.alerts import release_held_alerts, run_alert_check
@@ -206,8 +207,9 @@ def digest_daily(
     typer.echo(f"edition={edition} model_used={summary.model_used} fallback_used={summary.fallback_used}")
     typer.echo(f"top3={summary.top3_count} quick_briefs={summary.quick_brief_count} chars={summary.character_count}")
     typer.echo(f"idempotency_key={summary.idempotency_key} sent={summary.sent} sent_dry_run={summary.sent_dry_run}")
-    typer.echo("\n--- rendered brief ---\n")
-    typer.echo(summary.rendered_text)
+    typer.echo("\n--- rendered brief (as the reader sees it) ---\n")
+    # the stored/sent text is Telegram HTML; the terminal gets plain text
+    typer.echo(html_to_plain(summary.rendered_text))
 
 
 @digest_app.command("weekly")

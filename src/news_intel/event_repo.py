@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from news_intel.pipeline.citation import resolve_citation_publisher, strip_title_preamble, strip_title_suffix
 from news_intel.pipeline.publisher_family import registrable_domain
+from news_intel.pipeline.text import canonical_text
 
 
 def qualified_events_since(
@@ -196,11 +197,12 @@ def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
         results.append(
             {
                 "id": f"S{r['raw_item_id']}",
-                "publisher": _display_publisher(
+                "publisher": canonical_text(_display_publisher(
                     r["source_id"], r["origin_family"], r["publisher"], r["excerpt"], origin_verified
-                ),
+                )),
                 "source_id": r["source_id"],
-                "excerpt": r["excerpt"] or r["title"],
+                # canonical on read: legacy rows may hold entities ("Q&amp;A")
+                "excerpt": canonical_text(r["excerpt"] or r["title"]),
                 "published_at": r["published_at"] or "",
                 "url": r["url"],
                 "display_url": display_url,
@@ -210,9 +212,9 @@ def event_sources(conn: sqlite3.Connection, event_id: str) -> list[dict]:
                 "origin_url": r["origin_url"],
                 "origin_verified": origin_verified,
                 "origin_family": origin_family,
-                "origin_title": r["origin_title"],
+                "origin_title": canonical_text(r["origin_title"]),
                 "origin_published_at": r["origin_published_at"],
-                "raw_title": r["title"],
+                "raw_title": canonical_text(r["title"]),
                 "fetched_at": r["fetched_at"],
             }
         )
@@ -232,6 +234,10 @@ def combined_text_for_event(conn: sqlite3.Connection, event_id: str) -> str:
 
 
 def _display_title(sources: list[dict], raw_title: str) -> str:
+    return canonical_text(_display_title_raw(sources, raw_title)) or ""
+
+
+def _display_title_raw(sources: list[dict], raw_title: str) -> str:
     """2026-08-16 title-normalization repair: prefers the verified origin
     article's own title (fetched at collection time from origin_url --
     adapters/rss.py's _fetch_origin_metadata) when available, since that

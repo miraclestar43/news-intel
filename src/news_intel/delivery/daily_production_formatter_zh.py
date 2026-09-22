@@ -14,20 +14,17 @@ never a URL this module invents."""
 
 from __future__ import annotations
 
-import html
-
+from news_intel.delivery.telegram_html import escape_text, link
 from news_intel.pipeline.daily_selection import UNDERFILLED_POOL_THRESHOLD, SelectionResult, Story
 from news_intel.pipeline.zh_render_readiness import what_happened_zh, why_it_matters_zh
 
 
 def _escape(text: str) -> str:
-    return html.escape(text or "", quote=True)
+    return escape_text(text)  # the one escaping step: delivery/telegram_html.py
 
 
 def _link(text: str, url: str | None) -> str:
-    if not url:
-        return _escape(text)
-    return f'<a href="{_escape(url)}">{_escape(text)}</a>'
+    return link(text, url)
 
 
 _CATEGORY_LABELS_ZH = {

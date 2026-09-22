@@ -33,6 +33,7 @@ from news_intel.models import EventEnrichment, EventInput
 from news_intel.pipeline.editorial_evidence import build_event_input
 from news_intel.pipeline.editorial_validation import validate_enrichment
 from news_intel.pipeline.summary_quality import best_available_summary
+from news_intel.pipeline.text import canonical_text
 from news_intel.pipeline.zh_render_readiness import what_happened_zh
 
 _STORY_TIMEOUT_SECONDS = 12.0
@@ -181,11 +182,12 @@ def enrich_story(
         validation = validate_enrichment(enrichment, evidence)
         if validation.ok:
             latency_ms = (time.monotonic() - start) * 1000
+            # canonical plain text (pipeline/text.py): the renderer escapes once
             return EditorialResult(
-                what_happened=enrichment.what_happened,
-                why_it_matters=enrichment.why_it_matters,
-                chinese_what_happened=enrichment.chinese_what_happened,
-                chinese_takeaway=enrichment.chinese_takeaway,
+                what_happened=canonical_text(enrichment.what_happened),
+                why_it_matters=canonical_text(enrichment.why_it_matters),
+                chinese_what_happened=canonical_text(enrichment.chinese_what_happened),
+                chinese_takeaway=canonical_text(enrichment.chinese_takeaway),
                 category=enrichment.category,
                 source="llm_validated",
                 model_used=getattr(provider, "model", None),
