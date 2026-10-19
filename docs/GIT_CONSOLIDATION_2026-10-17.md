@@ -208,3 +208,17 @@ Required before any push (owner decisions):
    falls back on 2026-11-01.
 6. `.env.bak.20260825024316` also holds the live token, in plaintext, untracked,
    mode 600.
+
+## Addendum, 2026-10-19: data folders archived
+
+The 13 non-production `pi-news-intel-*` data folders and the hermes `.sha256`
+file were moved, not deleted, into `/home/star/pi-news-intel-archive/` (mode
+700), dropping the `pi-news-intel-` prefix. For example, the eval snapshots are
+now at `~/pi-news-intel-archive/eval/snapshots/`. The move was a same-filesystem
+rename; all 38 files are present. Both eval snapshot `.sha256` checks pass.
+`hermes-content-round2-evidence.sha256` was rewritten to the new paths and
+verifies (7/7). `docs/QUALITY_ARCHITECTURE.md` on `quality/intel-architecture`
+still cites the old eval path.
+
+`~/pi-news-intel-canary-data` (the live DB behind `pi-news-intel/data`) was not
+moved.
