@@ -222,3 +222,34 @@ still cites the old eval path.
 
 `~/pi-news-intel-canary-data` (the live DB behind `pi-news-intel/data`) was not
 moved.
+
+## Addendum, 2026-10-30: published to GitHub
+
+The owner asked for a push to `main`. The token had not been rotated, so the
+history was scrubbed before publication instead of being pushed as is:
+
+- `git filter-repo --replace-text`, run on a scratch clone, replaced the live
+  bot token in every commit with the same fake literal that HEAD already used.
+  Verification:
+  - 0 objects in the rewritten repo contain the live token.
+  - `main`'s tip tree is identical to the pre-rewrite tree.
+  - On both kept branches, only `tests/unit/test_log_redaction_incident.py`
+    differs.
+  - The secret-pattern scan and every `.env` value on the Pi: no hits.
+- Pushed only `main` to `https://github.com/miraclestar43/news-intel` (was
+  empty, so no force-push was needed). `origin` is configured and `main` tracks
+  `origin/main`.
+- The local refs were moved to the scrubbed history: `main` (`091cc14` →
+  `0633f87`, same tree, so the working tree is untouched),
+  `fix/deterministic-2026-09-21` (`215f276`), `quality/intel-architecture`
+  (`a13d630`) and `baseline/prod-2026-09-21`. The `archive/*` tags pre-date the
+  token and are unchanged.
+- The pre-rewrite refs are preserved in
+  `~/backups/news-intel-git-consolidation-20261017/pi-news-intel-all-refs-pre-rewrite-20261030.bundle`
+  (it contains the token: local only, mode 600).
+- After the change: `pytest` 859 passed, ruff clean, collect timer runs
+  succeed, and `git pull --ff-only` works.
+
+Still open: **rotate the bot token.** It was not published here, but it was
+written to the systemd journal in the Aug 29 incident and is in
+`.env.bak.20260825024316`. Commit metadata publishes the author email.
