@@ -180,6 +180,14 @@ def prior_briefs(export_dir: Path | None, edition_date, days: int = 3) -> dict[s
     return out
 
 
+def prior_headlines(export_dir: Path | None, edition_date, days: int = 3) -> list[dict]:
+    """[{"edition_date", "headline"}] of the frozen briefs of the previous `days` editions, newest first."""
+    seen: dict[tuple, dict] = {}
+    for info in prior_briefs(export_dir, edition_date, days).values():
+        seen.setdefault((info["edition_date"], info["headline"]), info)
+    return sorted(seen.values(), key=lambda x: x["edition_date"] or "", reverse=True)
+
+
 def build_pool(conn: sqlite3.Connection, config, edition, *, export_dir: Path | None = None,
                limit: int = 40) -> tuple[list[Candidate], dict]:
     """All qualifying candidates in pre-rank order (keys c1..), the first `limit` to be shown to the editor, plus a

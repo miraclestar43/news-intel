@@ -108,6 +108,7 @@ class Fake:
     def enrich_events(self, events):
         ev = events[0]
         self.enrich_feedback.append(list(ev.retry_feedback))
+        self.notes = getattr(self, "notes", []) + [[f.text for f in ev.facts if f.kind == "prior_coverage"]]
         title = ev.sources[0]["title"]
         q = [{"source_id": ev.sources[0]["id"], "quote": title}]
         support = {} if ev.event_id in self.bad else {"headline": q, "what": q, "brief": q}
@@ -275,3 +276,40 @@ def test_telegram_send_is_from_the_frozen_snapshot_and_never_retries_an_attempte
     again = job.send_telegram(conn, config, snap, chat_id=555, dry_run=False)
     assert again["sent"] is False and "already attempted" in again["reason"]
     assert job.send_telegram(conn, config, {**snap, "status": "empty"}, chat_id=555)["sent"] is False
+
+
+def test_a_reserve_on_a_topic_already_in_the_brief_is_skipped(config, conn):
+    _seed_three(conn)
+    cands, _ = build_pool(conn, config, ED)
+    k = _keys(cands)
+    p = Fake(editor={"selected": [{"ids": [k["E-a"]], "topic": "地震", "reason": "r"},
+                                  {"ids": [k["E-c"]], "topic": "央行", "reason": "r"}],
+                     "reserves": [{"ids": [k["E-b"]], "topic": "地震", "reason": "r"},
+                                  {"ids": [k["E-d"]], "topic": "联合国", "reason": "r"}]},
+             bad_events={"E-c"})
+    items, log = compose(p, select(p, cands, ED), ED, deadline=__import__("time").monotonic() + 600)
+    assert [i["event_ids"] for i in items] == [["E-a"], ["E-d"]]
+    assert [r["stage"] for r in log.rejected] == ["validator", "same topic"]
+
+
+def test_earlier_brief_headlines_reach_the_editor_and_a_continuation_reaches_writer_and_verifier(config, conn):
+    from news_intel.brief.select import build_select_prompt
+
+    _seed_three(conn)
+    cands, _ = build_pool(conn, config, ED)
+    prompt = build_select_prompt(cands, ED, prior=[{"edition_date": "2026-10-31", "headline": "央行宣布降准"}])
+    assert "- 2026-10-31: 央行宣布降准" in prompt
+    k = _keys(cands)
+    p = Fake(editor={"selected": [{"ids": [k["E-c"]], "topic": "央行", "continues": "央行宣布降准", "reason": "r"}]})
+    seen = []
+    orig = p._complete
+
+    def spy(prompt):
+        seen.append(prompt)
+        return orig(prompt)
+
+    p._complete = spy
+    items, _ = compose(p, select(p, cands, ED), ED, deadline=__import__("time").monotonic() + 600)
+    assert items and items[0]["continues"] == "央行宣布降准"
+    assert any("continues an earlier brief item: 「央行宣布降准」" in s for s in seen)  # the verifier saw it
+    assert "Lead with what is new since then" in p.notes[0][0] and "央行宣布降准" in p.notes[0][0]  # so did the writer

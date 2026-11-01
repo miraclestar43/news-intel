@@ -62,22 +62,25 @@ def today_problem(ed: EditorialResult, edition) -> str | None:
     return "what rests on no source published in the 24 hours before the cutoff (no new development)"
 
 
-def build_verify_prompt(item_id: str, ed: EditorialResult, edition) -> str:
+def build_verify_prompt(item_id: str, ed: EditorialResult, edition, continues: str | None = None) -> str:
     f = _fields(ed)
     quotes = "\n".join(f"  {group}: " + " | ".join(f'[{q["source_id"]}] "{q["quote"]}"' for q in qs)
                        for group, qs in (ed.support or {}).items())
-    block = (f'<item id="{item_id}">\nheadline: {f["headline"]}\nwhat: {f["what"]}\n'
+    cont = (f"this item continues an earlier brief item: 「{continues}」 -- 'what' must lead with a newer "
+            "development\n") if continues else ""
+    block = (f'<item id="{item_id}">\n{cont}headline: {f["headline"]}\nwhat: {f["what"]}\n'
              f'why ({f["why_kind"] or "none"}): {f["why"] or "(none)"}\nbrief: {f["brief"]}\n'
              f"quotes the writer cited:\n{quotes}\n</item>\n"
              f"Sources for {item_id}:\n{render_sources_block(_cited_sources(ed) or ed.sources or [])}")
     return render(load_template("verify_brief.md"), cutoff=edition.cutoff.isoformat(), items_block=block)
 
 
-def verify(provider, item_id: str, ed: EditorialResult, edition, log: ComposeLog) -> tuple[str, list[dict]]:
+def verify(provider, item_id: str, ed: EditorialResult, edition, log: ComposeLog,
+           continues: str | None = None) -> tuple[str, list[dict]]:
     """("pass" | "fail" | "unverified", problems)."""
     t0 = time.monotonic()
     try:
-        data = provider._complete(build_verify_prompt(item_id, ed, edition))
+        data = provider._complete(build_verify_prompt(item_id, ed, edition, continues))
         entry = next((i for i in data.get("items") or [] if i.get("id") == item_id), None)
         if entry is None or entry.get("verdict") not in ("pass", "fail"):
             raise LLMUnavailableError(f"verifier gave no verdict for {item_id}")
@@ -100,9 +103,10 @@ def _feedback(problems: list[dict]) -> list[str]:
 def _write(provider, pick: Pick, edition, deadline, feedback=None) -> EditorialResult:
     primary = pick.candidates[0]
     note = None
-    if primary.previously:
-        note = (f"Previously in this brief on {primary.previously['edition_date']}: "
-                f"「{primary.previously['headline']}」. Report only what is new since then.")
+    earlier = pick.continues or (primary.previously or {}).get("headline")
+    if earlier:
+        note = (f"This continues an earlier brief item: 「{earlier}」. Lead with what is new since then; "
+                "do not present the earlier facts as today's news.")
     return enrich_story(
         primary.event, None, BUCKET_LABEL_ZH.get(primary.bucket, "综合"), primary.event.get("entities"),
         edition_id="zh_cn", update_note=note, provider=provider, deadline=deadline,
@@ -114,9 +118,14 @@ def compose(provider, selection: Selection, edition, *, deadline: float) -> tupl
     log = ComposeLog()
     target = len(selection.picks)
     items: list[dict] = []
+    topics: set[str] = set()
     for pick in [*selection.picks, *selection.reserves]:
         if len(items) >= target:
             break
+        if pick.reserve and pick.topic and pick.topic.strip().lower() in topics:
+            log.rejected.append({"title": pick.candidates[0].title, "event_ids": [c.event_id for c in pick.candidates],
+                                 "reserve": True, "stage": "same topic", "reasons": [f"topic {pick.topic!r} is in"]})
+            continue
         head = pick.candidates[0]
         record = {"title": head.title, "event_ids": [c.event_id for c in pick.candidates], "reserve": pick.reserve}
         item_id = f"i{len(items) + 1}"
@@ -127,7 +136,8 @@ def compose(provider, selection: Selection, edition, *, deadline: float) -> tupl
         elif (p := today_problem(ed, edition)) or len(ed.chinese_what_happened or "") > MAX_WHAT_CHARS:
             stage, reasons = "today/length", [p or f"what is longer than {MAX_WHAT_CHARS} characters"]
         else:
-            verdict, problems = verify(provider, item_id, ed, edition, log)
+            earlier = pick.continues or (head.previously or {}).get("headline")
+            verdict, problems = verify(provider, item_id, ed, edition, log, earlier)
             if verdict == "fail":
                 first_problems, rewritten = problems, True
                 ed2 = _write(provider, pick, edition, deadline, feedback=_feedback(problems))
@@ -137,7 +147,7 @@ def compose(provider, selection: Selection, edition, *, deadline: float) -> tupl
                     stage, reasons = "today/length", [p2]
                 else:
                     ed = ed2
-                    verdict, problems = verify(provider, item_id, ed, edition, log)
+                    verdict, problems = verify(provider, item_id, ed, edition, log, earlier)
             if stage is None and verdict != "pass":
                 stage, reasons = f"verifier ({verdict})", [x.get("problem", "") for x in problems][:6]
         record.update(stage=stage, reasons=reasons, attempts=ed.attempts, latency_ms=ed.latency_ms)
@@ -159,6 +169,8 @@ def compose(provider, selection: Selection, edition, *, deadline: float) -> tupl
             "editions": sorted({c.edition_id for c in pick.candidates}),
             "bucket": head.bucket,
             "selection_reason": pick.reason,
+            "topic": pick.topic,
+            "continues": pick.continues,
             "reserve": pick.reserve,
             "previously": head.previously,
             "verification": {
@@ -167,5 +179,7 @@ def compose(provider, selection: Selection, edition, *, deadline: float) -> tupl
                 "latency_ms": round(ed.latency_ms or 0),
             },
         })
+        if pick.topic:
+            topics.add(pick.topic.strip().lower())
         log.accepted.append(record)
     return items, log

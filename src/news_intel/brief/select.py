@@ -26,6 +26,8 @@ class Pick:
     candidates: list[Candidate]  # first = primary (best pre-rank), rest = same-event duplicates
     reason: str
     reserve: bool = False
+    topic: str = ""
+    continues: str | None = None  # an earlier brief headline this item continues (lead with what is new)
 
 
 @dataclass
@@ -48,12 +50,15 @@ def _line(c: Candidate) -> str:
             f"    {_data(c.title)} | {_data(first)}")
 
 
-def build_select_prompt(cands: list[Candidate], edition, max_items: int = MAX_ITEMS) -> str:
+def build_select_prompt(cands: list[Candidate], edition, max_items: int = MAX_ITEMS,
+                        prior: list[dict] | None = None) -> str:
+    prior_block = "\n".join(f"- {p['edition_date']}: {_data(p['headline'])}" for p in prior or []) or "(none)"
     return render(
         load_template("select_brief.md"),
         cutoff=edition.cutoff.isoformat(),
         max_items=str(max_items),
         max_reserves=str(MAX_RESERVES),
+        prior_block=prior_block,
         candidates_block="\n".join(_line(c) for c in cands),
     )
 
@@ -69,16 +74,19 @@ def _parse_picks(raw: list, by_key: dict[str, Candidate], used: set[str], *, res
             raise LLMUnavailableError(f"editor reused or omitted candidate ids: {ids}")
         used.update(ids)
         group = sorted((by_key[i] for i in ids), key=lambda c: (-c.score, c.key))
-        picks.append(Pick(group, str(entry.get("reason") or "")[:300], reserve=reserve))
+        cont = entry.get("continues")
+        picks.append(Pick(group, str(entry.get("reason") or "")[:300], reserve=reserve,
+                          topic=str(entry.get("topic") or "")[:40], continues=str(cont)[:200] if cont else None))
     return picks
 
 
-def editor_select(provider, cands: list[Candidate], edition, max_items: int = MAX_ITEMS) -> Selection:
+def editor_select(provider, cands: list[Candidate], edition, max_items: int = MAX_ITEMS,
+                  prior: list[dict] | None = None) -> Selection:
     import time
 
     by_key = {c.key: c for c in cands}
     t0 = time.monotonic()
-    data = provider._complete(build_select_prompt(cands, edition, max_items))
+    data = provider._complete(build_select_prompt(cands, edition, max_items, prior))
     used: set[str] = set()
     picks = _parse_picks(data.get("selected"), by_key, used, reserve=False)
     if len(picks) > max_items:
@@ -116,12 +124,14 @@ def deterministic_select(cands: list[Candidate], max_items: int = MAX_ITEMS, err
                      error=error)
 
 
-def select(provider, cands: list[Candidate], edition, max_items: int = MAX_ITEMS) -> Selection:
+def select(provider, cands: list[Candidate], edition, max_items: int = MAX_ITEMS,
+           prior: list[dict] | None = None) -> Selection:
+    """`prior`: [{"edition_date", "headline"}] of the previous days' briefs (cross-day continuity)."""
     if not cands:
         return Selection("editor_model" if provider else "deterministic_fallback", [], [])
     if provider is None:
         return deterministic_select(cands, max_items, error="no provider configured")
     try:
-        return editor_select(provider, cands, edition, max_items)
+        return editor_select(provider, cands, edition, max_items, prior)
     except LLMUnavailableError as exc:
         return deterministic_select(cands, max_items, error=f"editor call failed: {exc}"[:300])

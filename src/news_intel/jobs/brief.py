@@ -29,7 +29,7 @@ from news_intel import db
 from news_intel.brief import render as brief_render
 from news_intel.brief import snapshot as snap_mod
 from news_intel.brief.compose import compose
-from news_intel.brief.pool import build_pool
+from news_intel.brief.pool import build_pool, prior_headlines
 from news_intel.brief.schedule import BEIJING, WINDOW_HOURS, current_edition, edition_at, edition_for
 from news_intel.brief.select import MAX_ITEMS, select
 from news_intel.jobs import job_runs
@@ -80,7 +80,8 @@ def provenance() -> dict:
 
 def _pick(p) -> dict:
     return {"event_ids": [c.event_id for c in p.candidates], "titles": [c.title for c in p.candidates],
-            "editions": [c.edition_id for c in p.candidates], "reason": p.reason}
+            "editions": [c.edition_id for c in p.candidates], "topic": p.topic, "continues": p.continues,
+            "reason": p.reason}
 
 
 def _short_model(model: str | None) -> str:
@@ -113,7 +114,8 @@ def build(conn, config, edition, *, provider=None, export_dir: Path, revision: i
     t0 = time.monotonic()
     try:
         cands, funnel = build_pool(conn, config, edition, export_dir=export_dir, limit=EDITOR_POOL)
-        selection = select(provider, cands[:EDITOR_POOL], edition, MAX_ITEMS)
+        prior = prior_headlines(export_dir, edition.edition_date)
+        selection = select(provider, cands[:EDITOR_POOL], edition, MAX_ITEMS, prior)
         items, log = compose(provider, selection, edition, deadline=t0 + budget) if provider else ([], None)
         writer = next((i["verification"]["model"] for i in items), getattr(provider, "model", None))
         snap = {
@@ -141,6 +143,7 @@ def build(conn, config, edition, *, provider=None, export_dir: Path, revision: i
             },
             "rejected": log.rejected if log else [],
             "funnel": funnel,
+            "prior_headlines": prior,
             "models": {"writer": writer, "editor": selection.model, "verifier": writer,
                        "writer_short": _short_model(writer)},
             "provenance": provenance(),
