@@ -184,3 +184,54 @@ frozen snapshot only.
 - **Absent news:** anything wrong binds "absent" and the story goes out alone, byte-identical to today's email.
 - **Tests:** 188 pass. The 9 CLI tests need `.venv` inside the checkout; they fail in any fresh worktree, on
   `main` too, and pass with it.
+
+## Replays: three real windows, cutoff 20:00 Beijing
+
+**Setup:**
+- code pinned at `f141213` (a detached worktree, so later edits could not leak in);
+- a fresh copy of the production database as of 2026-11-01 06:49 UTC;
+- only items fetched by each cutoff are used;
+- the runs went in date order, so every edition saw the earlier ones;
+- claude-opus-5-5 through the Claude Code CLI did all the writing;
+- artefacts are in `~/pi-news-intel-archive/eval/v2-20261101/final/`: `out/` and `compare.json`.
+
+**How these replays compare with the new feeds:** they predate the 9 new feeds, so they show what the old pool
+could give once the selection and checking change. The pool is still English-world-heavy, and Chinese domestic
+general news is thin.
+
+| Edition | v2 brief (all automatic, all verified) | Production zh daily (same evening) | bd364a2 prototype pick |
+|---|---|---|---|
+| 10-29 | Spanish high-speed train crash (≥68 dead) · Israeli election deadlock · Ethiopia buys Russian jets · Microsoft cuts capex outlook · MOFCOM trade-in sales over 2 trillion yuan. 735 字, 176 s, 14 calls | 3 items, fallback: Microsoft's OpenAI revenue · a robotics lab · Alphabet's stock drop | Google ads · Microsoft buyouts · 佰维 earnings · Ethiopia · a PCB maker IPO |
+| 10-30 | North Korea-linked Binance theft (TRM Labs) · Russian drone strike, ≥14 dead · DeepSeek raise · Alphabet results and 13% fall · Israeli opposition (continues 10-29). 812 字, 277 s, 20 calls | 2 items, fallback: Murata MLCC plan · TCL earnings | Intel Q3 · Google's Finland data centre · Luxshare earnings · Alphabet drop · TRM/Binance |
+| 10-31 | Oleshky evacuation during a ceasefire · G20 photo cancelled · China denies the Nvidia-CEO spying claim · Intel's worst day since the 1970s · CXMT long-term supply talks. 776 字, 204 s, 15 calls | 2 items, fallback: the five memory makers' profits · CXMT supply talks | Intel ×2 · OpenAI raise · Geely remark · Binance |
+
+**Short days and degraded runs:** none in these windows. Every edition had 5 verified items, and the editor
+never fell back to the deterministic selection.
+
+**Duplicates merged across languages:** the Intel crash merges IT之家 and CNBC; CXMT merges the en and zh
+editions.
+
+**Cross-day continuity:**
+- On 10-31 the editor passed over the Binance recovery and Alphabet's further fall, both "already in the brief,
+  no new development".
+- On 10-30 the Israeli opposition item is marked as continuing 10-29's election item.
+
+**Refused in the final run, and kept refused:** CXMT's "2690.24 亿元", a figure not in the quoted source text.
+
+**False refusals found by the replays and fixed on this branch:**
+
+| Refusal | Fixed in |
+|---|---|
+| 中国 / 美国 ↔ China / US | 903d0c0 |
+| A Microsoft result refused because the article speculated elsewhere | 9435a14 |
+| '知情人士称' rejected as too short; no way out of a hedged headline | 7aa325d |
+| '据BBC报道' rejected; a digest line's name rejected | f141213 |
+
+**Real problems the verifier caught and the rewrite fixed:**
+- the brief line of the Oleshky item dropped "据了解";
+- a G20 version turned "after protests" into a cause;
+- the death-toll attribution "officials say" was lost in a headline.
+
+**Length:** 735-812 字 per brief. Earlier settings show the trade-off: no floor gave 525-553 on two days, and
+an 80-character floor made the model repeat facts. The final prompt asks for 100-160 characters of sourced
+context per item.
