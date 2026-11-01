@@ -12,9 +12,7 @@ class NullProvider:
     def _unconfigured(self):
         from news_intel.llm.errors import LLMUnavailableError
 
-        raise LLMUnavailableError(
-            "no LLM provider configured: set LLM_BASE_URL, LLM_API_KEY, LLM_MODEL"
-        )
+        raise LLMUnavailableError("no LLM provider configured: set LLM_BASE_URL, LLM_API_KEY, LLM_MODEL")
 
     def enrich_events(self, events):
         self._unconfigured()
@@ -29,8 +27,24 @@ class NullProvider:
         self._unconfigured()
 
 
+def _claude(secrets, timeout_cap: float | None = None):
+    if not (secrets.claude_bin and secrets.claude_config_dir):
+        return None
+    from news_intel.llm.claude_cli import ClaudeCliProvider
+
+    timeout = secrets.claude_timeout_seconds or 60.0
+    return ClaudeCliProvider(
+        bin_path=secrets.claude_bin,
+        config_dir=secrets.claude_config_dir,
+        model=secrets.claude_model or "claude-opus-5-5",
+        timeout=min(timeout, timeout_cap) if timeout_cap else timeout,
+    )
+
+
 def get_provider(config: AppConfig):
     secrets = config.secrets
+    if secrets.llm_provider == "claude_cli":
+        return _claude(secrets) or NullProvider()
     if secrets.llm_provider == "hermes_cli":
         if not secrets.hermes_bin:
             return NullProvider()
