@@ -1,0 +1,14 @@
+[Unit]
+Description=pi-news-intel: send the frozen Chinese daily brief to Telegram (one message per Beijing edition)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/pi-news-intel
+EnvironmentFile=%h/pi-news-intel/.env
+# Sends the frozen snapshot's own rendering; idempotency key brief:zh_cn:<date>:<chat>, pre-marked before the send,
+# never retried once attempted. BRIEF_CHAT_ID is the single allowlisted chat (must also be in
+# TELEGRAM_ALLOWED_CHAT_IDS).
+ExecStart=/bin/sh -c 'exec %h/pi-news-intel/.venv/bin/python -m news_intel.jobs.brief send-telegram --real --chat-id "$BRIEF_CHAT_ID"'
+TimeoutStartSec=120
