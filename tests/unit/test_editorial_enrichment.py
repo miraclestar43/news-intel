@@ -203,10 +203,31 @@ def test_validate_enrichment_requires_hedge_when_uncertainty_flagged():
         significance_proposal=80, market_impact_proposal=60,
         supporting_source_ids=[s["id"] for s in evidence.sources], cited_fact_ids=[f.id for f in evidence.facts],
         entities=["Anthropic"],
+        support={g: [{"source_id": "s0", "quote": "the company could value it at $2 trillion"}]
+                 for g in ("headline", "what", "why")},
+        why_kind="reported",
     )
     result = validate_enrichment(e, evidence)
     assert not result.ok
     assert any("prospective" in r for r in result.reasons)
+
+
+def test_a_hedge_is_required_only_where_the_quoted_claim_is_unconfirmed():
+    """2026-11-01: a settled figure quoted from an article that ALSO speculates elsewhere needs no hedge."""
+    primary = _primary(
+        title="Microsoft Q1 revenue rises 19% to $92.3 billion",
+        excerpt="Microsoft reported revenue of $92.3 billion, up 19%. Analysts said demand could slow next year.",
+    )
+    evidence = build_event_input(primary, None, "AI & Semiconductors", ["Microsoft"], edition_id="en_global")
+    assert any(f.kind == "uncertainty" for f in evidence.facts)  # the article does speculate
+    settled = [{"source_id": "s0", "quote": "Microsoft reported revenue of $92.3 billion, up 19%"}]
+    e = EventEnrichment(
+        event_id="E-1", category="AI & Semiconductors", english_headline="Microsoft revenue rises 19% to $92.3 billion",
+        what_happened="Microsoft reported revenue of $92.3 billion, up 19%.", supporting_source_ids=["s0"],
+        support={"headline": settled, "what": settled},
+    )
+    r = validate_enrichment(e, evidence)
+    assert r.ok, r.reasons
 
 
 # --- editorial_enrichment orchestration -----------------------------------

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 
 from news_intel.models import EventEnrichment, EventInput
+from news_intel.pipeline.editorial_evidence import _UNCERTAINTY_MARKERS_EN, _UNCERTAINTY_MARKERS_ZH
 from news_intel.pipeline.entity_aliases import alias_variants
 from news_intel.pipeline.summary_quality import _ends_with_dangling_clause, _is_abbreviation_period
 from news_intel.pipeline.zh_text import parse_zh_amounts
@@ -139,6 +140,13 @@ _FIELD_GROUPS = {
 }
 _ZH_FIELDS = {"chinese_headline", "chinese_what_happened", "chinese_takeaway", "chinese_brief_line"}
 _WHY_KINDS = {"reported", "source_judgment"}
+_HEDGE_RE = re.compile(
+    r"(或将|据报道|消息称|据悉|传闻|疑似|可能|据称|知情人士|尚未证实|未经证实|初步|拟|计划|考虑|洽谈|谈判|预计|或|"
+    r"据[^，。]{1,16}(称|报道|消息|透露|表示)|"
+    r"\b(could|might|may|reportedly|reported|according to|allegedly|alleged|considering|discussed|plans?|planned|"
+    r"in talks|expected|potential|said|says|claims?|unconfirmed|preliminary)\b)",
+    re.IGNORECASE,
+)
 _INTERPRETIVE = re.compile(
     r"(反映出|反映了|意味着|表明|显示出|凸显|标志着|预示|"
     r"shows that|signals?|suggests?|underscores?|highlights?|reflects?|means that)",
@@ -395,9 +403,17 @@ def _check_support(enrichment: EventEnrichment, evidence: EventInput, reasons: l
             continue
         quote_text = "\n".join(good_quotes)
         pool = number_claims(quote_text)
+        quote_lower = quote_text.lower()
+        prospective = [m for m in (*_UNCERTAINTY_MARKERS_EN, *_UNCERTAINTY_MARKERS_ZH)
+                       if (m in quote_lower if m.isascii() else m in quote_text)]
         quote_dates = _dates_in(quote_text)
         quote_days = _days_in(quote_text) | {d for _, d in quote_dates}
         for field, value in values:
+            if prospective and not _HEDGE_RE.search(value):
+                reasons.append(
+                    f"{field}: its quotes are prospective/unconfirmed ({', '.join(prospective[:3])}) but the text "
+                    f"states it as settled -- keep the source's hedge (据报道/消息称/或将/计划, reportedly/could/plans)"
+                )
             for n in number_claims(value):
                 if not _supported(n, pool):
                     unit = f" {n.unit}" if n.unit else ""
@@ -501,16 +517,9 @@ def validate_enrichment(enrichment: EventEnrichment, evidence: EventInput) -> Va
     elif enrichment.why_kind:
         reasons.append("why_kind is set but there is no why line")
 
-    # 6. Uncertainty preservation across all reader text of the edition's language.
-    if any(f.kind == "uncertainty" for f in evidence.facts):
-        hedges = ("could", "might", "may ", "reportedly", "according to", "allegedly", "considering", "discussed",
-                  "或将", "据报道", "消息称", "据悉", "传闻", "疑似", "可能", "据称", "知情人士", "尚未证实",
-                  "未经证实")
-        combined = " ".join(v or "" for _, v in text_fields).lower()
-        if not any(h in combined for h in hedges):
-            reasons.append(
-                "evidence packet flagged prospective/unconfirmed language, but output presents it as settled fact"
-            )
+    # 6. Uncertainty preservation: checked per field group in _check_support -- a field whose own quotes are
+    # prospective or unconfirmed must keep a hedge. (Until 2026-11-01 ANY hedge word anywhere in the evidence forced a
+    # hedge into the whole item, refusing e.g. a reported quarterly result because the article also said "could".)
 
     # 7. Category consistency.
     if evidence.category_candidates and enrichment.category not in evidence.category_candidates:
