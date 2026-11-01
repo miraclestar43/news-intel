@@ -6,6 +6,7 @@ documented deterministic fallback if it is unavailable."""
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -68,6 +69,28 @@ _EDITION_DAILY_LABELS = {"en_global": "[GLOBAL DAILY]", "zh_cn": "[中文日报]
 # recipient. delivery/telegram.py's sender does the actual splitting and
 # "(i/N)" labelling -- this only bounds it.
 _MAX_DAILY_MESSAGE_PARTS = 2
+
+
+def editorial_outcome(story) -> dict:
+    """One story's editorial provenance, for job_runs/journal (never reader-facing)."""
+    ed = getattr(story, "editorial", None)
+    if ed is None:
+        return {"event_id": story.primary.get("event_id"), "source": None, "reason": "editorial layer not run"}
+    return {"event_id": story.primary.get("event_id"), "source": ed.source, "model": ed.model_used,
+            "reason": (ed.fallback_reason or None) and ed.fallback_reason[:300],
+            "latency_ms": round(ed.latency_ms) if ed.latency_ms is not None else None, "retries": ed.retry_count}
+
+
+def fallback_reason(log: dict) -> str:
+    """Why this run rendered the deterministic floor, in one line."""
+    if log.get("story_provider") is None:
+        digest = f"; digest call {log['digest_call']}" if log.get("digest_call") else ""
+        return "no story-level provider configured" + digest
+    stories = log.get("stories") or []
+    reasons = sorted({(s.get("reason") or "?").split(":")[0] for s in stories if s.get("source") != "llm_validated"})
+    if not log.get("stories"):
+        return "no top stories to enrich"
+    return "every top story fell back: " + "; ".join(reasons)
 
 
 def _daily_idempotency_key(edition_id: str, date_iso: str, chat_suffix: str) -> str:
@@ -400,6 +423,10 @@ def run_daily(
         model_used = "none (deterministic fallback)"
         fallback_used = False
         body: str
+        # 2026-10-31 (history-in-practice audit): zh_cn ran on the fallback for 6+ days and nothing recorded WHY.
+        # Every provider outcome of this run is now kept in job_runs.detail_json and logged to the journal:
+        # the whole-digest call, and each story's editorial result (validated, or the floor with its reason).
+        provider_log: dict = {"provider": type(provider).__name__, "digest_call": None, "stories": []}
 
         try:
             digest_input = DailyDigestInput(
@@ -418,7 +445,9 @@ def run_daily(
             # one format and one parse mode (delivery/telegram_html.py)
             body = plain_to_html(render_daily(date_label, output.structured))
             model_used = getattr(provider, "model", "llm")
-        except LLMUnavailableError:
+            provider_log["digest_call"] = "ok"
+        except LLMUnavailableError as digest_exc:
+            provider_log["digest_call"] = f"unavailable: {str(digest_exc)[:200]}"
             # Multi-edition: selection/ranking/render-readiness are fully
             # shared core (identical SelectionResult either way) -- only
             # the renderer differs.
@@ -436,6 +465,10 @@ def run_daily(
             # independently validated against its own evidence packet,
             # is the mechanism this layer commits to.
             bounded_provider = build_bounded_provider(config)
+            provider_log["story_provider"] = (
+                None if bounded_provider is None
+                else f"{type(bounded_provider).__name__}({getattr(bounded_provider, 'model', None)})"
+            )
             if bounded_provider is not None:
                 # 2026-08-29: whole-run deadline, not just a per-call
                 # timeout -- see EDITORIAL_RUN_BUDGET_SECONDS. Stories
@@ -454,6 +487,7 @@ def run_daily(
             else:
                 body = render_production_daily(selection, date_label, calendar_items)
             fallback_used = True
+            provider_log["stories"] = [editorial_outcome(s) for s in selection.top_stories]
             validated_stories = [
                 s for s in selection.top_stories if s.editorial and s.editorial.source == "llm_validated"
             ]
@@ -565,11 +599,14 @@ def run_daily(
             edition_id=edition_id,
         )
 
+        provider_log["fallback_reason"] = fallback_reason(provider_log) if fallback_used else None
+        print(f"edition={edition_id} provider_outcome={json.dumps(provider_log, ensure_ascii=False)}")
         job_runs.finish(
             conn,
             run_id,
             "success",
-            {"top3": len(top3), "quick_briefs": len(quick), "fallback_used": fallback_used},
+            {"top3": len(top3), "quick_briefs": len(quick), "fallback_used": fallback_used,
+             "model_used": model_used, "provider_outcome": provider_log},
         )
 
         return DailySummary(

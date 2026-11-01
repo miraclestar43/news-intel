@@ -78,8 +78,18 @@ def _numbers_in(text: str) -> set[float]:
     text = text or ""
     found = set()
     for match in _NUMBER_RE.finditer(text):
-        tail = text[match.end() : match.end() + 4]
+        # 2026-10-31 (zh_cn fallback diagnosis, real IT之家 text): "32 万亿日元" -- a space before the magnitude, and
+        # a currency other than 元/美元 -- yielded only a bare 32 (with the space) or nothing at all (without it), so a
+        # model sentence stating the source's own 32 trillion yen was rejected as untraceable. Scale by 万亿/亿/万
+        # whatever follows, allowing whitespace in between.
+        tail = text[match.end() : match.end() + 6].lstrip()
         if any(tail.startswith(suffix) for suffix in _ZH_MAGNITUDE_SUFFIXES):
+            try:
+                base = float(match.group(0).replace(",", ""))
+            except ValueError:
+                continue
+            scale = 1e12 if tail.startswith("万亿") else 1e8 if tail.startswith("亿") else 1e4
+            found.add(base * scale)
             continue
         raw = match.group(0).replace(",", "")
         try:

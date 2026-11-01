@@ -244,6 +244,7 @@ CATEGORY_MATERIALITY_BASE: dict[str, float] = {
     "markets_macro_corporate": 50.0,
     "us_china_policy_geopolitics": 50.0,
     "world_politics_geopolitics": 50.0,
+    "public_safety": 50.0,  # fires only with policy.features.public_safety_bucket (default off)
     "tech_platforms_datacenter": 40.0,
     "routine_politics_general": 40.0,
 }
@@ -278,4 +279,14 @@ def compute_materiality(text: str, bucket: str) -> float:
     score += _percent_magnitude_bonus(text)
     score += min(_HIGH_IMPACT_CAP, high_impact_hits * _HIGH_IMPACT_WEIGHT)
     score -= min(_ROUTINE_CAP, routine_hits * _ROUTINE_WEIGHT)
+    if bucket == "public_safety":            # only reachable with policy.features.public_safety_bucket on
+        score += public_safety_scale_bonus(text)
     return max(0.0, min(100.0, score))
+
+
+def public_safety_scale_bonus(text: str) -> float:
+    """Human toll is the magnitude of a public-safety event (what dollar/percent magnitude is for markets)."""
+    from news_intel.pipeline.relevance import death_count
+
+    n = death_count(text)
+    return 25.0 if n >= 1000 else 18.0 if n >= 100 else 10.0 if n >= 10 else 0.0

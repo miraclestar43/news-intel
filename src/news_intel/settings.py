@@ -165,6 +165,13 @@ class TimeSemanticsPolicy(BaseModel):
     archive_only_when_undated: bool = True
 
 
+class FeatureFlags(BaseModel):
+    """Selection/ranking changes ship behind a flag that defaults to off (docs/GIT_WORKFLOW.md rule 5). Enabling one
+    is its own explicit commit in config/policy.yaml (a `features:` block)."""
+
+    public_safety_bucket: bool = False
+
+
 class PolicyConfig(BaseModel):
     timezone: str = "America/Los_Angeles"
     collection_interval_minutes: int = 5
@@ -179,6 +186,7 @@ class PolicyConfig(BaseModel):
     storage: StoragePolicy
     fetch: FetchPolicy
     time_semantics: TimeSemanticsPolicy = Field(default_factory=TimeSemanticsPolicy)
+    features: FeatureFlags = Field(default_factory=FeatureFlags)
 
     @field_validator("timezone")
     @classmethod

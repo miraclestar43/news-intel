@@ -53,6 +53,7 @@ relevance_multipliers:
   world_politics_geopolitics: 1.10
   unclassified: 0.0
   routine_politics_general: 0.70
+  public_safety: 1.30          # used only when features.public_safety_bucket is on (default off)
   explicit_noise: 0.00
 
 dedupe:

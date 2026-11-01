@@ -55,6 +55,7 @@ _CATEGORY_CONTEXT_EN = {
     "Markets & Economy": "corporate finances or the broader economy",
     "Politics": "domestic policy",
     "World": "international conflict, diplomacy, or global security",
+    "Public Safety": "public health, disasters or mass-casualty events",
     "US / China / World": "US-China relations or global affairs",
     "Technology": "the technology industry",
 }
@@ -64,6 +65,7 @@ _CATEGORY_CONTEXT_ZH = {
     "Markets & Economy": "企业财务或宏观经济",
     "Politics": "国内政策",
     "World": "国际冲突、外交或全球安全",
+    "Public Safety": "公共卫生、灾害或重大伤亡事件",
     "US / China / World": "中美关系或全球局势",
     "Technology": "科技行业",
 }

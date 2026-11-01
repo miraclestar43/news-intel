@@ -33,6 +33,7 @@ _CATEGORY_LABELS = {
     # between nations."
     "world_politics_geopolitics": "World",
     "routine_politics_general": "Politics",
+    "public_safety": "Public Safety",
     "explicit_noise": "noise",
     "unclassified": "Unclassified",
 }
@@ -103,7 +104,8 @@ def score_event(
     # events classify against config/topics_zh.yaml.
     event_topics = config.topics_for(event["edition_id"])
     relevance = classify_relevance(
-        combined_text, event_topics, config.policy.relevance_multipliers, title=event["primary_title"]
+        combined_text, event_topics, config.policy.relevance_multipliers, title=event["primary_title"],
+        public_safety=config.policy.features.public_safety_bucket,
     )
     conn.execute(
         "UPDATE events SET category = ? WHERE id = ?",
@@ -129,7 +131,7 @@ def score_event(
     market_impact_base = 30.0
     if relevance.bucket in ("ai_semiconductor_export_controls", "markets_macro_corporate"):
         market_impact_base = 65.0
-    elif relevance.bucket in ("us_china_policy_geopolitics", "world_politics_geopolitics"):
+    elif relevance.bucket in ("us_china_policy_geopolitics", "world_politics_geopolitics", "public_safety"):
         market_impact_base = 50.0
     market_impact = max(0.0, min(100.0, market_impact_base))
 
