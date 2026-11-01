@@ -42,9 +42,11 @@ reach the length with such sourced context, never by repeating a fact), chinese_
 only if there is a supported why \
 line. Leave english_headline, what_happened and why_it_matters as "". Write natural simplified Chinese for a general \
 reader, even when the sources are in English or traditional Chinese. Use the Chinese name a source gives, or the \
-standard Chinese name of a well-known organisation, person or place; keep a name in Latin letters only when it has no \
-established Chinese name. Do NOT add English names, translations or abbreviations in parentheses after a Chinese name \
-(write 国铁集团, not "国铁集团 (China State Railway Group)")."""
+standard Chinese name of a well-known organisation, person or place (Xinhua usage: 鲁比奥, 习近平, 深圳, 霍尔木兹海峡, \
+二十国集团); keep a name in Latin letters only when it has no established Chinese name. Every Chinese name you write \
+for a name a source gives only in Latin letters goes in name_renderings with that source's exact spelling. Do NOT add \
+English names, translations or abbreviations in parentheses after a Chinese name (write 国铁集团, not \
+"国铁集团 (China State Railway Group)")."""
 
 _LANGUAGE_EN = """Language: this event is for the ENGLISH brief. Write english_headline (at most 140 characters), \
 what_happened and, only if there is a supported why line, why_it_matters. Also write chinese_headline, \

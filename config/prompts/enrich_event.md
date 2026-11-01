@@ -15,6 +15,7 @@ Produce a single JSON object (no prose, no markdown fences) with these fields:
 - chinese_headline, chinese_what_happened, chinese_takeaway, chinese_brief_line (Chinese; see the language rules above)
 - why_kind ("reported", "source_judgment", or "" when there is no why line)
 - support (object; see below)
+- name_renderings (array of {"zh": "鲁比奥", "source_name": "Marco Rubio", "source_id": "s0"}: every Chinese name you wrote for a person, organisation or place that the source spells only in Latin letters, with the source's exact spelling; [] if none)
 - material_facts (array of short strings, each traceable to a source)
 - uncertainties (array of short strings)
 - supporting_source_ids (array of the source ids you used)

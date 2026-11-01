@@ -459,7 +459,23 @@ def _check_entities(enrichment: EventEnrichment, evidence: EventInput, reasons: 
     hay = (" ".join(f"{s.get('title', '')} {s.get('excerpt', '')} {s.get('publisher', '')}" for s in evidence.sources)
            + " " + evidence.candidate_title + " "
            + " ".join(f.text for f in evidence.facts if f.kind in ("actor", "target")))
+    # 2026-11-01 (latest-edition run): a standard Chinese rendering (鲁比奥, 习近平, 霍尔木兹海峡) of a name the source
+    # writes in Latin letters is accepted when the writer lists it with the source's exact spelling and that spelling
+    # is in that source. Refusing it made the retry fall back to Latin names in Chinese text ("在Shenzhen会见Xi
+    # Jinping"). Whether the rendering is the standard one is the brief verifier's check; every pair is recorded.
+    by_id = {s["id"]: s for s in evidence.sources}
+    rendered: set[str] = set()
+    for r in enrichment.name_renderings:
+        src = by_id.get(r.source_id)
+        text = f"{src.get('title', '')} {src.get('excerpt', '')}" if src else ""
+        if src is None or not r.source_name.strip() or not _name_supported(r.source_name, text):
+            reasons.append(f"name rendering {r.zh!r} = {r.source_name!r}: that spelling is not in source "
+                           f"{r.source_id!r}")
+        else:
+            rendered.add(_plain(r.zh).strip())
     for name in enrichment.entities:
+        if _plain(name).strip() in rendered:
+            continue
         # a Latin gloss in brackets is a second name and is checked on its own; a Chinese bracket is part of the name
         # (刚果（金）)
         glosses = [g for g in _PAREN_RE.findall(name) if re.search(r"[A-Za-z]", g)]

@@ -129,6 +129,7 @@ class EditorialResult:
     why_kind: str | None = None
     chinese_brief_line: str | None = None
     support: dict | None = None
+    name_renderings: list[dict] | None = None  # [{"zh", "source_name", "source_id"}]
     sources: list[dict] | None = None  # the evidence sources offered (ids s0.. that support quotes refer to)
     # one record per provider attempt: {"latency_ms", "ok", "reasons" | "error"}
     attempts: list[dict] | None = None
@@ -230,6 +231,7 @@ def enrich_story(
                 why_kind=enrichment.why_kind or None,
                 chinese_brief_line=canonical_text(enrichment.chinese_brief_line),
                 support={k: [q.model_dump() for q in v] for k, v in enrichment.support.items()},
+                name_renderings=[r.model_dump() for r in enrichment.name_renderings],
                 sources=evidence.sources,
                 attempts=attempts,
             )

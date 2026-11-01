@@ -68,6 +68,8 @@ def build_verify_prompt(item_id: str, ed: EditorialResult, edition, continues: s
                        for group, qs in (ed.support or {}).items())
     cont = (f"this item continues an earlier brief item: 「{continues}」 -- 'what' must lead with a newer "
             "development\n") if continues else ""
+    names = "; ".join(f'{r["zh"]} = "{r["source_name"]}" [{r["source_id"]}]' for r in ed.name_renderings or [])
+    cont += f"name renderings the writer used: {names}\n" if names else ""
     block = (f'<item id="{item_id}">\n{cont}headline: {f["headline"]}\nwhat: {f["what"]}\n'
              f'why ({f["why_kind"] or "none"}): {f["why"] or "(none)"}\nbrief: {f["brief"]}\n'
              f"quotes the writer cited:\n{quotes}\n</item>\n"
@@ -163,6 +165,7 @@ def compose(provider, selection: Selection, edition, *, deadline: float) -> tupl
             "sources": [{"name": s["publisher"], "title": s["title"], "url": s["url"],
                          "published_at": s["published_at"], "language": s["language"]} for s in cited][:3],
             "support": ed.support,
+            "name_renderings": ed.name_renderings or [],
             "evidence_sources": [{k: s[k] for k in ("id", "publisher", "title", "url", "published_at", "language")}
                                  for s in ed.sources or []],
             "event_ids": record["event_ids"],

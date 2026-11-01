@@ -276,3 +276,30 @@ def test_the_offered_publisher_may_be_named_and_the_brief_line_rests_on_the_item
     # but never a name or figure found in none of the item's quotes
     e2 = EventEnrichment(**{**e.model_dump(), "chinese_brief_line": "WHO称刚果（金）埃博拉疫情超6000人死亡。"})
     assert len(validate_enrichment(e2, ev).reasons) >= 2
+
+
+def test_a_chinese_rendering_needs_the_sources_own_spelling_and_otherwise_stays_refused():
+    quad = {
+        "event_id": "E-quad", "title": "Quad not 'anti-China', says Rubio as first summit in two years nears",
+        "excerpt": "US Secretary of State Marco Rubio said on Saturday the Quad is not an anti-China grouping.",
+        "entities": [],
+        "sources": [{"publisher": "South China Morning Post — China",
+                     "raw_title": "Quad not 'anti-China', says Rubio as first summit in two years nears",
+                     "excerpt": "US Secretary of State Marco Rubio said on Saturday the Quad is not an anti-China "
+                                "grouping.",
+                     "url": "https://scmp.test/q", "published_at": "2026-10-31T09:00:00+00:00"}],
+    }
+    q = _q("Quad not 'anti-China', says Rubio")
+    base = dict(chinese_headline="鲁比奥称四方安全对话并非反华联盟",
+                chinese_what_happened="美国国务卿鲁比奥称，四方安全对话不是反华联盟。",
+                support={"headline": q, "what": q}, entities=["鲁比奥", "四方安全对话"])
+    e, ev = _zh(quad, **base)  # no renderings: refused, as before
+    assert any("鲁比奥" in x for x in validate_enrichment(e, ev).reasons)
+    ok = [{"zh": "鲁比奥", "source_name": "Marco Rubio", "source_id": "s0"},
+          {"zh": "四方安全对话", "source_name": "Quad", "source_id": "s0"}]
+    e, ev = _zh(quad, name_renderings=ok, **base)
+    r = validate_enrichment(e, ev)
+    assert r.ok, r.reasons
+    bad = [{"zh": "鲁比奥", "source_name": "Mark Rubio", "source_id": "s0"}, ok[1]]
+    e, ev = _zh(quad, name_renderings=bad, **base)
+    assert any("'Mark Rubio': that spelling is not in source" in x for x in validate_enrichment(e, ev).reasons)

@@ -313,3 +313,18 @@ def test_earlier_brief_headlines_reach_the_editor_and_a_continuation_reaches_wri
     assert items and items[0]["continues"] == "央行宣布降准"
     assert any("continues an earlier brief item: 「央行宣布降准」" in s for s in seen)  # the verifier saw it
     assert "Lead with what is new since then" in p.notes[0][0] and "央行宣布降准" in p.notes[0][0]  # so did the writer
+
+
+def test_the_verifier_sees_the_writers_name_renderings():
+    from news_intel.brief.compose import build_verify_prompt
+    from news_intel.pipeline.editorial_enrichment import EditorialResult
+
+    ed = EditorialResult(what_happened=None, why_it_matters=None, chinese_what_happened="鲁比奥称。",
+                         chinese_takeaway=None,
+                         category=None, source="llm_validated", chinese_headline="鲁比奥", support={},
+                         sources=[{"id": "s0", "publisher": "SCMP", "title": "Rubio says", "excerpt": "", "url": "u",
+                                   "published_at": "", "language": "en"}],
+                         name_renderings=[{"zh": "鲁比奥", "source_name": "Rubio", "source_id": "s0"}])
+    prompt = build_verify_prompt("i1", ed, ED)
+    assert 'name renderings the writer used: 鲁比奥 = "Rubio" [s0]' in prompt
+    assert "standard Chinese name" in prompt

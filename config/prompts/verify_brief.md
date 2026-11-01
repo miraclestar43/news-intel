@@ -9,6 +9,7 @@ For every item, check each field (headline, what, why, brief):
 - Does "what" report a development that happened in the 24 hours before the reference time, or a genuinely new update, as the source dates show -- not only old news?
 - Is the why line (if any) a consequence a source states as fact (kind "reported"), or a named source's attributed judgment (kind "source_judgment") -- not the editor's own interpretation or a generic line? A source's interpretation (反映出/意味着/表明/认为/预计, "shows", "signals", "suggests") labelled "reported", or a judgment that does not say whose it is, is a failure.
 - Does the text comment on what the sources do not say, or contain notes addressed to editors?
+- Names: is every listed name rendering the standard Chinese name (Xinhua usage) of exactly that person, organisation or place? A wrong, invented or mismatched rendering is a failure. A well-known name left in Latin letters in the Chinese text although a standard Chinese name exists (e.g. "Xi Jinping", "Shenzhen", "Philippines") is a failure: fix by writing the Chinese name and listing it as a rendering.
 
 A wording that is merely awkward is not a failure. A claim the sources do not support, a wrong subject or number, lost attribution, raised certainty, a contradiction, old news presented as new, or an unsupported why line IS a failure.
 

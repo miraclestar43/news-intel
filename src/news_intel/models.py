@@ -143,6 +143,15 @@ class SupportQuote(BaseModel):
     quote: str
 
 
+class NameRendering(BaseModel):
+    """A Chinese name the writer used for a name the source gives in Latin letters (2026-11-01): the source's exact
+    spelling makes the pair checkable, and the brief's verifier confirms the rendering is the standard one."""
+
+    zh: str
+    source_name: str
+    source_id: str
+
+
 class EventEnrichment(BaseModel):
     event_id: str
     category: str
@@ -168,6 +177,7 @@ class EventEnrichment(BaseModel):
     chinese_brief_line: str = ""
     # field group -> verbatim quotes it rests on: "headline", "what", "why", "brief".
     support: dict[str, list[SupportQuote]] = Field(default_factory=dict)
+    name_renderings: list[NameRendering] = Field(default_factory=list)
     significance_proposal: float = Field(default=50, ge=0, le=100)
     market_impact_proposal: float = Field(default=50, ge=0, le=100)
     material_facts: list[str] = Field(default_factory=list)
