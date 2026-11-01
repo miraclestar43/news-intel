@@ -1,0 +1,233 @@
+"""2026-11-01 (news-intel v2): claim-level grounding in pipeline/editorial_validation.py, on the real failure shapes:
+the Ebola headline-only death toll, the 国铁集团 English gloss, IT之家 万亿日元 amounts, figures that exist somewhere in
+the evidence but not for the claim, and comments on what the sources lack."""
+
+from __future__ import annotations
+
+import time
+
+import pytest
+
+from news_intel.llm.errors import LLMUnavailableError
+from news_intel.models import EventEnrichment
+from news_intel.pipeline import editorial_enrichment
+from news_intel.pipeline.editorial_evidence import build_event_input
+from news_intel.pipeline.editorial_validation import validate_enrichment
+
+EBOLA = {
+    "event_id": "E-ebola", "title": "More than 5,000 die from Ebola in DR Congo's deadliest outbreak",
+    "excerpt": "Government data shows that more than 10,000 people have contracted the rare virus.",
+    "entities": [],
+    "sources": [{"publisher": "BBC News",
+                 "raw_title": "More than 5,000 die from Ebola in DR Congo's deadliest outbreak",
+                 "excerpt": "Government data shows that more than 10,000 people have contracted the rare virus.",
+                 "url": "https://www.bbc.co.uk/news/articles/x", "published_at": "2026-10-31T09:12:00+00:00",
+                 "origin_family": "bbc.co.uk"}],
+}
+RAIL = {
+    "event_id": "E-rail", "title": "国铁集团：2026 年前三季度营收 9143 亿元，净利润盈利 130 亿元",
+    "excerpt": "IT之家 10 月 31 日消息，10 月 30 日，国铁集团披露了 2026 年前三季度财务决算。"
+               "前三季度，国铁集团实现营业总收入 9143 亿元，"
+               "净利润盈利 130 亿元，多项运输指标创历史同期新高。",
+    "entities": ["国铁集团"],
+    "sources": [{"publisher": "IT之家", "raw_title": "国铁集团：2026 年前三季度营收 9143 亿元，净利润盈利 130 亿元",
+                 "excerpt": "IT之家 10 月 31 日消息，10 月 30 日，国铁集团披露了 2026 年前三季度财务决算。"
+                            "前三季度，国铁集团实现营业总收入 "
+                            "9143 亿元，净利润盈利 130 亿元，多项运输指标创历史同期新高。同比增长 4.8%。",
+                 "url": "https://www.ithome.com/0/1.htm", "published_at": "2026-10-31T02:10:00+00:00",
+                 "origin_family": "ithome.com"}],
+}
+TITLE_EBOLA = "More than 5,000 die from Ebola"
+TITLE_RAIL = "国铁集团：2026 年前三季度营收 9143 亿元"
+
+
+def _zh(event, **kw) -> tuple[EventEnrichment, object]:
+    ev = build_event_input(event, None, "World", event["entities"], edition_id="zh_cn")
+    base = dict(event_id=event["event_id"], category="World", chinese_headline="标题",
+                chinese_what_happened="占位。", supporting_source_ids=["s0"], support={})
+    base.update(kw)
+    return EventEnrichment(**base), ev
+
+
+def _q(*quotes):
+    return [{"source_id": "s0", "quote": q} for q in quotes]
+
+
+def test_a_headline_only_figure_is_offered_and_accepted_when_quoted_from_the_title():
+    e, ev = _zh(EBOLA, chinese_headline="刚果（金）埃博拉疫情超5000人死亡",
+                chinese_what_happened="刚果（金）埃博拉疫情已有超过5000人死亡，超过1万人感染。",
+                support={"headline": _q(TITLE_EBOLA),
+                         "what": _q(TITLE_EBOLA, "more than 10,000 people have contracted")})
+    assert ev.sources[0]["title"].startswith("More than 5,000")  # the title is evidence now
+    r = validate_enrichment(e, ev)
+    assert r.ok, r.reasons
+
+
+def test_a_figure_is_checked_against_its_own_field_quotes_not_the_whole_evidence_pool():
+    # 5,000 is in the evidence (the title), but the what field quotes only the excerpt
+    e, ev = _zh(EBOLA, chinese_headline="刚果（金）埃博拉疫情超5000人死亡",
+                chinese_what_happened="刚果（金）埃博拉疫情已有超过5000人死亡。",
+                support={"headline": _q(TITLE_EBOLA), "what": _q("more than 10,000 people have contracted")})
+    r = validate_enrichment(e, ev)
+    assert not r.ok and any("chinese_what_happened" in x and "5000" in x for x in r.reasons)
+
+
+@pytest.mark.parametrize("text, why", [
+    ("国铁集团前三季度营业总收入9143亿美元。", "unit"),           # 亿元 in the source, not 亿美元
+    ("国铁集团前三季度营业总收入9000亿元。", "rounded"),          # coarser than the source (1.6% off)
+    ("国铁集团前三季度营业总收入同比增长4.9%。", "small figure"),  # was skipped (<= 1 rule) only for <=1; 4.9 vs 4.8
+    ("国铁集团前三季度净利润130亿元，增长0.5%。", "<= 1"),         # 0.5% appears nowhere -- no longer skipped
+])
+def test_wrong_unit_precision_or_small_numbers_are_rejected(text, why):
+    e, ev = _zh(RAIL, chinese_headline="国铁集团前三季度营收9143亿元", chinese_what_happened=text,
+                support={"headline": _q(TITLE_RAIL),
+                         "what": _q("实现营业总收入 9143 亿元", "净利润盈利 130 亿元", "同比增长 4.8%")})
+    r = validate_enrichment(e, ev)
+    assert not r.ok, why
+
+
+def test_an_english_gloss_after_a_chinese_name_is_rejected_with_an_actionable_reason():
+    e, ev = _zh(RAIL, chinese_headline="国铁集团前三季度营收9143亿元",
+                chinese_what_happened="国铁集团（China State Railway Group）前三季度营业总收入9143亿元。",
+                entities=["国铁集团 (China State Railway Group)"],
+                support={"headline": _q(TITLE_RAIL), "what": _q("实现营业总收入 9143 亿元")})
+    r = validate_enrichment(e, ev)
+    assert not r.ok
+    assert any("remove the parenthesised Latin text" in x for x in r.reasons)
+    # the bracketed part is checked on its own, never accepted by stripping the brackets
+    assert any("entity 'China State Railway Group'" in x for x in r.reasons)
+    assert not any("entity '国铁集团'" in x for x in r.reasons)
+
+
+def test_the_same_story_without_the_gloss_passes():
+    e, ev = _zh(RAIL, chinese_headline="国铁集团前三季度营收9143亿元",
+                chinese_what_happened="国铁集团10月30日披露，前三季度营业总收入9143亿元，净利润130亿元。",
+                entities=["国铁集团"], chinese_brief_line="国铁集团前三季度营收9143亿元。",
+                support={"headline": _q(TITLE_RAIL),
+                         "what": _q("10 月 30 日，国铁集团披露了", "实现营业总收入 9143 亿元",
+                                                                "净利润盈利 130 亿元"),
+                         "brief": _q("实现营业总收入 9143 亿元")})
+    r = validate_enrichment(e, ev)
+    assert r.ok, r.reasons
+
+
+def test_a_latin_name_the_quotes_do_not_contain_is_rejected():
+    e, ev = _zh(RAIL, chinese_headline="国铁集团前三季度营收9143亿元",
+                chinese_what_happened="国铁集团与Siemens合作，前三季度营业总收入9143亿元。",
+                support={"headline": _q(TITLE_RAIL), "what": _q("实现营业总收入 9143 亿元")})
+    r = validate_enrichment(e, ev)
+    assert not r.ok and any("'Siemens'" in x for x in r.reasons)
+
+
+def test_comments_on_what_the_sources_lack_are_rejected():
+    e, ev = _zh(EBOLA, chinese_headline="刚果（金）埃博拉疫情超5000人死亡",
+                chinese_what_happened="刚果（金）暴发埃博拉疫情，来源未提供具体死亡人数。",
+                support={"headline": _q(TITLE_EBOLA), "what": _q("contracted the rare virus")})
+    r = validate_enrichment(e, ev)
+    assert not r.ok and any("comments on what the sources do not say" in x for x in r.reasons)
+
+
+def test_a_quote_that_is_not_verbatim_is_rejected():
+    e, ev = _zh(RAIL, chinese_headline="国铁集团前三季度营收9143亿元", chinese_what_happened="国铁集团营收9143亿元。",
+                support={"headline": _q(TITLE_RAIL), "what": _q("国铁集团营收达到 9143 亿元")})
+    r = validate_enrichment(e, ev)
+    assert not r.ok and any("not verbatim" in x for x in r.reasons)
+
+
+def test_why_line_needs_a_kind_and_a_judgment_needs_its_owner():
+    common = dict(chinese_headline="国铁集团前三季度营收9143亿元",
+                  chinese_what_happened="国铁集团前三季度营业总收入9143亿元。")
+    sup = {"headline": _q(TITLE_RAIL), "what": _q("实现营业总收入 9143 亿元"), "why": _q("多项运输指标创历史同期新高")}
+    e, ev = _zh(RAIL, chinese_takeaway="多项运输指标创历史同期新高。", support=sup, **common)
+    assert any("why_kind" in x for x in validate_enrichment(e, ev).reasons)
+    e, ev = _zh(RAIL, chinese_takeaway="多项运输指标创历史同期新高。", why_kind="source_judgment",
+                support=sup, **common)
+    assert any("whose judgment" in x for x in validate_enrichment(e, ev).reasons)
+    e, ev = _zh(RAIL, chinese_takeaway="国铁集团称，多项运输指标创历史同期新高。", why_kind="reported",
+                support=sup, **common)
+    r = validate_enrichment(e, ev)
+    assert r.ok, r.reasons
+
+
+def test_dates_must_be_quoted_or_a_source_date():
+    sup = {"headline": _q(TITLE_RAIL), "what": _q("实现营业总收入 9143 亿元")}
+    e, ev = _zh(RAIL, chinese_headline="国铁集团前三季度营收9143亿元",
+                chinese_what_happened="国铁集团11月5日披露，前三季度营业总收入9143亿元。", support=sup)
+    assert any("11月5日" in x for x in validate_enrichment(e, ev).reasons)
+    e, ev = _zh(RAIL, chinese_headline="国铁集团前三季度营收9143亿元",
+                chinese_what_happened="国铁集团10月31日披露，前三季度营业总收入9143亿元。",
+                support=sup)  # 10-31 is the publication date
+    r = validate_enrichment(e, ev)
+    assert r.ok, r.reasons
+
+
+class _Slow:
+    model = "fake"
+    timeout = 60.0
+
+    def __init__(self):
+        self.calls = 0
+        self.timeouts = []
+
+    def enrich_events(self, events):
+        self.calls += 1
+        self.timeouts.append(self.timeout)
+        raise LLMUnavailableError("down")
+
+
+def test_no_call_is_started_without_enough_run_budget_and_the_call_timeout_shrinks_to_it():
+    p = _Slow()
+    r = editorial_enrichment.enrich_story(RAIL, None, "World", [], edition_id="zh_cn", provider=p,
+                                          deadline=time.monotonic() + 5)
+    assert p.calls == 0 and r.fallback_reason == "editorial run budget exhausted"
+    p = _Slow()
+    editorial_enrichment.enrich_story(RAIL, None, "World", [], edition_id="zh_cn", provider=p,
+                                      deadline=time.monotonic() + 30)
+    assert p.calls == 1 and p.timeouts[0] <= 30 and p.timeout == 60.0  # restored afterwards
+
+
+def test_json_repair_is_skipped_when_the_run_deadline_is_near(monkeypatch):
+    from news_intel.llm.hermes_cli import HermesCliProvider
+
+    p = HermesCliProvider("/bin/true", timeout=60)
+    monkeypatch.setattr(p, "_run_once", lambda prompt: "not json")
+    p.call_deadline = time.monotonic() + 5
+    with pytest.raises(LLMUnavailableError, match="no time left for a JSON repair"):
+        p._complete("x")
+
+
+def test_reviewed_aliases_have_a_basis_and_short_latin_aliases_match_whole_words_only():
+    from news_intel.pipeline.editorial_validation import _name_supported
+    from news_intel.pipeline.entity_aliases import alias_entries, alias_variants
+
+    assert all(e["basis"] in ("source", "official", "replay") and e["ref"] for e in alias_entries())
+    assert "英特尔" in alias_variants("Intel") and "intel" in alias_variants("英特尔")
+    assert _name_supported("英特尔", "Intel shares fell 30% at the open")
+    assert _name_supported("联合国", "The UN said on Friday")
+    assert not _name_supported("联合国", "a fundamental shift in unclear markets")  # "un" inside words
+    assert not _name_supported("世界卫生组织", "the whole region")  # "who" inside "whole"
+    assert not _name_supported("Fabricated Corp", "Intel shares fell")
+
+
+def test_an_aliased_chinese_name_for_an_english_source_passes_and_an_unknown_one_does_not():
+    intel = {
+        "event_id": "E-intel", "title": "Intel shares plunge 30% after weak forecast", "excerpt": "", "entities": [],
+        "sources": [{"publisher": "BBC News", "raw_title": "Intel shares plunge 30% after weak forecast",
+                     "excerpt": "", "url": "https://bbc.test/i", "published_at": "2026-10-30T20:00:00+00:00"}],
+    }
+    sup = {"headline": _q("Intel shares plunge 30%"), "what": _q("Intel shares plunge 30% after weak forecast")}
+    e, ev = _zh(intel, chinese_headline="英特尔股价暴跌30%", chinese_what_happened="英特尔业绩指引疲弱，股价暴跌30%。",
+                entities=["英特尔"], support=sup)
+    r = validate_enrichment(e, ev)
+    assert r.ok, r.reasons
+    e, ev = _zh(intel, chinese_headline="英特尔股价暴跌30%", chinese_what_happened="英特尔业绩指引疲弱，股价暴跌30%。",
+                entities=["英特尔", "台湾积体电路"], support=sup)
+    assert any("台湾积体电路" in x for x in validate_enrichment(e, ev).reasons)
+
+
+def test_a_chinese_bracket_is_part_of_the_name_and_drc_resolves_through_its_reviewed_alias():
+    e, ev = _zh(EBOLA, chinese_headline="刚果（金）埃博拉疫情超5000人死亡", entities=["刚果（金）"],
+                chinese_what_happened="刚果（金）埃博拉疫情已有超过5000人死亡。",
+                support={"headline": _q(TITLE_EBOLA), "what": _q(TITLE_EBOLA)})
+    r = validate_enrichment(e, ev)
+    assert r.ok, r.reasons

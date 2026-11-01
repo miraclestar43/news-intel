@@ -15,6 +15,7 @@ article text itself, which is what narrows an LLM failure mode down to
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 from news_intel.models import EventInput, EvidenceFact
 from news_intel.pipeline.entities import extract_entities
@@ -31,6 +32,15 @@ from news_intel.pipeline.zh_render_readiness import (
     principal_entity_zh,
     zh_amount_facts,
 )
+from news_intel.pipeline.zh_text import strip_zh_trailer
+
+# 2026-11-01 (news-intel v2): bounds for the per-source evidence offered to the model. Every source of the event (and
+# of any same-event cluster merged in from the other edition) is offered, distinct source families first, so a
+# headline-only figure ("More than 5,000 die from Ebola") and a second outlet's account are both in front of the model
+# and of the validator. The prompt stays inside llm/hermes_cli._MAX_PROMPT_CHARS.
+MAX_SOURCES = 6
+MAX_EXCERPT_CHARS = 900
+_CJK_RE = re.compile(r"[一-鿿]")
 
 _UNCERTAINTY_MARKERS_EN = (
     "could", "might", "may ", "discussed", "in talks", "considering", "exploring",
@@ -98,12 +108,71 @@ def _combined_text_en(primary: dict, secondary: dict | None) -> str:
     return " ".join(parts)
 
 
+def _trim(text: str, limit: int = MAX_EXCERPT_CHARS) -> str:
+    """Cut at the last sentence end inside the limit (never mid-sentence when one exists)."""
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if len(text) <= limit:
+        return text
+    head = text[:limit]
+    cut = max(head.rfind(p) for p in ("。", "！", "？", ". ", "! ", "? "))
+    return head[: cut + 1].strip() if cut > limit // 3 else head.rstrip() + "…"
+
+
+def offered_sources(events: list[dict], max_sources: int = MAX_SOURCES) -> list[dict]:
+    """Every source of the given same-event clusters (the first is the primary), one per article URL, distinct
+    origin families first. Each keeps its own title -- the headline is evidence too (2026-11-01: the Ebola story's
+    death toll was only in its BBC headline, which neither the model nor the validator ever saw)."""
+    seen_urls: set[str] = set()
+    pool: list[dict] = []
+    for ev in events:
+        for j, src in enumerate(ev.get("sources") or []):
+            url = src.get("display_url") or src.get("url") or ""
+            if url and url in seen_urls:
+                continue
+            seen_urls.add(url)
+            if j == 0 and not (src.get("raw_title") or src.get("origin_title") or src.get("title")):
+                src = {**src, "title": ev.get("title", "")}  # a source row without its own title: the event's
+            pool.append(src)
+    first_per_family: list[dict] = []
+    rest: list[dict] = []
+    families: set[str] = set()
+    for src in pool:
+        fam = src.get("origin_family") or src.get("publisher") or ""
+        (rest if fam in families else first_per_family).append(src)
+        families.add(fam)
+    chosen = (first_per_family + rest)[:max_sources]
+    out = []
+    for i, src in enumerate(chosen):
+        title = src.get("raw_title") or src.get("origin_title") or src.get("title") or ""
+        excerpt = src.get("excerpt") or ""
+        if excerpt.strip() == title.strip():
+            excerpt = ""
+        lang = "zh" if _CJK_RE.search(f"{title}{excerpt}") else "en"
+        out.append({
+            "id": f"s{i}",
+            "publisher": src.get("publisher", ""),
+            "title": title,
+            "excerpt": _trim(strip_zh_trailer(excerpt) if lang == "zh" else excerpt),
+            "published_at": str(src.get("published_at") or ""),
+            "url": src.get("display_url") or src.get("url", ""),
+            "language": lang,
+        })
+    return out
+
+
 def build_event_input(
     primary: dict, secondary: dict | None, category: str, entities: list[str] | None,
-    *, edition_id: str = "en_global", update_note: str | None = None,
+    *, edition_id: str = "en_global", update_note: str | None = None, related: list[dict] | None = None,
+    reference_time: datetime | None = None,
 ) -> EventInput:
+    """`related`: other events of the same real-world story (the brief merges both editions' clusters); their sources
+    are offered too. `reference_time`: the run's cutoff, so the model reads source dates against it."""
     is_zh = edition_id == "zh_cn"
-    text = _combined_text_zh(primary, secondary) if is_zh else _combined_text_en(primary, secondary)
+    clusters = [primary, *([secondary] if secondary else []), *(related or [])]
+    sources = offered_sources(clusters)
+    text = " ".join(f"{s['title']} {s['excerpt']}" for s in sources) or (
+        _combined_text_zh(primary, secondary) if is_zh else _combined_text_en(primary, secondary)
+    )
     lowered = text.lower()
 
     facts: list[EvidenceFact] = []
@@ -191,19 +260,12 @@ def build_event_input(
     if update_note:
         facts.append(EvidenceFact(id=_next_id(), kind="prior_coverage", text=update_note))
 
-    sources = []
-    for i, src in enumerate((primary, *([secondary] if secondary else []))):
-        source_list = src.get("sources") or []
-        source = source_list[0] if source_list else {}
-        sources.append(
-            {
-                "id": f"s{i}",
-                "publisher": source.get("publisher", ""),
-                "excerpt": src.get("excerpt") or source.get("excerpt", ""),
-                "published_at": str(source.get("published_at", "")),
-                "url": source.get("display_url") or source.get("url", ""),
-            }
-        )
+    if not sources:  # an event dict with no source rows (tests, legacy callers): its own title/excerpt is the source
+        sources = [{
+            "id": "s0", "publisher": "", "title": primary.get("title", ""),
+            "excerpt": _trim(primary.get("excerpt", "")), "published_at": "", "url": "",
+            "language": "zh" if is_zh else "en",
+        }]
 
     return EventInput(
         event_id=primary.get("event_id", ""),
@@ -212,4 +274,5 @@ def build_event_input(
         edition_id=edition_id,
         category_candidates=[category] if category else [],
         facts=facts,
+        reference_time=reference_time.isoformat() if reference_time else None,
     )

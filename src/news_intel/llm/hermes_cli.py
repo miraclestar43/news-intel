@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 
 from news_intel.llm.errors import LLMUnavailableError
 from news_intel.llm.json_utils import parse_json_object
@@ -72,6 +73,7 @@ class HermesCliProvider:
         self.bin_path = bin_path
         self.timeout = timeout
         self.model = model_label or "hermes_cli"
+        self.call_deadline: float | None = None  # set per call by pipeline/editorial_enrichment (monotonic)
 
     def _run_once(self, prompt: str) -> str:
         if len(prompt) > _MAX_PROMPT_CHARS:
@@ -101,6 +103,13 @@ class HermesCliProvider:
         prompt = _SYSTEM_PREFIX + user_prompt
         last_error: Exception | None = None
         for _attempt in range(2):  # one original attempt + one automatic repair
+            # 2026-11-01: the JSON repair is another full call; it is skipped when the caller's run deadline
+            # (call_deadline, time.monotonic()) leaves too little time, so it cannot push the job past its budget.
+            if _attempt and self.call_deadline is not None:
+                left = self.call_deadline - time.monotonic()
+                if left < 10:
+                    raise LLMUnavailableError(f"no time left for a JSON repair call ({left:.0f}s); last: {last_error}")
+                self.timeout = min(self.timeout, left)
             output = self._run_once(prompt)
             try:
                 return parse_json_object(output)

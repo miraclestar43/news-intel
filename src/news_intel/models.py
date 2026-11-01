@@ -125,10 +125,22 @@ class EventInput(BaseModel):
 
     event_id: str
     candidate_title: str
-    sources: list[dict] = Field(description="[{id, publisher, excerpt, published_at}]")
+    sources: list[dict] = Field(description="[{id, publisher, title, excerpt, published_at, url, language}]")
     edition_id: str = "en_global"
     category_candidates: list[str] = Field(default_factory=list)
     facts: list[EvidenceFact] = Field(default_factory=list)
+    # 2026-11-01 (news-intel v2): the prompt's "now" -- dates in the sources are read against it; ISO with offset.
+    reference_time: str | None = None
+    # 2026-11-01: why the previous attempt was rejected, rendered as an explicit retry instruction. (It used to be
+    # appended to candidate_title, which the prompt never rendered -- the model never saw it.) Sources unchanged.
+    retry_feedback: list[str] = Field(default_factory=list)
+
+
+class SupportQuote(BaseModel):
+    """A verbatim span of one offered source (its title or text) that a reader-facing field rests on (2026-11-01)."""
+
+    source_id: str
+    quote: str
 
 
 class EventEnrichment(BaseModel):
@@ -136,19 +148,28 @@ class EventEnrichment(BaseModel):
     category: str
     subcategories: list[str] = Field(default_factory=list)
     entities: list[str] = Field(default_factory=list)
-    english_headline: str
-    what_happened: str
-    why_it_matters: str
-    chinese_headline: str
+    # 2026-11-01: a field may be "" -- the zh_cn edition asks for Chinese only, and why_it_matters/chinese_takeaway
+    # are written only when a source states the consequence (no more "tie to chips/AI/markets" filler).
+    english_headline: str = ""
+    what_happened: str = ""
+    why_it_matters: str = ""
+    chinese_headline: str = ""
     # 2026-08-24: a Chinese "what happened" sentence, distinct from
     # chinese_takeaway (a "why it matters"-flavored line) -- needed so the
     # zh_cn renderer never has to display the English what_happened/
     # why_it_matters fields, which would put English prose in a Chinese
     # digest. Mirrors the EN what_happened/why_it_matters pairing.
-    chinese_what_happened: str
-    chinese_takeaway: str
-    significance_proposal: float = Field(ge=0, le=100)
-    market_impact_proposal: float = Field(ge=0, le=100)
+    chinese_what_happened: str = ""
+    chinese_takeaway: str = ""
+    # "reported": a source states this consequence; "source_judgment": a named source's own assessment, attributed in
+    # the sentence. Empty when there is no why line. The model's own interpretation is not offered as a kind.
+    why_kind: str = ""
+    # One short Chinese sentence for the newsletter's news digest (the same frozen snapshot as the full brief).
+    chinese_brief_line: str = ""
+    # field group -> verbatim quotes it rests on: "headline", "what", "why", "brief".
+    support: dict[str, list[SupportQuote]] = Field(default_factory=dict)
+    significance_proposal: float = Field(default=50, ge=0, le=100)
+    market_impact_proposal: float = Field(default=50, ge=0, le=100)
     material_facts: list[str] = Field(default_factory=list)
     uncertainties: list[str] = Field(default_factory=list)
     supporting_source_ids: list[str] = Field(default_factory=list)

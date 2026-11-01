@@ -1,0 +1,70 @@
+# Chinese <-> English entity equivalences accepted by the editorial validator (pipeline/entity_aliases.py).
+#
+# Only equivalences with a reviewable basis belong here (owner rule 2026-11-01: "实体等价要有可审查的映射或来源依据"):
+#   source:   a collected source itself wrote the pair, e.g. "马斯克（Elon Musk）" -- the URL is one such article
+#             (mined from raw_items 2026-09-01..11-01, eval/v2-20261101/runs/alias-mining.txt);
+#   official: the organisation's own Chinese-language site uses the name (the URL; page title checked 2026-11-01);
+#   replay:   added 2026-08-25 from a real live-model replay (pre-existing table, kept as it was).
+# Not a translation engine. A name missing here is rejected unless the sources themselves contain it.
+aliases:
+  # --- source basis ---
+  - {zh: 英特尔, en: [intel], basis: source, ref: "https://www.ithome.com/1/019/854.htm"}
+  - {zh: 微软, en: [microsoft], basis: source, ref: "https://www.ithome.com/1/001/483.htm"}
+  - {zh: 谷歌, en: [google], basis: source, ref: "https://www.ithome.com/0/993/821.htm"}
+  - {zh: 苹果, en: [apple], basis: source, ref: "https://www.ithome.com/1/001/483.htm"}
+  - {zh: 亚马逊, en: [amazon], basis: source, ref: "https://www.ithome.com/1/001/483.htm"}
+  - {zh: 亚马逊云科技, en: [aws, amazon web services], basis: source, ref: "https://www.ithome.com/1/008/149.htm"}
+  - {zh: 英伟达, en: [nvidia], basis: source, ref: "https://www.ithome.com/0/993/153.htm"}
+  - {zh: 美光, en: [micron], basis: source, ref: "https://www.ithome.com/1/001/489.htm"}
+  - {zh: 美光科技, en: [micron, micron technology], basis: source, ref: "https://www.ithome.com/1/001/224.htm"}
+  - {zh: 闪迪, en: [sandisk], basis: source, ref: "https://www.ithome.com/0/995/493.htm"}
+  - {zh: 铠侠, en: [kioxia], basis: source, ref: "https://www.ithome.com/1/002/224.htm"}
+  - {zh: 台积电, en: [tsmc], basis: source, ref: "https://www.ithome.com/0/991/869.htm"}
+  - {zh: 币安, en: [binance], basis: source, ref: "https://www.ithome.com/1/019/870.htm"}
+  - {zh: 小米, en: [xiaomi], basis: source, ref: "https://www.ithome.com/0/993/507.htm"}
+  - {zh: 高通, en: [qualcomm], basis: source, ref: "https://www.ithome.com/0/991/914.htm"}
+  - {zh: 甲骨文, en: [oracle], basis: source, ref: "https://www.ithome.com/1/002/871.htm"}
+  - {zh: 索尼, en: [sony], basis: source, ref: "https://www.ithome.com/0/999/944.htm"}
+  - {zh: 联想, en: [lenovo], basis: source, ref: "https://www.ithome.com/0/996/922.htm"}
+  - {zh: 华硕, en: [asus], basis: source, ref: "https://www.ithome.com/0/996/960.htm"}
+  - {zh: 惠普, en: [hp], basis: source, ref: "https://www.ithome.com/0/999/927.htm"}
+  - {zh: 戴尔, en: [dell], basis: source, ref: "https://www.ithome.com/0/998/667.htm"}
+  - {zh: 长江存储, en: [ymtc], basis: source, ref: "https://www.ithome.com/1/005/092.htm"}
+  - {zh: SK海力士, en: [sk hynix], basis: source, ref: "https://www.ithome.com/0/996/989.htm"}
+  - {zh: 世界卫生组织, en: [who, world health organization], basis: source, ref: "https://www.ithome.com/1/018/736.htm"}
+  - {zh: 国际货币基金组织, en: [imf, international monetary fund], basis: source, ref: "https://www.ithome.com/1/007/165.htm"}
+  - {zh: 美国证券交易委员会, en: [sec, securities and exchange commission], basis: source, ref: "https://www.ithome.com/0/997/196.htm"}
+  - {zh: 美国联邦调查局, en: [fbi], basis: source, ref: "https://www.ithome.com/0/997/704.htm"}
+  - {zh: 美国国家航空航天局, en: [nasa], basis: source, ref: "https://www.ithome.com/0/999/297.htm"}
+  - {zh: 美国联邦通信委员会, en: [fcc], basis: source, ref: "https://www.ithome.com/0/997/923.htm"}
+  - {zh: 美国联邦航空管理局, en: [faa], basis: source, ref: "https://www.ithome.com/0/997/768.htm"}
+  - {zh: 欧洲航天局, en: [esa, european space agency], basis: source, ref: "https://www.ithome.com/0/998/401.htm"}
+  - {zh: 马斯克, en: [elon musk, musk], basis: source, ref: "https://www.ithome.com/0/997/401.htm"}
+  - {zh: 奥尔特曼, en: [sam altman, altman], basis: source, ref: "https://www.ithome.com/0/997/217.htm"}
+  - {zh: 库克, en: [tim cook], basis: source, ref: "https://www.ithome.com/0/996/722.htm"}
+  - {zh: 纳德拉, en: [satya nadella, nadella], basis: source, ref: "https://www.ithome.com/0/999/797.htm"}
+  - {zh: 扎克伯格, en: [mark zuckerberg, zuckerberg], basis: source, ref: "https://www.ithome.com/0/999/960.htm"}
+  - {zh: 特朗普, en: [donald trump, trump], basis: source, ref: "https://www.ithome.com/1/002/224.htm"}
+  # --- official basis ---
+  - {zh: 华为, en: [huawei], basis: official, ref: "https://www.huawei.com/cn/"}
+  - {zh: 三星, en: [samsung], basis: official, ref: "https://www.samsung.com.cn/ (三星电子)"}
+  - {zh: 三星电子, en: [samsung electronics, samsung], basis: official, ref: "https://www.samsung.com.cn/"}
+  - {zh: 比亚迪, en: [byd], basis: official, ref: "https://www.byd.com/cn"}
+  - {zh: 特斯拉, en: [tesla], basis: official, ref: "https://www.tesla.cn/"}
+  - {zh: 联合国, en: [un, united nations], basis: official, ref: "https://www.un.org/zh/"}
+  - {zh: 世卫组织, en: [who, world health organization], basis: official, ref: "https://www.who.int/zh"}
+  - {zh: 刚果（金）, en: [dr congo, democratic republic of the congo, drc, congo-kinshasa], basis: official,
+     ref: "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/fz_677316/1206_677680/ (外交部 country page, column 刚果(金))"}
+  # --- replay basis (pre-existing table, 2026-08-25) ---
+  - {zh: 高盛, en: [goldman sachs], basis: replay, ref: "2026-08-25 live-model replay"}
+  - {zh: 摩根士丹利, en: [morgan stanley], basis: replay, ref: "2026-08-25 live-model replay"}
+  - {zh: 摩根大通, en: [jpmorgan, jp morgan], basis: replay, ref: "2026-08-25 live-model replay"}
+  - {zh: 瑞银, en: [ubs], basis: replay, ref: "2026-08-25 live-model replay"}
+  - {zh: 港交所, en: [hong kong stock exchange, hkex], basis: replay, ref: "2026-08-25 live-model replay"}
+  - {zh: 腾讯, en: [tencent], basis: replay, ref: "2026-08-25 live-model replay"}
+  - {zh: 阿里巴巴, en: [alibaba], basis: replay, ref: "2026-08-25 live-model replay"}
+  - {zh: 网易, en: [netease], basis: replay, ref: "2026-08-25 live-model replay"}
+  - {zh: 网易有道, en: [netease youdao], basis: replay, ref: "2026-08-25 live-model replay"}
+  - {zh: 有道, en: [youdao], basis: replay, ref: "2026-08-25 live-model replay"}
+  - {zh: 泰康人寿, en: [taikang life, taikang life insurance], basis: replay, ref: "2026-08-25 live-model replay"}
+  - {zh: 立讯精密, en: [luxshare, luxshare precision, luxshare limited], basis: replay, ref: "2026-08-25 live-model replay"}

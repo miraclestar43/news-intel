@@ -20,14 +20,32 @@ def render(template: str, **placeholders: str) -> str:
     return out
 
 
+def _attr(value) -> str:
+    return str(value or "").replace('"', "'").replace("\n", " ")
+
+
+def _data(value) -> str:
+    """Source text cannot close its own delimiter."""
+    return str(value or "").replace("</source", "<\\/source").replace("<source", "<\\source")
+
+
 def render_sources_block(sources: list[dict]) -> str:
-    """Wrap each untrusted excerpt in an explicit delimiter so the model
-    treats it as data, never as instructions (design doc section 8.3)."""
+    """Wrap each untrusted source in an explicit delimiter so the model
+    treats it as data, never as instructions (design doc section 8.3).
+
+    2026-11-01: the source's own TITLE is rendered (it was never sent: a death toll that only the BBC headline gave was
+    invisible to the model, which then wrote that the source gave no toll), with its publisher, publication time, URL
+    and language as attributes. Quotes the model cites must come verbatim from the TITLE or TEXT lines."""
     parts = []
     for s in sources:
-        parts.append(
-            f'<source id="{s["id"]}" publisher="{s.get("publisher", "")}" '
-            f'published_at="{s.get("published_at", "")}">\n'
-            f'{s.get("excerpt", "")}\n</source>'
-        )
+        lines = [
+            f'<source id="{_attr(s["id"])}" publisher="{_attr(s.get("publisher"))}" '
+            f'published_at="{_attr(s.get("published_at"))}" language="{_attr(s.get("language"))}" '
+            f'url="{_attr(s.get("url"))}">'
+        ]
+        if s.get("title"):
+            lines.append(f"TITLE: {_data(s['title'])}")
+        lines.append(f"TEXT: {_data(s.get('excerpt'))}" if s.get("excerpt") else "TEXT: (none beyond the title)")
+        lines.append("</source>")
+        parts.append("\n".join(lines))
     return "\n\n".join(parts)
