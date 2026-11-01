@@ -263,3 +263,16 @@ def test_short_chinese_attribution_quotes_are_accepted_and_hedge_feedback_offers
     from news_intel.pipeline.editorial_validation import _quote_min
 
     assert _quote_min("知情人士称") == 4 and _quote_min("sources") == 6
+
+
+def test_the_offered_publisher_may_be_named_and_the_brief_line_rests_on_the_items_own_quotes():
+    ebola_bbc = {**EBOLA, "sources": [dict(EBOLA["sources"][0], publisher="BBC")]}
+    e, ev = _zh(ebola_bbc, chinese_headline="刚果（金）埃博拉疫情超5000人死亡",
+                chinese_what_happened="据BBC报道，刚果（金）埃博拉疫情已有超过5000人死亡。",
+                chinese_brief_line="BBC：刚果（金）埃博拉疫情超5000人死亡。",
+                support={"headline": _q(TITLE_EBOLA), "what": _q(TITLE_EBOLA), "brief": _q("deadliest outbreak")})
+    r = validate_enrichment(e, ev)
+    assert r.ok, r.reasons
+    # but never a name or figure found in none of the item's quotes
+    e2 = EventEnrichment(**{**e.model_dump(), "chinese_brief_line": "WHO称刚果（金）埃博拉疫情超6000人死亡。"})
+    assert len(validate_enrichment(e2, ev).reasons) >= 2

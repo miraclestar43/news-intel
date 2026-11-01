@@ -382,6 +382,9 @@ def _check_support(enrichment: EventEnrichment, evidence: EventInput, reasons: l
     by_id = {s["id"]: s for s in evidence.sources}
     source_texts = {sid: _norm(f"{s.get('title', '')}\n{s.get('excerpt', '')}") for sid, s in by_id.items()}
     allowed_dates = _source_dates(evidence)
+    # 2026-11-01 replay: "据BBC报道" names the offered source itself -- a publisher is attribution, not a new name
+    publishers = " ".join(s.get("publisher", "") for s in evidence.sources)
+    valid_quotes: dict[str, list[str]] = {}
     for group, fields in _FIELD_GROUPS.items():
         values = [(f, getattr(enrichment, f) or "") for f in fields]
         values = [(f, v) for f, v in values if v.strip()]
@@ -406,6 +409,9 @@ def _check_support(enrichment: EventEnrichment, evidence: EventInput, reasons: l
                 good_quotes.append(q.quote)
         if not good_quotes:
             continue
+        valid_quotes[group] = good_quotes
+        if group == "brief":  # the digest line only restates the item: it may rest on the item's own quotes
+            good_quotes = good_quotes + valid_quotes.get("headline", []) + valid_quotes.get("what", [])
         quote_text = "\n".join(good_quotes)
         pool = number_claims(quote_text)
         quote_lower = quote_text.lower()
@@ -442,7 +448,7 @@ def _check_support(enrichment: EventEnrichment, evidence: EventInput, reasons: l
                             f"translations or abbreviations after Chinese names"
                         )
                 for name in _latin_names(_PAREN_RE.sub("", value)):
-                    if not _name_supported(name, quote_text):
+                    if not _name_supported(name, f"{quote_text}\n{publishers}"):
                         reasons.append(f"{field}: the name {name!r} is not in this field's quotes")
 
 
@@ -450,7 +456,7 @@ def _check_entities(enrichment: EventEnrichment, evidence: EventInput, reasons: 
     """Declared entities: each must be traceable to the offered sources (titles included) or the actor facts, either
     directly or through the curated alias table. A parenthesised part is checked on its own -- stripping the brackets
     never makes a new name inside them acceptable."""
-    hay = (" ".join(f"{s.get('title', '')} {s.get('excerpt', '')}" for s in evidence.sources)
+    hay = (" ".join(f"{s.get('title', '')} {s.get('excerpt', '')} {s.get('publisher', '')}" for s in evidence.sources)
            + " " + evidence.candidate_title + " "
            + " ".join(f.text for f in evidence.facts if f.kind in ("actor", "target")))
     for name in enrichment.entities:
