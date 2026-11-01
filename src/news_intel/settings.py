@@ -237,6 +237,13 @@ class SourcesConfig(BaseModel):
         dupes = {i for i in ids if ids.count(i) > 1}
         if dupes:
             raise ValueError(f"duplicate source ids: {dupes}")
+        # 2026-11-01: collect.py ingests a source's items into exactly ONE edition (raw_items is UNIQUE(source_id,
+        # external_id), so a second edition's copy could never be stored). A second entry here used to be accepted and
+        # silently ignored. Cross-edition use of the same evidence happens downstream instead (brief/selection.py
+        # merges both editions' events), so the same feed is never fetched twice.
+        multi = [s.id for s in v if len(s.editions) != 1]
+        if multi:
+            raise ValueError(f"sources must list exactly one edition (collect ingests into one): {multi}")
         return v
 
 
