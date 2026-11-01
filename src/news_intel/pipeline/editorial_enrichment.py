@@ -160,6 +160,7 @@ def enrich_story(
     primary: dict, secondary: dict | None, category: str, entities: list[str] | None,
     *, edition_id: str = "en_global", update_note: str | None = None, provider=None,
     deadline: float | None = None, related: list[dict] | None = None, reference_time=None,
+    feedback: list[str] | None = None,
 ) -> EditorialResult:
     """`provider` is injected (never constructed here from config) so
     callers control exactly what -- if anything -- this can reach; tests
@@ -181,7 +182,9 @@ def enrich_story(
     )
 
     start = time.monotonic()
-    last_reasons: list[str] = []
+    # `feedback`: problems an independent check (the brief's verifier) found in an earlier accepted version; the
+    # first attempt then already carries them as its RETRY instruction.
+    last_reasons: list[str] = list(feedback or [])
     retry_count = 0
     attempts: list[dict] = []
     for _attempt in range(2):  # one original attempt + one validation-error-guided retry
