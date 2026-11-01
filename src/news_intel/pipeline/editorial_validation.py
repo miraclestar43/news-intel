@@ -154,6 +154,11 @@ _INTERPRETIVE = re.compile(
 )
 _QUOTE_MIN, _QUOTE_MAX = 6, 200
 
+
+def _quote_min(quote: str) -> int:
+    """A Chinese attribution such as 知情人士称 is a complete quote in five characters (replay 2026-10-31)."""
+    return 4 if re.search(r"[一-鿿]", quote) else _QUOTE_MIN
+
 # Comments on what the sources lack are review notes, not news (2026-10-31: an Ebola item said the source gave no
 # death toll while its own headline gave one).
 _META_COMMENTARY = [
@@ -391,9 +396,9 @@ def _check_support(enrichment: EventEnrichment, evidence: EventInput, reasons: l
             qn = _norm(q.quote)
             if q.source_id not in by_id:
                 reasons.append(f"support[{group!r}] cites source {q.source_id!r}, which was never offered")
-            elif not (_QUOTE_MIN <= len(q.quote.strip()) <= _QUOTE_MAX):
+            elif not (_quote_min(q.quote) <= len(q.quote.strip()) <= _QUOTE_MAX):
                 reasons.append(
-                    f"support[{group!r}] quote {q.quote[:40]!r} must be {_QUOTE_MIN}-{_QUOTE_MAX} characters"
+                    f"support[{group!r}] quote {q.quote[:40]!r} must be {_quote_min(q.quote)}-{_QUOTE_MAX} characters"
                 )
             elif qn not in source_texts[q.source_id]:
                 reasons.append(f"support[{group!r}] quote {q.quote[:60]!r} is not verbatim in source {q.source_id}")
@@ -412,7 +417,8 @@ def _check_support(enrichment: EventEnrichment, evidence: EventInput, reasons: l
             if prospective and not _HEDGE_RE.search(value):
                 reasons.append(
                     f"{field}: its quotes are prospective/unconfirmed ({', '.join(prospective[:3])}) but the text "
-                    f"states it as settled -- keep the source's hedge (据报道/消息称/或将/计划, reportedly/could/plans)"
+                    f"states it as settled -- keep the source's hedge (据报道/消息称/或将/计划, reportedly/could), or "
+                    f"quote a span that states this claim without prospective wording"
                 )
             for n in number_claims(value):
                 if not _supported(n, pool):

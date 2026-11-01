@@ -252,3 +252,14 @@ def test_an_interpretation_labelled_reported_is_refused():
                 chinese_takeaway="多项运输指标创历史同期新高，反映出铁路需求旺盛。", why_kind="reported",
                 support=sup)
     assert any("source_judgment" in x for x in validate_enrichment(e, ev).reasons)
+
+
+def test_short_chinese_attribution_quotes_are_accepted_and_hedge_feedback_offers_a_way_out():
+    e, ev = _zh(RAIL, chinese_headline="国铁集团前三季度营收9143亿元",
+                chinese_what_happened="国铁集团披露，前三季度营业总收入9143亿元。",
+                support={"headline": _q(TITLE_RAIL), "what": _q("国铁集团披露", "实现营业总收入 9143 亿元")})
+    r = validate_enrichment(e, ev)
+    assert r.ok, r.reasons
+    from news_intel.pipeline.editorial_validation import _quote_min
+
+    assert _quote_min("知情人士称") == 4 and _quote_min("sources") == 6
