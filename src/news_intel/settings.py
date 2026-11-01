@@ -48,6 +48,12 @@ class Secrets(BaseSettings):
     hermes_bin: str | None = Field(default=None, alias="HERMES_BIN")
     hermes_timeout_seconds: float | None = Field(default=None, alias="HERMES_TIMEOUT_SECONDS")
     hermes_model_label: str | None = Field(default=None, alias="HERMES_MODEL_LABEL")
+    # 2026-11-01: LLM_PROVIDER=claude_cli -- the official Claude Code CLI on its claude.ai subscription login
+    # (llm/claude_cli.py). Paths and a model name only; the login lives in CLAUDE_CONFIG_DIR and is never read here.
+    claude_bin: str | None = Field(default=None, alias="CLAUDE_BIN")
+    claude_config_dir: str | None = Field(default=None, alias="CLAUDE_CONFIG_DIR")
+    claude_model: str | None = Field(default=None, alias="CLAUDE_MODEL")
+    claude_timeout_seconds: float | None = Field(default=None, alias="CLAUDE_TIMEOUT_SECONDS")
     sec_user_agent: str = Field(
         default="PiNewsIntel contact@example.com", alias="SEC_USER_AGENT"
     )

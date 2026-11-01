@@ -77,6 +77,10 @@ def build_bounded_provider(config):
     matching NullProvider's trigger condition, so enrich_story() falls
     straight to the source-grounded floor."""
     secrets = config.secrets
+    if secrets.llm_provider == "claude_cli":            # 2026-11-01: Claude Code CLI, subscription (llm/claude_cli.py)
+        from news_intel.llm.provider import _claude
+
+        return _claude(secrets, _HERMES_CLI_STORY_TIMEOUT_SECONDS)
     if secrets.llm_provider == "hermes_cli":
         if not secrets.hermes_bin:
             return None
