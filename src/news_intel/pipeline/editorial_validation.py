@@ -139,6 +139,11 @@ _FIELD_GROUPS = {
 }
 _ZH_FIELDS = {"chinese_headline", "chinese_what_happened", "chinese_takeaway", "chinese_brief_line"}
 _WHY_KINDS = {"reported", "source_judgment"}
+_INTERPRETIVE = re.compile(
+    r"(反映出|反映了|意味着|表明|显示出|凸显|标志着|预示|"
+    r"shows that|signals?|suggests?|underscores?|highlights?|reflects?|means that)",
+    re.IGNORECASE,
+)
 _QUOTE_MIN, _QUOTE_MAX = 6, 200
 
 # Comments on what the sources lack are review notes, not news (2026-10-31: an Ebola item said the source gave no
@@ -344,12 +349,16 @@ def _name_supported(name: str, haystack: str) -> bool:
     """`name` or a reviewed alias occurs in `haystack`: Latin forms as whole words ("un" must not match inside
     "fundamental"), CJK forms as substrings (Chinese has no word spaces)."""
     plain, squeezed = _plain(haystack), _norm(haystack)
+    original = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", haystack or ""))
     for v in alias_variants(name):
         v = _plain(v).strip()
         if not v:
             continue
         if re.search(r"[a-z0-9]", v) and not re.search(r"[一-鿿]", v):
-            if re.search(r"(?<![a-z0-9])" + re.escape(v) + r"(?![a-z0-9])", plain):
+            if len(v) <= 3 and v.isalpha():  # an acronym (US, UK, UN, WHO): capitals only, never the word "us"
+                if re.search(r"(?<![A-Za-z0-9])" + re.escape(v.upper()) + r"(?![A-Za-z0-9])", original):
+                    return True
+            elif re.search(r"(?<![a-z0-9])" + re.escape(v) + r"(?![a-z0-9])", plain):
                 return True
         elif _norm(v) in squeezed:
             return True
@@ -480,6 +489,9 @@ def validate_enrichment(enrichment: EventEnrichment, evidence: EventInput) -> Va
     if why_text.strip():
         if enrichment.why_kind not in _WHY_KINDS:
             reasons.append(f"why line needs why_kind 'reported' or 'source_judgment', got {enrichment.why_kind!r}")
+        elif enrichment.why_kind == "reported" and _INTERPRETIVE.search(why_text):
+            reasons.append("the why line interprets (反映出/意味着/表明/shows/signals...): that is a source_judgment, "
+                           "and the sentence must name whose judgment it is")
         elif enrichment.why_kind == "source_judgment" and not re.search(
             r"(认为|称|表示|指出|预计|分析|说|据|according to|said|says|expects|argues|analysts?)",
             why_text,

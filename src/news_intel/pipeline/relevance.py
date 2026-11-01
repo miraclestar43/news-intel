@@ -86,14 +86,27 @@ _PUBLIC_SAFETY_MEDIA_TITLE = (
     "game", "film", "movie", "series", "documentary", "trailer", "anniversary", "remember", "memorial", "album",
     "游戏", "电影", "影片", "剧", "纪录片", "预告", "周年", "纪念", "素材", "动视",
 )
-_DEATH_COUNT_EN = re.compile(r"(\d[\d,]*)\s+(?:people\s+|have\s+|had\s+)?(?:die|died|dead|killed|deaths)")
-_DEATH_COUNT_ZH = re.compile(r"(\d[\d,]*)\s*(?:多|余)?\s*(?:人|名)\s*(?:死亡|遇难|丧生|罹难)")
+# 2026-11-01 (news-intel v2): the common phrasings, not only "N people killed": "kills at least N", "N people were
+# killed", "killing N", "death toll rises to N", "造成N人死亡", "致N死".
+_DEATH_COUNT_EN = [
+    re.compile(r"(\d[\d,]*)\s+(?:people\s+|persons\s+|civilians\s+|soldiers\s+|children\s+)?"
+               r"(?:have\s+|had\s+|were\s+|are\s+|have been\s+|had been\s+)?(?:die|died|dead|killed|deaths)"),
+    re.compile(r"\b(?:kill(?:s|ed|ing)?|leaving|left)\s+(?:at least\s+|more than\s+|over\s+|nearly\s+|about\s+|"
+               r"some\s+|almost\s+)?(\d[\d,]*)"),
+    re.compile(r"death toll\s+(?:rises|rose|climbs|climbed|reaches|reached|hits|hit|is|of|stands at)\s+"
+               r"(?:to\s+|at\s+)?(?:at least\s+|more than\s+|over\s+)?(\d[\d,]*)"),
+]
+_DEATH_COUNT_ZH = [
+    re.compile(r"(\d[\d,]*)\s*(?:多|余)?\s*(?:人|名)\s*(?:死亡|遇难|丧生|罹难)"),
+    re.compile(r"(?:造成|导致|致)\s*(?:至少|超过|逾)?\s*(\d[\d,]*)\s*(?:多|余)?\s*(?:人|名)?\s*(?:死亡|遇难|丧生|罹难|死)"),
+]
 
 
 def death_count(text: str) -> int:
     """Largest stated death toll in the text (0 if none); used for the public-safety scale bonus."""
     lowered = text.lower()
-    counts = [int(m.group(1).replace(",", "")) for rx, src in ((_DEATH_COUNT_EN, lowered), (_DEATH_COUNT_ZH, text))
+    counts = [int(m.group(1).replace(",", ""))
+              for rxs, src in ((_DEATH_COUNT_EN, lowered), (_DEATH_COUNT_ZH, text)) for rx in rxs
               for m in rx.finditer(src)]
     return max(counts, default=0)
 

@@ -200,7 +200,7 @@ def test_reviewed_aliases_have_a_basis_and_short_latin_aliases_match_whole_words
     from news_intel.pipeline.editorial_validation import _name_supported
     from news_intel.pipeline.entity_aliases import alias_entries, alias_variants
 
-    assert all(e["basis"] in ("source", "official", "replay") and e["ref"] for e in alias_entries())
+    assert all(e["basis"] in ("source", "official", "replay", "short_form") and e["ref"] for e in alias_entries())
     assert "英特尔" in alias_variants("Intel") and "intel" in alias_variants("英特尔")
     assert _name_supported("英特尔", "Intel shares fell 30% at the open")
     assert _name_supported("联合国", "The UN said on Friday")
@@ -231,3 +231,24 @@ def test_a_chinese_bracket_is_part_of_the_name_and_drc_resolves_through_its_revi
                 support={"headline": _q(TITLE_EBOLA), "what": _q(TITLE_EBOLA)})
     r = validate_enrichment(e, ev)
     assert r.ok, r.reasons
+
+
+def test_country_names_resolve_through_the_un_lists_and_acronyms_need_capitals():
+    from news_intel.pipeline.editorial_validation import _name_supported
+    from news_intel.pipeline.entity_aliases import alias_entries
+
+    assert any(e["basis"] == "official" and e["zh"] == "中国" for e in alias_entries())
+    assert _name_supported("中国", "China denies allegations of a spy operation")  # 中国 = UN "China (...)" = "China"
+    assert _name_supported("美国", "US officials said") and _name_supported("美国", "the U.S. said")
+    assert not _name_supported("美国", "they told us on Friday")  # the pronoun is not the country
+    assert _name_supported("俄罗斯", "Russia's foreign minister")
+    assert _name_supported("刚果（金）", "in DR Congo's east")
+
+
+def test_an_interpretation_labelled_reported_is_refused():
+    sup = {"headline": _q(TITLE_RAIL), "what": _q("实现营业总收入 9143 亿元"), "why": _q("多项运输指标创历史同期新高")}
+    e, ev = _zh(RAIL, chinese_headline="国铁集团前三季度营收9143亿元",
+                chinese_what_happened="国铁集团前三季度营业总收入9143亿元。",
+                chinese_takeaway="多项运输指标创历史同期新高，反映出铁路需求旺盛。", why_kind="reported",
+                support=sup)
+    assert any("source_judgment" in x for x in validate_enrichment(e, ev).reasons)
