@@ -36,9 +36,10 @@ def render_facts_block(facts: list[EvidenceFact]) -> str:
 
 
 _LANGUAGE_ZH = """Language: this event is for the CHINESE brief. Write chinese_headline (at most 28 characters), \
-chinese_what_happened (1-3 sentences, at most 170 characters: the development, who and when, the key figure, and \
-what is new today; never repeat a fact or pad to reach a length), chinese_brief_line, and chinese_takeaway only if \
-there is a supported why \
+chinese_what_happened (2-3 sentences, about 100-160 characters: the development, who and when, the key figure, \
+what is new today, and the context from the sources a reader needs to follow it -- who an actor is, what led to it; \
+reach the length with such sourced context, never by repeating a fact), chinese_brief_line, and chinese_takeaway \
+only if there is a supported why \
 line. Leave english_headline, what_happened and why_it_matters as "". Write natural simplified Chinese for a general \
 reader, even when the sources are in English or traditional Chinese. Use the Chinese name a source gives, or the \
 standard Chinese name of a well-known organisation, person or place; keep a name in Latin letters only when it has no \
