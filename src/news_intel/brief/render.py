@@ -13,7 +13,7 @@ import html
 from datetime import datetime
 
 from news_intel.brief.schedule import BEIJING
-from news_intel.brief.snapshot import zh_chars
+from news_intel.brief.snapshot import chars, zh_chars
 from news_intel.delivery.telegram_html import escape_text, link, validate
 
 WHY_LABEL = {"reported": "为什么值得知道：", "source_judgment": "来源观点："}
@@ -66,8 +66,9 @@ def telegram_html(snap: dict, base: str = DEFAULT_ARCHIVE_BASE) -> str:
 
 
 def digest(snap: dict, base: str = DEFAULT_ARCHIVE_BASE) -> dict:
-    """The newsletter's closing news digest: the brief lines, nothing new. `zh_chars` counts Chinese characters of
-    the digest text (the 200-300 target is the editors'; the count is reported, not forced)."""
+    """The newsletter's closing news digest: the brief lines, nothing new. `chars` (字数, punctuation and digits
+    included) and `zh_chars` (汉字) count the digest without its link line; the 200-300 target is reported, not
+    forced."""
     url = archive_url(snap, base)
     head = f"今日新闻速览（{header_zh(snap).split(' · ')[0]}）"
     lines = [f"· {it['brief_line']}" for it in snap["items"]]
@@ -76,7 +77,8 @@ def digest(snap: dict, base: str = DEFAULT_ARCHIVE_BASE) -> dict:
     frag = (f'<p style="font-size:14px;color:#8a857d;margin:0 0 6px;">{html.escape(head)}</p>'
             f'<ul style="font-size:15px;line-height:1.75;margin:0 0 8px;padding-left:18px;">{html_lines}</ul>'
             f'<p style="font-size:14px;margin:0;"><a href="{html.escape(url)}">完整新闻与来源</a></p>')
-    return {"text": text, "html": frag, "zh_chars": zh_chars(text), "url": url,
+    body = "\n".join([head, *lines])
+    return {"text": text, "html": frag, "zh_chars": zh_chars(body), "chars": chars(body), "url": url,
             "snapshot_id": snap["snapshot_id"], "text_sha256": snap["text_sha256"]}
 
 

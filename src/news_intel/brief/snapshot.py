@@ -48,7 +48,14 @@ def text_sha256(snap: dict) -> str:
 
 
 def zh_chars(text: str) -> int:
+    """Chinese characters only (汉字)."""
     return len(re.findall(r"[一-鿿]", text or ""))
+
+
+def chars(text: str) -> int:
+    """Length as Chinese word counts are usually given (字数): every non-whitespace character, punctuation and digits
+    included."""
+    return len(re.sub(r"\s", "", text or ""))
 
 
 def status_for(items: list[dict]) -> str:

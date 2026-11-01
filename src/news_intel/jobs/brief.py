@@ -149,10 +149,11 @@ def build(conn, config, edition, *, provider=None, export_dir: Path, revision: i
                     "wall_seconds": round(time.monotonic() - t0, 1), "budget_seconds": budget},
         }
         text = "".join(f"{i['headline']}{i['what']}{i['why']}" for i in items)
-        snap["stats"] = {"items": len(items), "zh_chars": snap_mod.zh_chars(text),
-                         "reading_minutes": max(1, round(snap_mod.zh_chars(text) / 320)) if items else 0}
+        snap["stats"] = {"items": len(items), "chars": snap_mod.chars(text), "zh_chars": snap_mod.zh_chars(text),
+                         "reading_minutes": max(1, round(snap_mod.chars(text) / 320)) if items else 0}
         snap["stats"]["telegram_chars"] = len(brief_render.telegram_html(snap, archive_base))  # renderable, or raise
-        snap["stats"]["digest_zh_chars"] = brief_render.digest({**snap, "text_sha256": ""}, archive_base)["zh_chars"]
+        dig = brief_render.digest({**snap, "text_sha256": ""}, archive_base)
+        snap["stats"].update(digest_chars=dig["chars"], digest_zh_chars=dig["zh_chars"])
         path = snap_mod.freeze(export_dir, snap)
         write_renderings(export_dir, snap, archive_base)
         job_runs.finish(conn, run_id, "success", {
