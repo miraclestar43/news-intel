@@ -39,3 +39,148 @@ editions used to be accepted and silently ignored (collect.py used `editions[0]`
 
 **Effect on the existing dailies.** The new feeds enter the existing en/zh daily candidate pools too. This is listed
 in the deployment package.
+
+## Where general news was lost (three real windows, before this branch)
+
+**Windows:** the 24 hours to 20:00 Beijing on 10-29, 10-30 and 10-31. Events were read from a copy of the
+production database with the scores production had stored. Script: eval `scripts/funnel_quick.py`.
+
+| Window to | Events | Unclassified | Qualified (≥58), zh / en | Events with ≥2 source families |
+|---|---|---|---|---|
+| 10-29 20:00 | 469 | 232 | 125 / 28 | 0 |
+| 10-30 20:00 | 456 | 268 | 99 / 20 | 0 |
+| 10-31 20:00 | 320 | 165 | 66 / 16 | 0 |
+
+**Where the stories were lost, stage by stage:**
+- **Collection:** the zh pool had no general news source.
+- **Clustering:** events are clustered per edition, so BBC and IT之家 reports of one event never meet.
+- **Classification:** general stories fall into Unclassified and are multiplied by 0.0 in the dailies, scoring
+  about 39-45. Examples:
+  - a deadly Spanish train crash;
+  - a Russian drone strike that killed 13;
+  - the US immigration-agents data leak.
+- **Ranking:**
+  - Dozens of single-source IT之家 items sat tied at 69.3-70.8.
+  - In the production zh daily, the source cap then showed 2-4 of them.
+  - The zh daily used the deterministic fallback every day.
+
+## Generation, checking and retry
+
+**The three recorded rejections, reproduced on the old validators with the real events** (`runs/repro-rejections-old.txt`):
+
+| Case | Cause | Evidence |
+|---|---|---|
+| 国铁集团 (China State Railway Group) | Name equivalence: the model added an English gloss the source does not give, and there was no reviewed mapping. | Without the gloss it passes. |
+| 5000 (Ebola) | Evidence omission: the figure was only in the BBC headline. The prompt and the validator never saw source titles. | Using the excerpt's 10,000 instead passes. |
+| 32万亿日元 | Unit parsing: f97b73c read the source's "32 万亿日元" as a bare 32. | Fixed in bd364a2, which also closes a leak: "99万亿日元" passed unchecked before. |
+
+**The retry never reached the model.** The rejection reasons were appended to `candidate_title`, and the prompt
+never rendered that field. The retry prompt was byte-identical to the first (`runs/repro-retry-feedback-old.txt`).
+
+**What changed:**
+- **Evidence:**
+  - Every source of the event, and of same-event clusters merged across editions, is offered: distinct
+    families first, at most 6, each with its title, publisher, time, URL and language.
+  - The model gets the cutoff as its reference time.
+- **Prompt:**
+  - Write the edition's language only; no English names in brackets.
+  - Lead with what is new in the window.
+  - A why line only when a source states a consequence ("reported") or a named source judges it
+    ("source_judgment").
+  - Verbatim quotes per field group.
+  - An explicit RETRY block with the reasons; the sources stay unchanged.
+- **Validator:** each field group's numbers must be in that group's own quotes, with the same unit or currency
+  and the written precision.
+  - It is never looser than the old 1% (3.4亿 → "3亿" is refused).
+  - Numbers of 1 or less are no longer skipped.
+  - Dates must be quoted or be a source's own date.
+  - Latin names in Chinese text must be quoted; bracketed glosses are refused.
+  - A bracketed part of a declared entity is checked on its own.
+  - Comments on what the sources lack are refused.
+  - An interpretive why line marked "reported" is refused.
+  - Hedges are required where the quoted claim is unconfirmed.
+- **Aliases:** every equivalence has a basis.
+  - `config/entity_aliases.yaml`: pairs a collected source itself wrote (with the URL), the organisation's own
+    Chinese site, or the 2026-08-25 replay.
+  - `config/country_aliases.yaml`: generated from the UN's zh and en member-state lists, plus marked short forms.
+  - Three-letter Latin aliases match capitals only, so "told us" is not the US.
+- **Regex passing is not fact checking.** Each brief item is also checked by an independent verifier call against
+  its own sources: relation, subject, period, sign, attribution, certainty, headline/body agreement, new today,
+  and a supported why. The writer gets one rewrite with the verifier's problems. An item that still fails, or
+  cannot be verified, is dropped.
+
+**The same three cases with the new code and the real model** (`runs/repro-rejections-new.jsonl`, claude-opus-5-5):
+- 国铁集团 zh, Ebola en and 存储五巨头 zh were validated on the first attempt (12 s, 10 s, 17 s).
+- Ebola zh was refused for 刚果民主共和国 ↔ DR Congo, which had no mapping. It now resolves through the UN list.
+
+## Claude provider, budget, dry-run, run status
+
+- **Provider:** `ClaudeCliProvider` is the only caller; the dailies and the brief share it. Output is accepted
+  only with positively confirmed identity:
+  - `apiKeySource` is "none";
+  - the init model and every model in `modelUsage` equal the requested one;
+  - exit code 0, one turn, no tool or permission denial, a non-empty result.
+
+  Each call's identity, duration and tokens are recorded. A failure takes the documented floor, never a paid API.
+- **Budget:**
+  - Measured Claude CLI calls on real evidence: 3-23 s.
+  - No call starts with less than 20 s of the run budget left, and the call timeout shrinks to what is left.
+  - The JSON-repair call is skipped near the deadline.
+  - The dailies keep 150 s inside `TimeoutStartSec=280`, enough for 3-4 stories at this latency (zh dry run:
+    1 story, 21 s).
+  - The brief has its own budget, 1200 s inside `TimeoutStartSec=1800`; replays took 260-320 s.
+- **Dry runs:**
+  - `pi-news digest daily --dry-run` used to always say `skipped_lock`: the SAVEPOINT conflicted with
+    BEGIN IMMEDIATE.
+  - The lock is now nested when needed. Only real contention returns False; program errors raise.
+  - CLI dry runs run on a private online-backup copy, so a minutes-long preview holds no production lock.
+  - A live lock row still makes the preview stand aside.
+  - Real CLI check on a copy of production: the zh dry run called claude-opus-5-5 and produced a brief.
+- **Run status:**
+  - `fallback_used` is true when any top story is on the floor.
+  - `edition_status` is model / mixed / degraded / no_model / empty.
+  - Every story's result, reason, retries and per-attempt latency are recorded, along with every CLI call's
+    identity and tokens.
+
+## The brief and its snapshot
+
+`src/news_intel/brief/`, `jobs/brief.py`: see the module docstrings.
+
+**Edition:** the Beijing edition date, cutoff 20:00 Asia/Shanghai, and the 24-hour window.
+
+**Selection:**
+- the pool is point-in-time, from both editions;
+- a brief-only pre-rank: public safety on, Unclassified not zeroed, product and soft-news demotion, tier and
+  family weight;
+- a Claude editor call merges duplicates across languages and chooses 0-5 by importance with reasons, reserves
+  and topic labels;
+- earlier editions' headlines are shown, so a continuation must lead with what is new;
+- there is a deterministic fallback.
+
+**Items:** the editorial layer above, the "today" check, then the verifier.
+
+**Snapshot `news-intel/brief-v1`:**
+- written atomically and frozen;
+- the same edition is reused;
+- revisions are explicit;
+- it records `text_sha256`, every source, the support quotes and the verification of each item, the selection
+  reasons, rejections with stage and reason, the funnel, models, code/prompt/config hashes and every call.
+
+**Outputs:** Telegram HTML, the dated archive page, and the newsletter digest. All three are rendered from the
+frozen snapshot only.
+
+## The newsletter digest (history-in-practice, branch `feature/news-digest-consumer`)
+
+**Consumer only.** The story pipeline, recipients, SMTP, send idempotency and delivery records are untouched.
+
+- **Check:** `news.py` checks the frozen brief:
+  - its own hash;
+  - the same Beijing edition date;
+  - Asia/Shanghai, and a cutoff not in the future and at most 26 h old;
+  - 1-5 items, each with a brief line and a link;
+  - the archive page.
+- **Binding:** the digest is bound once per edition revision, at the site step, and reused by every retry and
+  manual send. The archive page goes into the same site commit.
+- **Absent news:** anything wrong binds "absent" and the story goes out alone, byte-identical to today's email.
+- **Tests:** 188 pass. The 9 CLI tests need `.venv` inside the checkout; they fail in any fresh worktree, on
+  `main` too, and pass with it.
