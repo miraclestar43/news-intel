@@ -185,6 +185,93 @@ frozen snapshot only.
 - **Tests:** 188 pass. The 9 CLI tests need `.venv` inside the checkout; they fail in any fresh worktree, on
   `main` too, and pass with it.
 
+## Final evaluation run (code `4290921`)
+
+**What ran:**
+- Three replays on a fresh copy of the production database.
+- Then the 2026-11-01 edition on the shadow collector's database: a production copy plus the 9 new feeds, collected
+  from 06:53 UTC to the 12:00 UTC cutoff.
+- One shared export directory, so each edition saw the earlier ones.
+- Pinned in a detached worktree. Artefacts: `~/pi-news-intel-archive/eval/v2-20261101/final2/`.
+
+| Edition | Items | 字 | Digest 字 | Time / calls | snapshot_id · text_sha256 |
+|---|---|---|---|---|---|
+| 10-29 | 5 | 746 | 230 | 150 s / 13 | brief-zh-2026-10-29-r1 · 938a459f… |
+| 10-30 | **4** (short, not padded) | 789 | 197 | 360 s / 23 | brief-zh-2026-10-30-r1 · 37d82374… |
+| 10-31 | 5 | 844 | 260 | 229 s / 15 | brief-zh-2026-10-31-r1 · 945c1528… |
+| **11-01** | 5 | 717 | 237 | 214 s / 17 | brief-zh-2026-11-01-r1 · 3dd4b5c5bf741f1d618a590342f733c4b355472f925329dc273b83165327598d |
+
+All four are `ready`, chosen by the editor model, written and verified by claude-opus-5-5 (Claude Code CLI 2.1.308,
+subscription login).
+
+**Why 10-30 has 4 items:**
+- The verifier refused a Russian drone-strike headline that dropped the source's "officials say".
+- The validator refused CXMT's "2690.24 亿元", which is not in the quote.
+- The Israeli opposition item's digest line dropped "alleged".
+- Two reserves were skipped as the same topic.
+
+**The 11-01 edition (the latest):**
+- **New feeds:** they made up a large share of the pool. 50 Al Jazeera, 43 中国新闻网 国内, 31 中国新闻网 国际,
+  25 Guardian, 19 France 24, 18 RFI 中文, 12 SCMP, 6 DW 中文 and 4 BBC 中文 candidates.
+- **Items:**
+  - Ebola in DR Congo (the headline figure and the excerpt now agree);
+  - the Iran-Qatar plan to reopen Hormuz;
+  - the FBI attributing the Binance theft to North Korea (BBC, Al Jazeera and France 24 merged into one item,
+    continuing 10-30);
+  - Rubio on the Quad;
+  - the G20 ministers in Atlanta.
+- **Passed over by the editor:** follow-ups with no new development (the Oleshky reunions) and a live blog.
+
+**Why there is an 11-01 r1 in `final/` as well.** That run is `f141213`, kept as the failure record. Its first
+drafts used 鲁比奥 / 习近平 / 深圳 / 霍尔木兹海峡. The entity check refused them for lack of a mapping, and the retry
+fell back to "在中国Shenzhen会见中国领导人Xi Jinping" and a vague "海峡". The `4290921` fix:
+- the writer lists each Chinese rendering with the source's exact spelling, checked in that source;
+- the verifier confirms it is the standard name;
+- every pair is stored in the item (`name_renderings`).
+
+**Consumer checked on real snapshots** (history-in-practice branch, 22:08 Beijing):
+
+| Snapshot | Result |
+|---|---|
+| fresh | bound; digest 189 汉字; HTML 39.7 KB; .eml 95,969 B |
+| hash-damaged | absent, "text does not match its text_sha256" |
+| 50 h old | absent, "cutoff … is 50.1 h old (max 26 h)" |
+| missing | absent; the email is byte-identical to today's |
+
+**Retry:** a second `build` of a frozen edition returns `reused` with the same text_sha256, and the file stays
+read-only.
+
+**Previews** in `final2/preview/`:
+- `archive-mobile.png`;
+- `email-end.png`;
+- `archive.html`;
+- the full email `.html`, `.txt` and `.eml` (to a fictional recipient, never sent);
+- Telegram text via `python -m news_intel.jobs.brief show`.
+
+## Still open (not hidden)
+
+- **Quality:**
+  - **A wrong rendering got through.** 10-30 rendered Alphabet as "字母表公司". The verifier accepted it; the usual
+    form is "谷歌母公司Alphabet". The renderings rest on one model checking another.
+  - **Thin Chinese domestic news.** Collection only started for these feeds on 11-01, and the three replays
+    predate it.
+  - **Content-changed items leak time.** A CONTENT_CHANGED raw item is updated in place, so a replay can see text
+    newer than its cutoff. The new feeds are partly backfilled, not a full 24 h history.
+- **Checking:**
+  - **The verifier is the same model as the writer:** an independent call with an adversarial prompt, not an
+    independent model. Relation and subject checks are model judgments, recorded per item.
+  - **The dailies have no verifier.** For them, only the deterministic checks apply, name renderings included.
+  - **Strictness costs items.** It refuses some important items (Russian drone strike, CXMT). The brief prefers
+    fewer items to unchecked ones.
+- **Operations:**
+  - **One shared login.** `CLAUDE_CONFIG_DIR` is the history-in-practice login, which expires about 11-29. Its
+    concurrent use with hip's nightly jobs was not stress-tested.
+  - **Email size.** The email with the digest is 95,969 B, below Gmail's 102 KB clip but close.
+  - **A clock-dependent test.** `tests/unit/test_cli_edition_wiring.py::test_production_weekly_reports_edition_on_late_catchup_skip`
+    fails on a Sunday inside the weekly slot, on `main` too.
+  - **The fallback floor.** For a zh story with only English sources it prints English text. The brief never shows
+    the floor; the zh daily still can.
+
 ## Replays: three real windows, cutoff 20:00 Beijing
 
 **Setup:**
