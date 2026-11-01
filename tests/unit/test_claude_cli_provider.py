@@ -25,7 +25,8 @@ def _stream(result_text=GOOD_JSON, *, model="claude-opus-5-5", api_key_source="n
         "tools": list(tools),
         "mcp_servers": [],
     }
-    result = {"type": "result", "subtype": "success", "is_error": is_error, "result": result_text, "duration_ms": 900}
+    result = {"type": "result", "subtype": "success", "is_error": is_error, "result": result_text, "duration_ms": 900,
+              "num_turns": 1, "modelUsage": {model: {}}, "usage": {"input_tokens": 10, "output_tokens": 5}}
     return json.dumps(init) + "\n" + json.dumps(result) + "\n"
 
 
@@ -103,3 +104,46 @@ def test_dispatch_from_own_settings(monkeypatch):
     assert isinstance(b, ClaudeCliProvider) and b.timeout == 60.0  # the per-story cap still applies
     S.claude_bin = None
     assert build_bounded_provider(C()) is None  # unconfigured -> source-grounded floor
+
+
+def _run_with(monkeypatch, stdout, returncode=0):
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: _P(stdout, returncode))
+    p = _provider()
+    return p, lambda: p._run_once("hi")
+
+
+def _edit(stream, **changes):
+    init, result = (json.loads(x) for x in stream.strip().splitlines())
+    for k, v in changes.items():
+        tgt, key = k.split("__")
+        (init if tgt == "init" else result)[key] = v
+    return json.dumps(init) + "\n" + json.dumps(result) + "\n"
+
+
+@pytest.mark.parametrize(
+    "changes, returncode, why",
+    [
+        ({"init__apiKeySource": None}, 0, "subscription"),  # identity missing is not identity confirmed
+        ({"init__model": "claude-sonnet-5-5"}, 0, "not the requested"),
+        ({"result__modelUsage": {"claude-opus-5-5": {}, "claude-haiku-5-5": {}}}, 0, "usage reports"),
+        ({"result__modelUsage": {}}, 0, "usage reports"),
+        ({"result__num_turns": 3}, 0, "more than one turn"),
+        ({"result__permission_denials": [{"tool": "Bash"}]}, 0, "more than one turn"),
+        ({"result__subtype": "error_max_turns"}, 0, "claude CLI error"),
+        ({"result__result": "   "}, 0, "empty result"),
+        ({}, 1, "exited with status 1"),
+    ],
+)
+def test_unconfirmed_identity_or_abnormal_exit_is_never_accepted(monkeypatch, changes, returncode, why):
+    p, call = _run_with(monkeypatch, _edit(_stream("OK"), **changes), returncode)
+    with pytest.raises(LLMUnavailableError, match=why):
+        call()
+    assert p.calls and p.calls[-1]["exit"] == returncode
+
+
+def test_each_call_is_recorded_with_identity_latency_and_tokens(monkeypatch):
+    p, call = _run_with(monkeypatch, _stream("OK"))
+    assert call() == "OK"
+    m = p.calls[-1]
+    assert m["model"] == "claude-opus-5-5" and m["models_used"] == ["claude-opus-5-5"] and m["api_key_source"] == "none"
+    assert m["duration_ms"] == 900 and m["output_tokens"] == 5 and m["num_turns"] == 1

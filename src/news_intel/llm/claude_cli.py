@@ -43,6 +43,7 @@ class ClaudeCliProvider(HermesCliProvider):
         self.requested_model = model
         self.model = f"claude_cli:{model} (not yet called)"
         self.last_meta: dict = {}
+        self.calls: list[dict] = []  # one meta record per CLI call, for the run record (latency, tokens, identity)
 
     def _env(self) -> dict:
         env = {k: os.environ[k] for k in _ENV_ALLOW if k in os.environ}
@@ -110,28 +111,53 @@ class ClaudeCliProvider(HermesCliProvider):
                 init = ev
             elif ev.get("type") == "result":
                 result = ev
+        usage = (result or {}).get("usage") or {}
         self.last_meta = {
             "model": (init or {}).get("model"),
             "cli_version": (init or {}).get("claude_code_version"),
             "api_key_source": (init or {}).get("apiKeySource"),
+            "models_used": sorted(((result or {}).get("modelUsage") or {}).keys()),
+            "num_turns": (result or {}).get("num_turns"),
             "duration_ms": (result or {}).get("duration_ms"),
+            "duration_api_ms": (result or {}).get("duration_api_ms"),
+            "input_tokens": usage.get("input_tokens"),
+            "output_tokens": usage.get("output_tokens"),
             "is_error": (result or {}).get("is_error"),
+            "exit": proc.returncode,
         }
+        self.calls.append(self.last_meta)
         if init is None:
             raise LLMUnavailableError(
                 f"claude CLI gave no init event (exit {proc.returncode}): {(proc.stderr or '')[:200]}"
             )
         if init.get("tools") or init.get("mcp_servers"):
             raise LLMUnavailableError("claude CLI isolation failed (tools or MCP servers present); output discarded")
-        if init.get("apiKeySource") not in (None, "none"):
+        # 2026-11-01 (news-intel v2): identity must be POSITIVELY established, never assumed from a missing field --
+        # the subscription login reports apiKeySource "none"; anything else (or nothing) is refused.
+        if init.get("apiKeySource") != "none":
             raise LLMUnavailableError(
                 f"claude CLI is not on the subscription login (apiKeySource {init.get('apiKeySource')!r})"
             )
-        self.model = f"{init.get('model') or self.requested_model} (Claude Code CLI {init.get('claude_code_version')})"
-        if result is None or result.get("is_error"):
+        if init.get("model") != self.requested_model:
+            raise LLMUnavailableError(
+                f"claude CLI ran model {init.get('model')!r}, not the requested {self.requested_model!r}"
+            )
+        self.model = f"{init.get('model')} (Claude Code CLI {init.get('claude_code_version')})"
+        if result is None or result.get("is_error") or result.get("subtype") != "success":
             why = str((result or {}).get("result") or (result or {}).get("subtype") or f"exit {proc.returncode}")[:200]
             raise LLMUnavailableError(f"claude CLI error: {why}")
+        if proc.returncode != 0:
+            raise LLMUnavailableError(f"claude CLI exited with status {proc.returncode}; output discarded")
+        used = set(self.last_meta["models_used"])
+        if not used or used - {self.requested_model}:
+            raise LLMUnavailableError(
+                f"claude CLI usage reports models {sorted(used)}, not only {self.requested_model}"
+            )
+        if result.get("num_turns") not in (None, 1) or result.get("permission_denials"):
+            raise LLMUnavailableError("claude CLI took more than one turn or attempted a tool; output discarded")
         text = result.get("result") or ""
+        if not text.strip():
+            raise LLMUnavailableError("claude CLI returned an empty result")
         if len(text) > _MAX_OUTPUT_CHARS:
             raise LLMUnavailableError(f"claude CLI output exceeds bounded size ({len(text)} chars)")
         return text
