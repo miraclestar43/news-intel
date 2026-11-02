@@ -307,7 +307,7 @@ body.
 | 一名/一位 was "proved" by any a/an/一 in the quotes | 一人/一名/一位 is a head count of one: it needs one person bound to a person noun ("a businesswoman", "an official", 一名, 1人) | b64119c |
 | 千人 / 百人 / 千万元 were skipped as magnitude-led | Read as figures; only a magnitude right after an Arabic figure (9143亿) is left to the Arabic reading | b64119c |
 | Binance item: "据报道弥补比例为90%或95%" | `revise-item`: the model revised that item only, with the sources' timing and attribution as the instruction, fully re-checked; it left the percentages out. r4 is frozen; r3 and the other items are unchanged | 12ad330 |
-| The 20:50 last attempt can end after a fixed 21:00 Telegram send | The send follows each successful build (OnSuccess drop-in, installed only at step G), is idempotent per edition, and refuses after cutoff + 3 h. The 21:00 timer is removed | this round |
+| The 20:50 last attempt can end after a fixed 21:00 Telegram send | The send follows each successful build (OnSuccess drop-in, installed only at step G), is idempotent per edition, and refuses after cutoff + 3 h. The 21:00 timer is removed | efbe797 |
 
 **Real-data regression.** All 29 items of the frozen briefs were re-checked with the new validator: the three replays,
 and 11-01 r1 to r3. Their evidence was rebuilt from the databases at each cutoff, and every package was identical to
