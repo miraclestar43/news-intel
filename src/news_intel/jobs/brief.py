@@ -266,6 +266,63 @@ def build(conn, config, edition, *, provider=None, export_dir: Path, revision: i
         db.release_job_lock(conn, LOCK)
 
 
+def revise_item(conn, config, edition, *, provider, export_dir: Path, item_id: str, feedback: list[str],
+                archive_base: str = brief_render.DEFAULT_ARCHIVE_BASE, budget: float = 600.0) -> dict:
+    """Have the model revise ONE item of the published edition and re-check it fully (validator, today, verifier),
+    with `feedback` as its instruction; nothing else is re-selected or rewritten. On success the edition is frozen as
+    the next revision: every other item copied unchanged, the revised one replaced, with revision_of and the old and
+    new text recorded; the earlier revision stays as it was. On failure nothing is frozen and the evidence is kept.
+    A consumer that already bound the earlier revision keeps it (history-in-practice binds once)."""
+    from news_intel.brief.compose import ComposeLog, item_record, write_and_check
+    from news_intel.brief.select import Pick
+
+    cur = snap_mod.current(export_dir, edition.edition_date)
+    if cur is None:
+        raise SystemExit(f"no published brief for {edition.edition_date}")
+    old = next((i for i in cur["items"] if i["id"] == item_id), None)
+    if old is None:
+        raise SystemExit(f"{cur['snapshot_id']} has no item {item_id}")
+    cands, _ = build_pool(conn, config, edition, export_dir=export_dir, limit=EDITOR_POOL)
+    by_event = {c.event_id: c for c in cands}
+    group = [by_event[e] for e in old["event_ids"] if e in by_event]
+    if len(group) != len(old["event_ids"]):
+        raise SystemExit(f"events of {item_id} are not in the pool rebuilt at the cutoff: {old['event_ids']}")
+    pick = Pick(group, old.get("selection_reason", ""), reserve=old.get("reserve", False), topic=old.get("topic", ""),
+                continues=old.get("continues"))
+    log = ComposeLog()
+    t0 = time.monotonic()
+    ed, stage, reasons, first_problems, rewritten = write_and_check(provider, pick, item_id, edition,
+                                                                    t0 + budget, log, feedback=feedback)
+    revision = snap_mod.next_revision(export_dir, edition.edition_date)
+    snap = json.loads(json.dumps(cur))
+    for k in ("text_sha256", "frozen_at"):
+        snap.pop(k, None)
+    snap["snapshot_id"] = snap_mod.snapshot_id(edition.edition_date, revision)
+    snap["revision"] = revision
+    snap["generated_at"] = datetime.now(UTC).astimezone(BEIJING).isoformat(timespec="seconds")
+    record = {"item": item_id, "feedback": feedback, "stage": stage, "reasons": reasons,
+              "attempts": ed.attempts, "verifier_calls": log.verifier_calls,
+              "provider_calls": list(getattr(provider, "calls", []) or []),
+              "code_commit": provenance()["code_commit"]}
+    if stage is not None:
+        snap["revision_attempt"] = record
+        evidence = _attempt_record(export_dir, snap, "revision_refused")
+        return {"result": "revision_refused", "snapshot": None, "evidence": str(evidence), "reasons": reasons}
+    new = item_record(ed, pick, item_id, rewritten, first_problems)
+    snap["items"] = [new if i["id"] == item_id else i for i in cur["items"]]
+    snap["revision_of"] = cur["snapshot_id"]
+    snap["revised_items"] = [{**record, "old": {k: old[k] for k in ("headline", "what", "why", "brief_line")},
+                              "new": {k: new[k] for k in ("headline", "what", "why", "brief_line")}}]
+    snap["provenance"] = {**snap["provenance"], "revision_code_commit": record["code_commit"]}
+    text = "".join(f"{i['headline']}{i['what']}{i['why']}" for i in snap["items"])
+    snap["stats"].update(chars=snap_mod.chars(text), zh_chars=snap_mod.zh_chars(text))
+    snap["text_sha256"] = snap_mod.text_sha256(snap)
+    renderings(snap, archive_base)
+    path = snap_mod.write_frozen(export_dir, snap)
+    _complete_commit(export_dir, snap, archive_base)
+    return {"result": "revised", "snapshot": snap, "path": str(path)}
+
+
 def send_telegram(conn, config, snap: dict, *, chat_id: int, dry_run: bool = True,
                   archive_base: str = brief_render.DEFAULT_ARCHIVE_BASE) -> dict:
     from news_intel.delivery.telegram import TelegramSender, chat_id_hash, mark_attempting
@@ -295,7 +352,7 @@ def main(argv=None) -> int:
     from news_intel.settings import load_config
 
     ap = argparse.ArgumentParser(prog="python -m news_intel.jobs.brief")
-    ap.add_argument("command", choices=["build", "render", "show", "send-telegram"])
+    ap.add_argument("command", choices=["build", "render", "show", "send-telegram", "revise-item"])
     ap.add_argument("--date", help="Beijing edition date (cutoff 20:00 Asia/Shanghai)")
     ap.add_argument("--cutoff", help="explicit cutoff instant, ISO with offset (replays)")
     ap.add_argument("--db", help="database path (default: this checkout's data/news-intel.db)")
@@ -304,6 +361,8 @@ def main(argv=None) -> int:
     ap.add_argument("--archive-base", default=brief_render.DEFAULT_ARCHIVE_BASE)
     ap.add_argument("--no-model", action="store_true", help="build without a provider (deterministic selection only)")
     ap.add_argument("--final", action="store_true", help="treat this run as the edition's last attempt")
+    ap.add_argument("--item", help="revise-item: the item id (i1..i5)")
+    ap.add_argument("--feedback-file", help="revise-item: the revision instruction, one point per line")
     ap.add_argument("--chat-id", type=int)
     ap.add_argument("--real", action="store_true", help="send-telegram: a real send (default: dry run)")
     a = ap.parse_args(argv)
@@ -328,6 +387,16 @@ def main(argv=None) -> int:
                              ensure_ascii=False))
             return {"built": 0, "reused": 0, "completed": 0, "built_degraded": 3, "retry_later": 75,
                     "failed": 1, "skipped_lock": 3}[out["result"]]
+        if a.command == "revise-item":
+            lines = Path(a.feedback_file).read_text(encoding="utf-8").splitlines()
+            feedback = [ln.strip() for ln in lines if ln.strip()]
+            out = revise_item(conn, config, edition, provider=brief_provider(config), export_dir=export_dir,
+                              item_id=a.item, feedback=feedback, archive_base=a.archive_base)
+            s = out.get("snapshot")
+            print(json.dumps({"result": out["result"], **({k: s[k] for k in ("snapshot_id", "revision_of",
+                                                                              "text_sha256")} if s else {}),
+                              **{k: out[k] for k in ("evidence", "reasons") if k in out}}, ensure_ascii=False))
+            return 0 if out["result"] == "revised" else 1
         snap = snap_mod.current(export_dir, edition.edition_date)
         if snap is None:
             raise SystemExit(f"no frozen brief for {edition.edition_date}")

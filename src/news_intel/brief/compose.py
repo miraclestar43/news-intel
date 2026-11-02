@@ -116,6 +116,66 @@ def _write(provider, pick: Pick, edition, deadline, feedback=None) -> EditorialR
     )
 
 
+def write_and_check(provider, pick: Pick, item_id: str, edition, deadline: float, log: ComposeLog,
+                    feedback: list[str] | None = None):
+    """Write one item and run every check: validator, today/length, verifier, one rewrite with the verifier's
+    problems. Returns (ed, stage, reasons, first_problems, rewritten); stage None means accepted. `feedback` seeds the
+    first attempt (an item revision)."""
+    head = pick.candidates[0]
+    ed = _write(provider, pick, edition, deadline, feedback=feedback)
+    stage, reasons, first_problems, rewritten = None, [], [], False
+    if ed.source != "llm_validated":
+        stage, reasons = "validator", [ed.fallback_reason or "?"]
+    elif (p := today_problem(ed, edition)) or len(ed.chinese_what_happened or "") > MAX_WHAT_CHARS:
+        stage, reasons = "today/length", [p or f"what is longer than {MAX_WHAT_CHARS} characters"]
+    else:
+        earlier = pick.continues or (head.previously or {}).get("headline")
+        verdict, problems = verify(provider, item_id, ed, edition, log, earlier)
+        if verdict == "fail":
+            first_problems, rewritten = problems, True
+            ed2 = _write(provider, pick, edition, deadline, feedback=(feedback or []) + _feedback(problems))
+            if ed2.source != "llm_validated":
+                stage, reasons = "validator after fact-check", [ed2.fallback_reason or "?"]
+            elif p2 := today_problem(ed2, edition):
+                stage, reasons = "today/length", [p2]
+            else:
+                ed = ed2
+                verdict, problems = verify(provider, item_id, ed, edition, log, earlier)
+        if stage is None and verdict != "pass":
+            stage, reasons = f"verifier ({verdict})", [x.get("problem", "") for x in problems][:6]
+    return ed, stage, reasons, first_problems, rewritten
+
+
+def item_record(ed: EditorialResult, pick: Pick, item_id: str, rewritten: bool, first_problems: list) -> dict:
+    head = pick.candidates[0]
+    f = _fields(ed)
+    cited = _cited_sources(ed)
+    return {
+        "id": item_id,
+        "headline": f["headline"], "what": f["what"], "why": f["why"] or "", "why_kind": f["why_kind"] or "",
+        "brief_line": f["brief"] or f["headline"],
+        "sources": [{"name": s["publisher"], "title": s["title"], "url": s["url"],
+                     "published_at": s["published_at"], "language": s["language"]} for s in cited][:3],
+        "support": ed.support,
+        "name_renderings": ed.name_renderings or [],
+        "evidence_sources": [{k: s[k] for k in ("id", "publisher", "title", "url", "published_at", "language")}
+                             for s in ed.sources or []],
+        "event_ids": [c.event_id for c in pick.candidates],
+        "editions": sorted({c.edition_id for c in pick.candidates}),
+        "bucket": head.bucket,
+        "selection_reason": pick.reason,
+        "topic": pick.topic,
+        "continues": pick.continues,
+        "reserve": pick.reserve,
+        "previously": head.previously,
+        "verification": {
+            "validator": "pass", "verifier": "pass", "rewritten_after_fact_check": rewritten,
+            "first_fact_check_problems": first_problems, "model": ed.model_used, "attempts": ed.attempts,
+            "latency_ms": round(ed.latency_ms or 0),
+        },
+    }
+
+
 def compose(provider, selection: Selection, edition, *, deadline: float) -> tuple[list[dict], ComposeLog]:
     log = ComposeLog()
     target = len(selection.picks)
@@ -131,57 +191,12 @@ def compose(provider, selection: Selection, edition, *, deadline: float) -> tupl
         head = pick.candidates[0]
         record = {"title": head.title, "event_ids": [c.event_id for c in pick.candidates], "reserve": pick.reserve}
         item_id = f"i{len(items) + 1}"
-        ed = _write(provider, pick, edition, deadline)
-        stage, reasons, first_problems, rewritten = None, [], [], False
-        if ed.source != "llm_validated":
-            stage, reasons = "validator", [ed.fallback_reason or "?"]
-        elif (p := today_problem(ed, edition)) or len(ed.chinese_what_happened or "") > MAX_WHAT_CHARS:
-            stage, reasons = "today/length", [p or f"what is longer than {MAX_WHAT_CHARS} characters"]
-        else:
-            earlier = pick.continues or (head.previously or {}).get("headline")
-            verdict, problems = verify(provider, item_id, ed, edition, log, earlier)
-            if verdict == "fail":
-                first_problems, rewritten = problems, True
-                ed2 = _write(provider, pick, edition, deadline, feedback=_feedback(problems))
-                if ed2.source != "llm_validated":
-                    stage, reasons = "validator after fact-check", [ed2.fallback_reason or "?"]
-                elif p2 := today_problem(ed2, edition):
-                    stage, reasons = "today/length", [p2]
-                else:
-                    ed = ed2
-                    verdict, problems = verify(provider, item_id, ed, edition, log, earlier)
-            if stage is None and verdict != "pass":
-                stage, reasons = f"verifier ({verdict})", [x.get("problem", "") for x in problems][:6]
+        ed, stage, reasons, first_problems, rewritten = write_and_check(provider, pick, item_id, edition, deadline, log)
         record.update(stage=stage, reasons=reasons, attempts=ed.attempts, latency_ms=ed.latency_ms)
         if stage is not None:
             log.rejected.append(record)
             continue
-        f = _fields(ed)
-        cited = _cited_sources(ed)
-        items.append({
-            "id": item_id,
-            "headline": f["headline"], "what": f["what"], "why": f["why"] or "", "why_kind": f["why_kind"] or "",
-            "brief_line": f["brief"] or f["headline"],
-            "sources": [{"name": s["publisher"], "title": s["title"], "url": s["url"],
-                         "published_at": s["published_at"], "language": s["language"]} for s in cited][:3],
-            "support": ed.support,
-            "name_renderings": ed.name_renderings or [],
-            "evidence_sources": [{k: s[k] for k in ("id", "publisher", "title", "url", "published_at", "language")}
-                                 for s in ed.sources or []],
-            "event_ids": record["event_ids"],
-            "editions": sorted({c.edition_id for c in pick.candidates}),
-            "bucket": head.bucket,
-            "selection_reason": pick.reason,
-            "topic": pick.topic,
-            "continues": pick.continues,
-            "reserve": pick.reserve,
-            "previously": head.previously,
-            "verification": {
-                "validator": "pass", "verifier": "pass", "rewritten_after_fact_check": rewritten,
-                "first_fact_check_problems": first_problems, "model": ed.model_used, "attempts": ed.attempts,
-                "latency_ms": round(ed.latency_ms or 0),
-            },
-        })
+        items.append(item_record(ed, pick, item_id, rewritten, first_problems))
         if pick.topic:
             topics.add(pick.topic.strip().lower())
         log.accepted.append(record)

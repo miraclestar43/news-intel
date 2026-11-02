@@ -431,3 +431,31 @@ def test_relative_time_words_are_tied_to_the_sources_own_date_in_both_prompts():
 
     assert "relative to THAT source's own published_at" in load_template("enrich_event.md")
     assert "Are relative time words resolved against the date of the source" in load_template("verify_brief.md")
+
+
+def test_revise_item_rewrites_one_item_as_a_new_revision_and_keeps_the_rest_and_the_old_revision(config, conn,
+                                                                                                  tmp_path):
+    _seed_three(conn)
+    cands, _ = build_pool(conn, config, ED)
+    first = _build(config, conn, tmp_path, Fake(editor=_editor_all(cands)))["snapshot"]
+    p = Fake(editor=None)
+    out = job.revise_item(conn, config, ED, provider=p, export_dir=tmp_path / "brief", item_id="i2",
+                          feedback=["attribute each percentage to the outlet that reported it"])
+    snap = out["snapshot"]
+    assert out["result"] == "revised" and snap["snapshot_id"] == "brief-zh-2026-11-01-r2"
+    assert snap["revision_of"] == "brief-zh-2026-11-01-r1" and snap["revised_items"][0]["item"] == "i2"
+    assert snap["items"][0] == first["items"][0] and snap["items"][2] == first["items"][2]  # untouched, byte for byte
+    assert any("attribute each percentage" in f for f in p.enrich_feedback[0])  # the model got the instruction
+    assert S.current(tmp_path / "brief", "2026-11-01")["snapshot_id"] == "brief-zh-2026-11-01-r2"
+    r1 = json.loads((tmp_path / "brief" / "2026-11-01" / "brief-zh-2026-11-01-r1.json").read_text())
+    assert r1["text_sha256"] == first["text_sha256"]  # the old revision is kept as it was
+
+
+def test_a_revision_that_fails_its_checks_freezes_nothing(config, conn, tmp_path):
+    _seed_three(conn)
+    cands, _ = build_pool(conn, config, ED)
+    _build(config, conn, tmp_path, Fake(editor=_editor_all(cands)))
+    bad = Fake(editor=None, bad_events={c.event_id for c in cands})
+    out = job.revise_item(conn, config, ED, provider=bad, export_dir=tmp_path / "brief", item_id="i1", feedback=["x"])
+    assert out["result"] == "revision_refused" and Path(out["evidence"]).exists()
+    assert S.current(tmp_path / "brief", "2026-11-01")["snapshot_id"] == "brief-zh-2026-11-01-r1"
