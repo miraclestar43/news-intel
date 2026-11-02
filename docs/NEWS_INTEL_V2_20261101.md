@@ -255,8 +255,8 @@ read-only.
     form is "谷歌母公司Alphabet". The renderings rest on one model checking another.
   - **Thin Chinese domestic news.** Collection only started for these feeds on 11-01, and the three replays
     predate it.
-  - **Content-changed items leak time.** A CONTENT_CHANGED raw item is updated in place, so a replay can see text
-    newer than its cutoff. The new feeds are partly backfilled, not a full 24 h history.
+  - **Replays are not a strict as-of reconstruction** (see "What a replay can and cannot recover"). The new feeds
+    are partly backfilled, not a full 24 h history.
 - **Checking:**
   - **The verifier is the same model as the writer:** an independent call with an adversarial prompt, not an
     independent model. Relation and subject checks are model judgments, recorded per item.
@@ -272,12 +272,39 @@ read-only.
   - **The fallback floor.** For a zh story with only English sources it prints English text. The brief never shows
     the floor; the zh daily still can.
 
+## What a replay can and cannot recover
+
+**A replay is not a strict historical as-of reconstruction.** The database keeps no history of edits, so these
+replays approximate what a run at the cutoff would have seen. That does not rebuild the database; it only states
+what the stored rows allow.
+
+| Recoverable from stored rows | Not recoverable |
+|---|---|
+| Which raw items existed at the cutoff: `fetched_at`; later items are excluded. | The text of an item updated in place after the cutoff (CONTENT_CHANGED overwrites title, excerpt and hash). |
+| Their publication time: `published_at`, used for the window. | Event membership before a post-cutoff reclustering (a changed item's link is deleted and re-made). |
+| Event links of items whose content did not change. | Event-level fields stored later: `entities_json`, stored category and scores. The pre-rank recomputes the category and score from the items; it does not use the stored values. |
+| Source and tier metadata. | Feed items the collector never stored, e.g. backfill of feeds added later. |
+
+**How much the unrecoverable part touched these windows** (copy of 2026-11-01 06:49 UTC):
+
+| Window | Candidate events | Events whose text changed after the cutoff | Of those, in the brief |
+|---|---|---|---|
+| 10-29 | 486 | 7 | 0 |
+| 10-30 | 484 | 12 | 0 |
+| 10-31 | 364 | 3 | 0 |
+
+So no published replay item rests on text edited after its cutoff. Membership and entities of the other events
+may still differ slightly from what a run at the cutoff would have stored.
+
+**What a run at the real cutoff avoids:** these limits do not apply to the live 20:05 run, or to the 11-01 edition
+built from the shadow database copied at the cutoff.
+
 ## Replays: three real windows, cutoff 20:00 Beijing
 
 **Setup:**
 - code pinned at `f141213` (a detached worktree, so later edits could not leak in);
 - a fresh copy of the production database as of 2026-11-01 06:49 UTC;
-- only items fetched by each cutoff are used;
+- only items fetched by each cutoff are used: see "What a replay can and cannot recover" for the limits;
 - the runs went in date order, so every edition saw the earlier ones;
 - claude-opus-5-5 through the Claude Code CLI did all the writing;
 - artefacts are in `~/pi-news-intel-archive/eval/v2-20261101/final/`: `out/` and `compare.json`.

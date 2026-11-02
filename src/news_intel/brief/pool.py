@@ -2,9 +2,10 @@
 
 Point in time: only raw items fetched at or before the cutoff are used, and an event qualifies only if one of those
 items was published (or, if undated, first fetched) inside the window. Scores stored on events are NOT used -- they
-were computed at the last ingestion, possibly after the cutoff, by the dailies' tech/markets ranking. A replay of a
-past window therefore sees what a run at that cutoff would have seen (one known leak: a CONTENT_CHANGED item is
-updated in place, so its stored text may be newer than the cutoff).
+were computed at the last ingestion, possibly after the cutoff, by the dailies' tech/markets ranking. At the live
+cutoff this is exact. A replay of a past window only approximates it: the database keeps no edit history, so an item
+changed in place after the cutoff (CONTENT_CHANGED), its re-clustered links and later event fields such as
+entities_json show their newer state (docs/NEWS_INTEL_V2_20261101.md, "What a replay can and cannot recover").
 
 The pre-ranking only decides which ~40 candidates the editor (select.py) sees, and the order used when the editor
 call is unavailable. It fixes what kept general news out of the dailies (2026-11-01 funnel, three windows):

@@ -32,6 +32,7 @@ support: for each field group you wrote -- "headline", "what", "why" (only if yo
 
 Rules:
 - Every number must be stated exactly as the quoted source gives it: same value, unit, currency and magnitude, the same subject it belongs to, the same period, the same direction (rise/fall) and sign. Do not compute, convert, add up or round beyond the source's own precision. Do not use a publisher's own currency-conversion notes (such as "IT之家注：现汇率约合…").
+- Relative time words in a source ("yesterday", "next month", "this week", 昨天, 上周, 下月, 本月) are relative to THAT source's own published_at, not to the reference time. Write the absolute date or month (e.g. "11月", "10月30日"), or re-express it relative to the reference time; never copy a relative word whose meaning changes between the source's date and the reference time.
 - Keep who said what: an official claim stays the claimant's claim; a report stays "according to X"; a suspect stays a suspect; announced/proposed/approved/effective and preliminary/confirmed stay as the source has them.
 - If an evidence fact below has kind "uncertainty", the claim is not confirmed: your text must say so (Chinese: 据报道/消息称/据悉/或将/可能/疑似; English: reportedly/could/may/according to).
 - Never comment on what the sources do or do not contain ("the source does not give a death toll", "来源未提供…"). If a figure is not given, simply do not state it. Headline and body must agree.

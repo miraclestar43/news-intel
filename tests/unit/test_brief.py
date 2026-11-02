@@ -424,3 +424,10 @@ def test_a_reused_edition_repairs_missing_or_altered_renderings_from_the_snapsho
     assert again["result"] == "reused" and again["snapshot"]["text_sha256"] == first["snapshot"]["text_sha256"]
     assert sorted(again["repaired"]) == ["brief-zh-2026-11-01-r1.archive.html", "brief-zh-2026-11-01-r1.telegram.html"]
     assert (d / "brief-zh-2026-11-01-r1.telegram.html").read_text() == R.telegram_html(first["snapshot"])
+
+
+def test_relative_time_words_are_tied_to_the_sources_own_date_in_both_prompts():
+    from news_intel.llm.prompts import load_template
+
+    assert "relative to THAT source's own published_at" in load_template("enrich_event.md")
+    assert "Are relative time words resolved against the date of the source" in load_template("verify_brief.md")

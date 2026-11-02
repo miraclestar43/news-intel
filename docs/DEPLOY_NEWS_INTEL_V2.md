@@ -37,7 +37,11 @@ BRIEF_CHAT_ID=<the single allowlisted chat id>   # only for step G
 - **`CLAUDE_CONFIG_DIR`** is history-in-practice's subscription login, shared. A dedicated login for news-intel is cleaner. It needs one interactive `claude` login by the owner with `CLAUDE_CONFIG_DIR=~/.config/news-intel/claude`. The login expires around 2026-11-29 either way.
 - **Hermes:** its global config is not touched.
 
-**history-in-practice `data/runtime.env`** (back it up first):
+**history-in-practice runtime env: `~/.config/history-in-practice/runtime.env`** (mode 600; back it up first).
+- Checked 2026-11-02: `config.DEFAULT_RUNTIME_ENV` is `$HIP_RUNTIME_ENV`, falling back to
+  `~/.config/history-in-practice/runtime.env`.
+- The installed `hip-send.service` sets neither `Environment` nor `EnvironmentFile`, so the fallback is the live path.
+- There is no `~/history-in-practice/data/runtime.env`.
 ```
 NEWS_EXPORT_DIR=/home/star/pi-news-intel/data/exports/brief
 ```
@@ -50,7 +54,7 @@ Unset it to switch the digest off. The email is then byte-identical to the curre
 cd ~/pi-news-intel && git rev-parse HEAD                  # expect f97b73c
 cp -p .env .env.bak-$(date +%Y%m%d)
 .venv/bin/python -c "import sqlite3;s=sqlite3.connect('file:data/news-intel.db?mode=ro',uri=True);d=sqlite3.connect('$HOME/backups/news-intel-pre-v2.db');s.backup(d)"
-cp -p ~/history-in-practice/data/runtime.env ~/history-in-practice/data/runtime.env.bak-$(date +%Y%m%d)
+cp -p ~/.config/history-in-practice/runtime.env ~/.config/history-in-practice/runtime.env.bak-$(date +%Y%m%d)
 ```
 The database is about 106 MB, a short copy.
 
