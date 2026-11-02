@@ -303,3 +303,68 @@ def test_a_chinese_rendering_needs_the_sources_own_spelling_and_otherwise_stays_
     bad = [{"zh": "鲁比奥", "source_name": "Mark Rubio", "source_id": "s0"}, ok[1]]
     e, ev = _zh(quad, name_renderings=bad, **base)
     assert any("'Mark Rubio': that spelling is not in source" in x for x in validate_enrichment(e, ev).reasons)
+
+
+QUAKE = {
+    "event_id": "E-quake", "title": "地震造成120人死亡",
+    "excerpt": "当地政府10月31日称，地震造成120人死亡、9,999人受伤，约30%的房屋受损，救援将持续两天。"
+               "An official said thousands of people were evacuated. It is the deadliest quake since the 1970s, "
+               "and 2026 output of the region's SU7 plant is halted.",
+    "entities": [],
+    "sources": [{"publisher": "Example", "raw_title": "地震造成120人死亡",
+                 "excerpt": "当地政府10月31日称，地震造成120人死亡、9,999人受伤，约30%的房屋受损，救援将持续两天。"
+                            "An official said thousands of people were evacuated. It is the deadliest quake "
+                            "since the 1970s, and 2026 output of the region's SU7 plant is halted.",
+                 "url": "https://example.test/q", "published_at": "2026-10-31T09:00:00+00:00"}],
+}
+Q_ALL = "当地政府10月31日称，地震造成120人死亡、9,999人受伤，约30%的房屋受损，救援将持续两天。"
+
+
+@pytest.mark.parametrize("what, why", [
+    ("地震造成2026人死亡。", "a count written like a year is a count, not a year (2026-11-02 review)"),
+    ("地震造成九千九百九十九人死亡。", "Chinese numerals are figures too (2026-11-02 review; source: 120 dead)"),
+    ("地震造成一百二十一人死亡。", "Chinese numeral, wrong by one"),
+    ("约四成房屋受损。", "成 is a percentage: 40% is not 30%"),
+    ("救援将持续三天。", "a duration is a figure: 3 days is not two"),
+    ("数万人被疏散。", "a vague quantity needs the same vague class: tens of thousands is not thousands"),
+    ("地震造成三四百人死亡。", "an unreadable figure is refused, never skipped"),
+    ("这是2019年以来最严重的地震。", "a year must be quoted or a source's own year"),
+])
+def test_fabricated_figures_in_any_notation_are_refused(what, why):
+    what_quotes = (_q("地震造成120人死亡") if "九千" in what or "2026" in what else
+                   _q(Q_ALL, "thousands of people were evacuated", "the deadliest quake since the 1970s"))
+    e, ev = _zh(QUAKE, chinese_headline="地震造成120人死亡", chinese_what_happened=what,
+                support={"headline": _q("地震造成120人死亡"), "what": what_quotes})
+    assert not validate_enrichment(e, ev).ok, why
+
+
+def test_a_true_figure_of_another_claim_is_not_caught_deterministically():
+    """Known limit, recorded: 9,999 is in the quote (injured), so '九千九百九十九人死亡' matches by value and unit.
+    Which claim a figure belongs to is the brief verifier's check; the dailies have none."""
+    e, ev = _zh(QUAKE, chinese_headline="地震造成120人死亡", chinese_what_happened="地震造成九千九百九十九人死亡。",
+                support={"headline": _q("地震造成120人死亡"), "what": _q(Q_ALL)})
+    assert validate_enrichment(e, ev).ok
+
+
+@pytest.mark.parametrize("what", [
+    "地震造成一百二十人死亡，九千九百九十九人受伤。",          # Chinese numerals for the source's Arabic figures
+    "约三成房屋受损，救援将持续两天。",                        # 成 and 两天 for 30% and 两天
+    "数千人被疏散，这是1970年代以来最严重的地震。",            # thousands; the 1970s
+    "当地政府10月31日称，该地区SU7工厂2026年的生产已停止。",   # a date, a model name, a year in a year context
+    "一名官员称，地震造成120人死亡。",                         # 一名 as the article
+])
+def test_true_equivalents_and_legal_dates_names_and_years_still_pass(what):
+    quotes = _q(Q_ALL, "An official said thousands of people were evacuated", "the deadliest quake since the 1970s",
+                "2026 output of the region's SU7 plant is halted")
+    e, ev = _zh(QUAKE, chinese_headline="地震造成120人死亡", chinese_what_happened=what,
+                support={"headline": _q("地震造成120人死亡"), "what": quotes})
+    r = validate_enrichment(e, ev)
+    assert r.ok, r.reasons
+
+
+def test_english_number_words_count_both_ways():
+    from news_intel.pipeline.editorial_validation import numeric_claims
+
+    assert [c.value for c in numeric_claims("within two days", source=True)] == [2.0]
+    assert [c.value for c in numeric_claims("twenty-five people")] == [25.0]
+    assert numeric_claims("one of the largest") == []  # the article, in written text

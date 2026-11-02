@@ -201,9 +201,10 @@ _MONTHS = {m: i for i, m in enumerate(
 @dataclass(frozen=True)
 class NumberClaim:
     value: float
-    unit: str | None  # CNY/USD/... | pct | pp | times | bps | people | None
+    unit: str | None  # CNY/USD/... | pct | pp | times | bps | people | days/years/... | vague:<class> | None
     tolerance: float  # half a unit of the last written digit
     text: str
+    article: bool = False  # 一 + a measure word other than 人/名: the indefinite article, also "a"/"an" in a source
 
 
 def _norm(s: str) -> str:
@@ -245,12 +246,46 @@ def _unit_after(text: str, pos: int) -> tuple[float, str | None, int]:
         return mag, "times", gap
     if s2.startswith(("人次", "人", "名", "people", "persons")):
         return mag, "people", gap
+    for words, cls in _DURATIONS:
+        if s2.startswith(words[0]) or re.match(words[1], s2, re.IGNORECASE):
+            return mag, cls, gap
     return mag, None, gap
 
 
+_YEAR_BEFORE = re.compile(r"\b(in|since|by|from|until|till|before|after|fiscal|fy|year|during|of|early|late|mid|"
+                          r"end of|start of)\s*$", re.IGNORECASE)
+_YEAR_ZH_AFTER = ("年", "财年", "年度")
+
+
+def _year_context(text: str, start: int, end: int) -> bool:
+    """A 1900-2099 figure that is a YEAR here: 2026年 / 2027财年, "in 2026", "fiscal 2027", "Oct 31, 2026",
+    "2026-27". Anywhere else it is a quantity and is checked as one (2026-11-02 review: "地震造成2026人死亡" passed)."""
+    if not re.fullmatch(r"(19|20)\d{2}", text[start:end]):
+        return False
+    after = text[end : end + 4].lstrip()
+    if after.startswith(_YEAR_ZH_AFTER) or re.match(r"[-–/]\d{2}\b", text[end : end + 4]) or text[end : end + 1] == "s":
+        return True
+    before = text[max(0, start - 16) : start]
+    if _YEAR_BEFORE.search(before.rstrip(" ,")):
+        return True
+    return bool(re.search(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2},?\s*$", before,
+                          re.IGNORECASE))
+
+
 def _is_date_part(text: str, start: int, end: int) -> bool:
+    """Month, day and clock-time digits (checked by the date rules), and years in a year context (checked by the year
+    rule). A figure before 年 that is not a year is a duration (4年), and 个月 / 天 / 小时 are durations: quantities."""
+    if _year_context(text, start, end):
+        return True
     after = text[end : end + 3].lstrip()
-    if after[:1] in ("年", "月", "日", "号", "时", "点") or after.startswith(("时", "点")):
+    value = int(text[start:end]) if text[start:end].isdigit() else -1
+    if after[:1] == "年":
+        return False  # 4年, 30年: a duration
+    if after[:1] == "月" and 1 <= value <= 12:
+        return True
+    if after[:1] in ("日", "号") and 1 <= value <= 31:
+        return True
+    if after[:1] in ("时", "点") and 0 <= value <= 24:
         return True
     if re.match(r"\s*[:：]\d{2}", text[end : end + 4]):  # 14:00
         return True
@@ -263,8 +298,154 @@ def _is_date_part(text: str, start: int, end: int) -> bool:
         return True
     if re.match(r"\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", text[end : end + 6], re.IGNORECASE):
         return True
-    value = text[start:end]
-    return bool(re.fullmatch(r"(19|20)\d{2}", value)) and not re.search(r"[$€£¥%]", window)
+    del window
+    return False
+
+
+_CN_DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8,
+              "九": 9}
+_CN_UNITS = {"十": 10, "百": 100, "千": 1000}
+_CN_BIG = {"万": 1e4, "亿": 1e8}
+# A Chinese numeral is a figure claim when a measure word or unit follows it (or 百分之 precedes it). Reviewable list.
+_CN_CLASSIFIERS = (
+    "个月", "小时", "分钟", "星期", "公里", "平方", "人次", "美元", "日元", "欧元", "英镑", "韩元", "港元", "卢布",
+    "元", "人", "名", "位", "个", "家", "起", "次", "件", "艘", "架", "辆", "座", "项", "条", "所", "国", "岁", "倍",
+    "成", "吨",
+    "米", "枚", "颗", "批", "轮", "届", "场", "份", "股", "只", "头", "例", "年", "天", "周", "%", "％",
+)
+_CN_NUM_RE = re.compile(r"(百分之)?([零〇一二两三四五六七八九十百千万亿]+(?:点[零〇一二三四五六七八九]+)?)(余|多)?")
+_CN_NOT_NUMBER = ("一起", "一直", "一定", "一样", "一般", "一致", "一切", "一同", "一度", "一再", "一边", "一旦",
+                  "一些",
+                  "一批评", "一手", "一时", "万一", "千万", "一个月来", "十分", "百分百", "一方面", "两岸")
+_VAGUE = [  # (class, Chinese forms, English pattern)
+    ("tens", ("数十", "几十"), r"\bdozens\b|\btens of\b(?! thousands)"),
+    ("hundreds", ("数百", "几百", "上百"), r"\bhundreds\b"),
+    ("thousands", ("数千", "几千", "上千"), r"\bthousands\b"),
+    ("tens_of_thousands", ("数万", "几万", "上万"), r"\btens of thousands\b"),
+    ("millions", ("数百万", "几百万", "上百万"), r"\bmillions\b"),
+]
+_EN_WORDS = {w: i for i, w in enumerate(
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen "
+    "eighteen nineteen twenty".split())}
+_EN_WORDS |= {"thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+              "dozen": 12}
+_EN_WORD_RE = re.compile(r"\b(" + "|".join(sorted(_EN_WORDS, key=len, reverse=True)) + r")(?:-(one|two|three|four|five|"
+                         r"six|seven|eight|nine))?\b", re.IGNORECASE)
+_DURATIONS = [  # (Chinese prefix, English pattern) -> class; checked after the other units
+    (("个月", r"months?\b"), "months"), (("小时", r"hours?\b"), "hours"), (("分钟", r"minutes?\b"), "minutes"),
+    (("星期", r"weeks?\b"), "weeks"), (("周", r"weeks?\b"), "weeks"), (("天", r"days?\b"), "days"),
+    (("年", r"years?\b|decades?\b"), "years"),
+]
+
+
+def cn_number(s: str) -> float | None:
+    """一千二百 -> 1200, 两万五千 -> 25000, 三点五 -> 3.5, 九千九百九十九 -> 9999; None if not a well-formed
+    numeral."""
+    if "点" in s:
+        whole, _, frac = s.partition("点")
+        w = cn_number(whole) if whole else 0
+        if w is None or not frac or any(c not in _CN_DIGITS for c in frac):
+            return None
+        return w + float("0." + "".join(str(_CN_DIGITS[c]) for c in frac))
+    total, section, digit = 0.0, 0.0, None
+    for c in s:
+        if c in _CN_DIGITS:
+            if digit is not None and c not in "零〇":
+                return None  # 三四: a range, not a number
+            digit = _CN_DIGITS[c] if c not in "零〇" else None
+        elif c in _CN_UNITS:
+            section += (digit if digit is not None else 1) * _CN_UNITS[c]
+            digit = None
+        elif c in _CN_BIG:
+            section += digit or 0
+            if section == 0:
+                return None
+            total += section * _CN_BIG[c]
+            section, digit = 0.0, None
+        else:
+            return None
+    return total + section + (digit or 0)
+
+
+def _cn_claims(text: str, problems: list[str] | None) -> list[NumberClaim]:
+    out: list[NumberClaim] = []
+    for m in _CN_NUM_RE.finditer(text):
+        start, end = m.start(2), m.end()
+        token, pct = m.group(2), bool(m.group(1))
+        prev = text[max(0, m.start() - 1) : m.start()]
+        if prev == "第" or any(text.startswith(w, start) for w in _CN_NOT_NUMBER):
+            continue
+        if re.match(r"[\d.,]", prev) or token[0] in "百千万亿":
+            continue  # 9143亿元: the magnitude of an Arabic figure, read by number_claims
+        tail = text[end : end + 3]
+        unit_word = next((c for c in _CN_CLASSIFIERS if tail.startswith(c)), None)
+        if not (pct or unit_word):
+            continue
+        if text[max(0, m.start() - 1) : m.start()] in ("数", "几", "上") and not pct:
+            continue  # part of a vague quantity
+        value = cn_number(token)
+        if value is None:
+            if problems is not None:
+                problems.append(f"cannot read the figure {m.group(0)}{unit_word or ''!s} -- write the source's figure")
+            continue
+        mag, unit, _ = _unit_after(text, end)
+        if pct:
+            unit = "pct"
+        elif unit_word == "成":
+            value, unit = value * 10, "pct"
+        elif unit_word in ("%", "％"):
+            unit = "pct"
+        mag = 1.0 if token[-1] in _CN_BIG else mag  # 两万 already holds its magnitude
+        article = value == 1 and token == "一" and unit_word != "人"  # 一名/一位/一项 = a; 一人 is a head count
+        out.append(NumberClaim(value * mag, unit, 0.5 * mag if value == int(value) else 0.05 * mag, m.group(0),
+                               article=article))
+    return out
+
+
+def _vague_claims(text: str) -> list[NumberClaim]:
+    """数千 / thousands style quantities, longest Chinese form first (数百万 is millions, not hundreds)."""
+    out, low, taken = [], text.lower(), []
+    forms = sorted(((z, cls) for cls, zs, _ in _VAGUE for z in zs), key=lambda x: -len(x[0]))
+    for z, cls in forms:
+        for m in re.finditer(re.escape(z), text):
+            if not any(a <= m.start() < b for a, b in taken):
+                taken.append((m.start(), m.end()))
+                out.append(NumberClaim(-1.0, f"vague:{cls}", 0.0, z))
+    for cls, _zs, en_pat in _VAGUE:
+        if re.search(en_pat, low):
+            out.append(NumberClaim(-1.0, f"vague:{cls}", 0.0, cls))
+    return out
+
+
+def _en_word_claims(text: str, *, skip_one: bool) -> list[NumberClaim]:
+    out = []
+    for m in _EN_WORD_RE.finditer(text):
+        w = m.group(1).lower()
+        if skip_one and w == "one" and not m.group(2):
+            continue
+        value = _EN_WORDS[w] + (_EN_WORDS[m.group(2).lower()] if m.group(2) else 0)
+        _mag, unit, _ = _unit_after(text, m.end())
+        out.append(NumberClaim(float(value), unit, 0.5, m.group(0)))
+    return out
+
+
+def numeric_claims(text: str, problems: list[str] | None = None, *, source: bool = False) -> list[NumberClaim]:
+    """Every figure claim in `text`: Arabic numerals (number_claims), Chinese numerals with a measure word or unit,
+    vague quantities (数千 / thousands), English number words. `source=True` reads a quote (every English number
+    word counts); otherwise "one" alone is the article and is not a claim. Unreadable Chinese figures go to
+    `problems`."""
+    text = unicodedata.normalize("NFKC", text or "")
+    return (number_claims(text) + _cn_claims(text, problems) + _vague_claims(text)
+            + _en_word_claims(text, skip_one=not source))
+
+
+def years_in(text: str) -> set[int]:
+    """Years written as years (2026年, 2027财年, in 2026, the 1970s)."""
+    text = unicodedata.normalize("NFKC", text or "")
+    out = {int(m.group(0)) for m in re.finditer(r"(?<!\d)(19|20)\d{2}(?!\d)", text)
+           if _year_context(text, m.start(), m.end())}
+    out |= {int(m.group(1)) for m in re.finditer(r"\b((?:19|20)\d0)s\b", text)}
+    return out
 
 
 def number_claims(text: str) -> list[NumberClaim]:
@@ -299,10 +480,19 @@ def _units_compatible(a: str | None, b: str | None) -> bool:
     return "/" in (a + b) and (a in b or b in a)  # ¥ is CNY or JPY
 
 
-def _supported(n: NumberClaim, pool: list[NumberClaim]) -> bool:
+def _supported(n: NumberClaim, pool: list[NumberClaim], quote_text: str = "") -> bool:
     """Same unit class, and the source value rounds to what the output wrote -- never more than the old 1% relative
-    tolerance (a coarser rounding such as 3.4亿 -> "3亿" is refused: quote the source's figure)."""
+    tolerance (a coarser rounding such as 3.4亿 -> "3亿" is refused: quote the source's figure). A vague quantity
+    (数千) needs the same vague class in the quotes (thousands / 数千); 一 as an article needs an article or a one."""
+    if n.unit and n.unit.startswith("vague:"):
+        return any(e.unit == n.unit for e in pool)
+    if n.article and re.search(r"\b(a|an|one|single)\b|一", quote_text, re.IGNORECASE):
+        return True
+    if n.value == 1 and n.unit == "people" and re.search(r"\b(one|single)\b|一", quote_text, re.IGNORECASE):
+        return True
     for e in pool:
+        if e.unit and e.unit.startswith("vague:"):
+            continue
         diff = abs(n.value - e.value)
         if (_units_compatible(n.unit, e.unit) and diff <= max(n.tolerance, e.tolerance) + 1e-9
                 and diff <= 0.01 * max(abs(e.value), 1e-9) + 1e-9):
@@ -344,6 +534,16 @@ def _source_dates(evidence: EventInput) -> set[tuple[int, int]]:
     return out
 
 
+def _source_years(evidence: EventInput) -> set[int]:
+    out: set[int] = set()
+    for raw in [s.get("published_at") for s in evidence.sources] + [evidence.reference_time]:
+        try:
+            out.add(datetime.fromisoformat(str(raw).replace("Z", "+00:00")).year)
+        except ValueError:
+            continue
+    return out
+
+
 def _latin_names(text: str) -> list[str]:
     names = []
     for m in _LATIN_TOKEN_RE.finditer(unicodedata.normalize("NFKC", text or "")):
@@ -382,6 +582,7 @@ def _check_support(enrichment: EventEnrichment, evidence: EventInput, reasons: l
     by_id = {s["id"]: s for s in evidence.sources}
     source_texts = {sid: _norm(f"{s.get('title', '')}\n{s.get('excerpt', '')}") for sid, s in by_id.items()}
     allowed_dates = _source_dates(evidence)
+    allowed_years = _source_years(evidence)
     # 2026-11-01 replay: "据BBC报道" names the offered source itself -- a publisher is attribution, not a new name
     publishers = " ".join(s.get("publisher", "") for s in evidence.sources)
     valid_quotes: dict[str, list[str]] = {}
@@ -413,7 +614,8 @@ def _check_support(enrichment: EventEnrichment, evidence: EventInput, reasons: l
         if group == "brief":  # the digest line only restates the item: it may rest on the item's own quotes
             good_quotes = good_quotes + valid_quotes.get("headline", []) + valid_quotes.get("what", [])
         quote_text = "\n".join(good_quotes)
-        pool = number_claims(quote_text)
+        pool = numeric_claims(quote_text, source=True)
+        quote_years = years_in(quote_text) | {int(y) for y in re.findall(r"(?<!\d)((?:19|20)\d{2})(?!\d)", quote_text)}
         quote_lower = quote_text.lower()
         prospective = [m for m in (*_UNCERTAINTY_MARKERS_EN, *_UNCERTAINTY_MARKERS_ZH)
                        if (m in quote_lower if m.isascii() else m in quote_text)]
@@ -426,14 +628,19 @@ def _check_support(enrichment: EventEnrichment, evidence: EventInput, reasons: l
                     f"states it as settled -- keep the source's hedge (据报道/消息称/或将/计划, reportedly/could), or "
                     f"quote a span that states this claim without prospective wording"
                 )
-            for n in number_claims(value):
-                if not _supported(n, pool):
+            unreadable: list[str] = []
+            for n in numeric_claims(value, unreadable):
+                if not _supported(n, pool, quote_text):
                     unit = f" {n.unit}" if n.unit else ""
                     reasons.append(
                         f"{field}: the figure {n.text!r} ({n.value:g}{unit}) is not in this field's quoted source "
                         f"text with the same value, unit and precision -- quote it exactly as the source gives it, "
                         f"or leave it out"
                     )
+            reasons.extend(f"{field}: {u}" for u in unreadable)
+            for y in years_in(value):
+                if y not in quote_years and y not in allowed_years:
+                    reasons.append(f"{field}: the year {y} is neither quoted nor a source's own year")
             for md in _dates_in(value):
                 if md not in quote_dates and md not in allowed_dates:
                     reasons.append(f"{field}: the date {md[0]}月{md[1]}日 is neither quoted nor a source's own date")
