@@ -338,12 +338,16 @@ def test_fabricated_figures_in_any_notation_are_refused(what, why):
     assert not validate_enrichment(e, ev).ok, why
 
 
-def test_a_true_figure_of_another_claim_is_not_caught_deterministically():
-    """Known limit, recorded: 9,999 is in the quote (injured), so '九千九百九十九人死亡' matches by value and unit.
-    Which claim a figure belongs to is the brief verifier's check; the dailies have none."""
+def test_a_casualty_figure_keeps_its_casualty_class():
+    """9,999 is in the quote as injured: it cannot support 9,999 dead (the dailies have no verifier to catch it)."""
     e, ev = _zh(QUAKE, chinese_headline="地震造成120人死亡", chinese_what_happened="地震造成九千九百九十九人死亡。",
                 support={"headline": _q("地震造成120人死亡"), "what": _q(Q_ALL)})
-    assert validate_enrichment(e, ev).ok
+    assert not validate_enrichment(e, ev).ok
+    e, ev = _zh(QUAKE, chinese_headline="地震造成120人死亡", chinese_what_happened="地震造成九千九百九十九人受伤。",
+                support={"headline": _q("地震造成120人死亡"), "what": _q(Q_ALL)})
+    r = validate_enrichment(e, ev)
+    assert r.ok, r.reasons
+    # other relations (whose figure, which period) without a casualty word stay the brief verifier's check
 
 
 @pytest.mark.parametrize("what", [

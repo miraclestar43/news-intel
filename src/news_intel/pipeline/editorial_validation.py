@@ -205,6 +205,30 @@ class NumberClaim:
     tolerance: float  # half a unit of the last written digit
     text: str
     article: bool = False  # 一 + a measure word other than 人/名: the indefinite article, also "a"/"an" in a source
+    what: str | None = None  # dead | injured | infected | missing | arrested | evacuated: the casualty word after it
+
+
+# A casualty figure must keep its casualty class (2026-11-02: '9,999人受伤' in the quote must not support
+# '九千九百九十九人死亡'). Read in the few characters after the figure and its unit.
+_CASUALTY = [
+    ("dead", r"(死亡|遇难|丧生|罹难|身亡|死|killed|dead|died|deaths?|die)"),
+    ("injured", r"(受伤|伤|injured|wounded|hurt)"),
+    ("infected", r"(感染|确诊|病例|infected|contracted|infections|cases)"),
+    ("missing", r"(失踪|missing)"),
+    ("arrested", r"(被捕|被拘|逮捕|arrested|detained)"),
+    ("evacuated", r"(疏散|撤离|转移|evacuated|displaced)"),
+]
+
+
+def _casualty_after(text: str, pos: int) -> str | None:
+    window = text[pos : pos + 32].lower()
+    window = re.sub(r"^\s*(万亿|亿|万|千|thousand|million)?\s*(多|余|以上|左右)?\s*"
+                    r"(人次|人|名|people|persons|civilians|others)?\s*(have been|had been|were|are|have)?\s*",
+                    "", window)
+    for cls, pat in _CASUALTY:
+        if re.match(pat, window):
+            return cls
+    return None
 
 
 def _norm(s: str) -> str:
@@ -398,7 +422,7 @@ def _cn_claims(text: str, problems: list[str] | None) -> list[NumberClaim]:
         mag = 1.0 if token[-1] in _CN_BIG else mag  # 两万 already holds its magnitude
         article = value == 1 and token == "一" and unit_word != "人"  # 一名/一位/一项 = a; 一人 is a head count
         out.append(NumberClaim(value * mag, unit, 0.5 * mag if value == int(value) else 0.05 * mag, m.group(0),
-                               article=article))
+                               article=article, what=_casualty_after(text, end)))
     return out
 
 
@@ -425,7 +449,7 @@ def _en_word_claims(text: str, *, skip_one: bool) -> list[NumberClaim]:
             continue
         value = _EN_WORDS[w] + (_EN_WORDS[m.group(2).lower()] if m.group(2) else 0)
         _mag, unit, _ = _unit_after(text, m.end())
-        out.append(NumberClaim(float(value), unit, 0.5, m.group(0)))
+        out.append(NumberClaim(float(value), unit, 0.5, m.group(0), what=_casualty_after(text, m.end())))
     return out
 
 
@@ -470,7 +494,7 @@ def number_claims(text: str) -> list[NumberClaim]:
                 unit = unit or code
                 break
         step = 10 ** (-decimals) * mag
-        out.append(NumberClaim(base * mag, unit, step / 2, m.group(0)))
+        out.append(NumberClaim(base * mag, unit, step / 2, m.group(0), what=_casualty_after(text, end)))
     return out
 
 
@@ -493,6 +517,8 @@ def _supported(n: NumberClaim, pool: list[NumberClaim], quote_text: str = "") ->
     for e in pool:
         if e.unit and e.unit.startswith("vague:"):
             continue
+        if n.what and e.what and n.what != e.what:
+            continue  # the same figure, but the quote counts another kind of casualty
         diff = abs(n.value - e.value)
         if (_units_compatible(n.unit, e.unit) and diff <= max(n.tolerance, e.tolerance) + 1e-9
                 and diff <= 0.01 * max(abs(e.value), 1e-9) + 1e-9):
