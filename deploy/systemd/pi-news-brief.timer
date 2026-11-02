@@ -2,8 +2,9 @@
 Description=pi-news-intel: daily brief build 20:05 Asia/Shanghai, retry 20:50 (the newsletter sends 22:08)
 
 [Timer]
-# Asia/Shanghai has no DST: these are the same UTC instants all year (12:05 and 12:50 UTC). The 20:50 run only does
-# work if the 20:05 run froze nothing (a crash, a reboot, a busy model); otherwise it reuses the frozen edition.
+# Asia/Shanghai has no DST: these are the same UTC instants all year (12:05 and 12:50 UTC). The 20:50 run is the
+# edition's last attempt (jobs/brief.FINAL_AFTER): it builds again if 20:05 froze nothing (a usage limit, a reboot,
+# a crash), completes a half-written commit, or reuses the published edition.
 OnCalendar=*-*-* 20:05:00 Asia/Shanghai
 OnCalendar=*-*-* 20:50:00 Asia/Shanghai
 Persistent=false

@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -328,3 +329,98 @@ def test_the_verifier_sees_the_writers_name_renderings():
     prompt = build_verify_prompt("i1", ed, ED)
     assert 'name renderings the writer used: 鲁比奥 = "Rubio" [s0]' in prompt
     assert "standard Chinese name" in prompt
+
+
+# --- run outcomes: transient failures are not editions (2026-11-02 review) ------------------------------------------
+
+class Down(Fake):
+    """The editor answers, but every writing call fails (a usage limit, a CLI outage)."""
+
+    def __init__(self, editor, fail_events=None):
+        super().__init__(editor=editor)
+        self.fail_events = fail_events  # None: all
+
+    def enrich_events(self, events):
+        if self.fail_events is None or events[0].event_id in self.fail_events:
+            raise LLMUnavailableError("claude CLI error: usage limit reached")
+        return super().enrich_events(events)
+
+
+def _editor_all(cands, n=3):
+    return {"selected": [{"ids": [c.key], "topic": f"t{i}", "reason": "r"} for i, c in enumerate(cands[:n])]}
+
+
+def test_a_transient_failure_freezes_nothing_keeps_evidence_and_the_retry_builds(config, conn, tmp_path):
+    _seed_three(conn)
+    cands, _ = build_pool(conn, config, ED)
+    out = _build(config, conn, tmp_path, Down(_editor_all(cands)), now=ED.cutoff_utc + timedelta(minutes=5))
+    assert out["result"] == "retry_later" and out["snapshot"] is None
+    assert any("usage limit" in f for f in out["technical_failures"])
+    d = tmp_path / "brief" / "2026-11-01"
+    assert not (d / "current.json").exists() and S.current(tmp_path / "brief", "2026-11-01") is None
+    evidence = json.loads(Path(out["evidence"]).read_text())
+    assert evidence["attempt_outcome"] == "retry_later" and evidence["run_outcome"] == "degraded_technical"
+    again = _build(config, conn, tmp_path, Fake(editor=_editor_all(cands)), now=ED.cutoff_utc + timedelta(minutes=50))
+    assert again["result"] == "built" and again["snapshot"]["run_outcome"] == "complete"
+    assert again["snapshot"]["snapshot_id"] == "brief-zh-2026-11-01-r1" and len(again["snapshot"]["items"]) == 3
+
+
+def test_last_attempt_publishes_what_was_verified_as_degraded_or_nothing(config, conn, tmp_path):
+    _seed_three(conn)
+    cands, _ = build_pool(conn, config, ED)
+    late = ED.cutoff_utc + timedelta(minutes=50)
+    none = _build(config, conn, tmp_path, Down(_editor_all(cands)), now=late)
+    assert none["result"] == "failed" and S.current(tmp_path / "brief", "2026-11-01") is None
+    some = _build(config, conn, tmp_path, Down(_editor_all(cands), fail_events={cands[0].event_id}), now=late)
+    snap = some["snapshot"]
+    assert some["result"] == "built_degraded" and snap["run_outcome"] == "degraded_technical"
+    assert len(snap["items"]) == 2 and snap["technical_failures"] and snap["final_attempt"] is True
+
+
+def test_no_qualifying_news_and_a_real_short_day_are_editions(config, conn, tmp_path):
+    _seed_three(conn)
+    cands, _ = build_pool(conn, config, ED)
+    empty = _build(config, conn, tmp_path, Fake(editor={"selected": []}), now=ED.cutoff_utc + timedelta(minutes=5))
+    assert empty["result"] == "built" and empty["snapshot"]["status"] == "empty"
+    assert empty["snapshot"]["run_outcome"] == "no_qualifying_news" and empty["snapshot"]["technical_failures"] == []
+    short = job.build(conn, config, ED, provider=Fake(editor=_editor_all(cands, 2)), export_dir=tmp_path / "b2",
+                      now=ED.cutoff_utc + timedelta(minutes=5))
+    assert short["snapshot"]["status"] == "short" and short["snapshot"]["run_outcome"] == "complete"
+
+
+def test_a_crash_after_freezing_and_before_renderings_is_completed_without_rewriting(config, conn, tmp_path,
+                                                                                    monkeypatch):
+    _seed_three(conn)
+    cands, _ = build_pool(conn, config, ED)
+    real = job.ensure_renderings
+
+    def crash(*a, **k):
+        raise OSError("disk full while writing the archive page")
+
+    monkeypatch.setattr(job, "ensure_renderings", crash)
+    with pytest.raises(OSError):
+        _build(config, conn, tmp_path, Fake(editor=_editor_all(cands)))
+    d = tmp_path / "brief" / "2026-11-01"
+    frozen = json.loads((d / "brief-zh-2026-11-01-r1.json").read_text())
+    assert not (d / "current.json").exists()  # consumers see no edition yet
+    monkeypatch.setattr(job, "ensure_renderings", real)
+    again = _build(config, conn, tmp_path, Fake(editor={"selected": []}))  # a different answer would be ignored
+    assert again["result"] == "completed" and again["snapshot"]["text_sha256"] == frozen["text_sha256"]
+    assert set(again["repaired"]) == {f"brief-zh-2026-11-01-r1.{x}" for x in ("telegram.html", "digest.json",
+                                                                               "archive.html")}
+    page = (d / "brief-zh-2026-11-01-r1.archive.html").read_text()
+    assert f'content="{frozen["text_sha256"]}"' in page
+    assert S.current(tmp_path / "brief", "2026-11-01")["text_sha256"] == frozen["text_sha256"]
+
+
+def test_a_reused_edition_repairs_missing_or_altered_renderings_from_the_snapshot(config, conn, tmp_path):
+    _seed_three(conn)
+    cands, _ = build_pool(conn, config, ED)
+    first = _build(config, conn, tmp_path, Fake(editor=_editor_all(cands)))
+    d = tmp_path / "brief" / "2026-11-01"
+    (d / "brief-zh-2026-11-01-r1.archive.html").unlink()
+    (d / "brief-zh-2026-11-01-r1.telegram.html").write_text("altered")
+    again = _build(config, conn, tmp_path, Fake(editor={"selected": []}))
+    assert again["result"] == "reused" and again["snapshot"]["text_sha256"] == first["snapshot"]["text_sha256"]
+    assert sorted(again["repaired"]) == ["brief-zh-2026-11-01-r1.archive.html", "brief-zh-2026-11-01-r1.telegram.html"]
+    assert (d / "brief-zh-2026-11-01-r1.telegram.html").read_text() == R.telegram_html(first["snapshot"])

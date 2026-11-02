@@ -101,6 +101,8 @@ def archive_html(snap: dict, base: str = DEFAULT_ARCHIVE_BASE) -> str:
     return f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{e(title)}</title><link rel="canonical" href="{e(archive_url(snap, base))}">
+<meta name="news-intel-snapshot" content="{e(snap["snapshot_id"])}">
+<meta name="news-intel-text-sha256" content="{e(snap["text_sha256"])}">
 <style>body{{max-width:680px;margin:0 auto;padding:20px 18px 40px;font:16px/1.85 -apple-system,"PingFang SC",
 "Noto Sans CJK SC",sans-serif;color:#1d1d1f;background:#fbfaf7}}h1{{font-size:24px;margin:8px 0 4px}}
 h2{{font-size:18px;margin:26px 0 6px}}.meta,.src,.t,footer{{color:#8a857d;font-size:13px}}.why{{color:#3a3732}}

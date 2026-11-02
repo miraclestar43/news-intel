@@ -22,7 +22,7 @@ import hashlib
 import json
 import subprocess
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from news_intel import db
@@ -88,26 +88,101 @@ def _short_model(model: str | None) -> str:
     return (model or "none").split(" (")[0]
 
 
-def write_renderings(export_dir: Path, snap: dict, archive_base: str) -> dict:
-    d = snap_mod.edition_dir(export_dir, snap["edition_date"])
-    tg = brief_render.telegram_html(snap, archive_base)
-    dig = brief_render.digest(snap, archive_base)
-    page = brief_render.archive_html(snap, archive_base)
+FINAL_AFTER = timedelta(minutes=40)  # the 20:50 Beijing run (cutoff 20:00) is the edition's last attempt
+TECHNICAL_MARKERS = ("provider unavailable", "editorial run budget exhausted", "verifier unavailable",
+                     "no provider configured")
+
+
+def renderings(snap: dict, archive_base: str) -> dict[str, str]:
+    """Every file derived from a frozen snapshot, by name. Deterministic: the same snapshot gives the same bytes."""
     stem = snap["snapshot_id"]
-    snap_mod._atomic_write(d / f"{stem}.telegram.html", tg)
-    snap_mod._atomic_write(d / f"{stem}.digest.json", json.dumps(dig, ensure_ascii=False, indent=1))
-    snap_mod._atomic_write(d / f"{stem}.archive.html", page)
-    return {"telegram_chars": len(tg), "digest_zh_chars": dig["zh_chars"], "archive_url": dig["url"]}
+    dig = brief_render.digest(snap, archive_base)
+    return {
+        f"{stem}.telegram.html": brief_render.telegram_html(snap, archive_base),
+        f"{stem}.digest.json": json.dumps(dig, ensure_ascii=False, indent=1),
+        f"{stem}.archive.html": brief_render.archive_html(snap, archive_base),
+    }
+
+
+def ensure_renderings(export_dir: Path, snap: dict, archive_base: str) -> list[str]:
+    """Make every rendering of a frozen snapshot present and byte-exact, reading each back. Idempotent: a missing or
+    damaged file is rewritten from the snapshot; the news text and its hash never change. Returns the repaired
+    names. A manifest records each file's sha256 against the snapshot's text_sha256."""
+    d = snap_mod.edition_dir(export_dir, snap["edition_date"])
+    repaired = []
+    manifest = {"snapshot_id": snap["snapshot_id"], "text_sha256": snap["text_sha256"], "files": {}}
+    for name, text in renderings(snap, archive_base).items():
+        path = d / name
+        if not path.exists() or path.read_text(encoding="utf-8") != text:
+            snap_mod._atomic_write(path, text)
+            repaired.append(name)
+        if path.read_text(encoding="utf-8") != text:
+            raise snap_mod.SnapshotError(f"{path} does not read back as rendered")
+        manifest["files"][name] = hashlib.sha256(text.encode()).hexdigest()
+    snap_mod._atomic_write(d / f"{snap['snapshot_id']}.renderings.json", json.dumps(manifest, indent=1))
+    return repaired
+
+
+def write_renderings(export_dir: Path, snap: dict, archive_base: str) -> dict:
+    ensure_renderings(export_dir, snap, archive_base)
+    dig = brief_render.digest(snap, archive_base)
+    return {"digest_chars": dig["chars"], "digest_zh_chars": dig["zh_chars"], "archive_url": dig["url"]}
+
+
+def technical_failures(provider, selection, log) -> list[str]:
+    """Failures of the machinery, not of the news: no provider, an editor call that failed (deterministic fallback
+    used), items lost to an unavailable provider, the run budget or an unavailable verifier."""
+    out = []
+    if provider is None:
+        out.append("no provider configured")
+    if selection.error and selection.method == "deterministic_fallback":
+        out.append(f"editor: {selection.error}"[:300])
+    for r in (log.rejected if log else []):
+        why = " ".join(r.get("reasons") or [])
+        if r.get("stage") == "verifier (unverified)" or any(m in why for m in TECHNICAL_MARKERS):
+            out.append(f"{r.get('stage')}: {r.get('title', '')[:60]}: {why[:200]}")
+    return out
+
+
+def _attempt_record(export_dir: Path, snap: dict, outcome: str) -> Path:
+    """Failure evidence for a run that froze nothing: everything it found and produced, never a consumer file."""
+    d = snap_mod.edition_dir(export_dir, snap["edition_date"]) / "attempts"
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / f"{datetime.now(UTC):%Y%m%dT%H%M%SZ}-{outcome}.json"
+    snap_mod._atomic_write(path, json.dumps({**snap, "attempt_outcome": outcome}, ensure_ascii=False, indent=1))
+    return path
+
+
+def _complete_commit(export_dir: Path, snap: dict, archive_base: str) -> list[str]:
+    repaired = ensure_renderings(export_dir, snap, archive_base)
+    snap_mod.publish(export_dir, snap)
+    return repaired
 
 
 def build(conn, config, edition, *, provider=None, export_dir: Path, revision: int | None = None,
-          archive_base: str = brief_render.DEFAULT_ARCHIVE_BASE, budget: float = BUDGET_SECONDS) -> dict:
-    """Returns {"result": "built" | "reused" | "skipped_lock", "snapshot": dict | None, "path": str | None}."""
+          archive_base: str = brief_render.DEFAULT_ARCHIVE_BASE, budget: float = BUDGET_SECONDS,
+          now: datetime | None = None, final: bool | None = None) -> dict:
+    """Returns {"result", "snapshot", "path", ...}. result:
+      reused          the edition was already published; its renderings were checked (and repaired if needed)
+      completed       a frozen but unpublished revision was found: renderings made, then published (no rewrite)
+      built           published; snapshot["run_outcome"] is complete (incl. a real short day) or no_qualifying_news
+      built_degraded  last attempt: published with the verified items it has, but technical failures cost items
+      retry_later     technical failures before the last attempt: nothing frozen, evidence in attempts/
+      failed          last attempt, technical failures and no verified item: nothing frozen
+      skipped_lock    another run holds the lock
+    `final`: whether this is the edition's last attempt (default: from `now` -- cutoff + 40 min or later)."""
+    now = now or datetime.now(UTC)
+    final = (now >= edition.cutoff + FINAL_AFTER) if final is None else final
     if revision is None:
         existing = snap_mod.current(export_dir, edition.edition_date)
         if existing is not None:
-            return {"result": "reused", "snapshot": existing, "path": None}
-        revision = 1
+            repaired = ensure_renderings(export_dir, existing, archive_base)
+            return {"result": "reused", "snapshot": existing, "path": None, "repaired": repaired}
+        pending = snap_mod.unpublished(export_dir, edition.edition_date)
+        if pending is not None:
+            repaired = _complete_commit(export_dir, pending, archive_base)
+            return {"result": "completed", "snapshot": pending, "path": None, "repaired": repaired}
+        revision = snap_mod.next_revision(export_dir, edition.edition_date)
     if not db.acquire_job_lock(conn, LOCK, ttl_seconds=int(budget) + 600):
         return {"result": "skipped_lock", "snapshot": None, "path": None}
     run_id = job_runs.start(conn, "brief", edition_id="zh_cn")
@@ -118,6 +193,11 @@ def build(conn, config, edition, *, provider=None, export_dir: Path, revision: i
         selection = select(provider, cands[:EDITOR_POOL], edition, MAX_ITEMS, prior)
         items, log = compose(provider, selection, edition, deadline=t0 + budget) if provider else ([], None)
         writer = next((i["verification"]["model"] for i in items), getattr(provider, "model", None))
+        technical = technical_failures(provider, selection, log)
+        if not technical:
+            run_outcome = "complete" if items else "no_qualifying_news"
+        else:
+            run_outcome = "degraded_technical"
         snap = {
             "schema": snap_mod.SCHEMA,
             "snapshot_id": snap_mod.snapshot_id(edition.edition_date, revision),
@@ -130,6 +210,9 @@ def build(conn, config, edition, *, provider=None, export_dir: Path, revision: i
                        "hours": WINDOW_HOURS},
             "generated_at": datetime.now(UTC).astimezone(BEIJING).isoformat(timespec="seconds"),
             "status": snap_mod.status_for(items),
+            "run_outcome": run_outcome,
+            "technical_failures": technical,
+            "final_attempt": final,
             "label": {"zh": edition.label_zh()},
             "selection_mode": "automatic",
             "items": items,
@@ -154,18 +237,30 @@ def build(conn, config, edition, *, provider=None, export_dir: Path, revision: i
         text = "".join(f"{i['headline']}{i['what']}{i['why']}" for i in items)
         snap["stats"] = {"items": len(items), "chars": snap_mod.chars(text), "zh_chars": snap_mod.zh_chars(text),
                          "reading_minutes": max(1, round(snap_mod.chars(text) / 320)) if items else 0}
-        snap["stats"]["telegram_chars"] = len(brief_render.telegram_html(snap, archive_base))  # renderable, or raise
-        dig = brief_render.digest({**snap, "text_sha256": ""}, archive_base)
+        snap["text_sha256"] = snap_mod.text_sha256(snap)
+        rendered = renderings(snap, archive_base)  # renderable, or raise before anything is frozen
+        snap["stats"]["telegram_chars"] = len(rendered[f"{snap['snapshot_id']}.telegram.html"])
+        dig = brief_render.digest(snap, archive_base)
         snap["stats"].update(digest_chars=dig["chars"], digest_zh_chars=dig["zh_chars"])
-        path = snap_mod.freeze(export_dir, snap)
-        write_renderings(export_dir, snap, archive_base)
-        job_runs.finish(conn, run_id, "success", {
+        if technical and (not final or not items):
+            outcome = "retry_later" if not final else "failed"
+            evidence = _attempt_record(export_dir, snap, outcome)
+            job_runs.finish(conn, run_id, "failed", {
+                "outcome": outcome, "technical_failures": technical, "items": len(items), "evidence": str(evidence),
+                "wall_seconds": snap["run"]["wall_seconds"]})
+            return {"result": outcome, "snapshot": None, "path": None, "evidence": str(evidence),
+                    "technical_failures": technical}
+        path = snap_mod.write_frozen(export_dir, snap)
+        _complete_commit(export_dir, snap, archive_base)
+        result = "built_degraded" if technical else "built"
+        job_runs.finish(conn, run_id, "degraded" if technical else "success", {
             "snapshot_id": snap["snapshot_id"], "text_sha256": snap["text_sha256"], "status": snap["status"],
-            "items": len(items), "selection": selection.method, "rejected": len(snap["rejected"]),
+            "run_outcome": run_outcome, "technical_failures": technical, "items": len(items),
+            "selection": selection.method, "rejected": len(snap["rejected"]),
             "wall_seconds": snap["run"]["wall_seconds"], "path": str(path)})
-        return {"result": "built", "snapshot": snap, "path": str(path)}
-    except Exception as exc:  # noqa: BLE001 - record, then re-raise; nothing is frozen on failure
-        job_runs.finish(conn, run_id, "failed", {"error": str(exc)[:500]})
+        return {"result": result, "snapshot": snap, "path": str(path)}
+    except Exception as exc:  # noqa: BLE001 - record, then re-raise; a frozen-but-unpublished revision is completed
+        job_runs.finish(conn, run_id, "failed", {"error": str(exc)[:500]})  # by the next run, never rewritten
         raise
     finally:
         db.release_job_lock(conn, LOCK)
@@ -208,6 +303,7 @@ def main(argv=None) -> int:
     ap.add_argument("--revision", type=int, help="make this revision explicitly (keeps earlier ones)")
     ap.add_argument("--archive-base", default=brief_render.DEFAULT_ARCHIVE_BASE)
     ap.add_argument("--no-model", action="store_true", help="build without a provider (deterministic selection only)")
+    ap.add_argument("--final", action="store_true", help="treat this run as the edition's last attempt")
     ap.add_argument("--chat-id", type=int)
     ap.add_argument("--real", action="store_true", help="send-telegram: a real send (default: dry run)")
     a = ap.parse_args(argv)
@@ -224,12 +320,14 @@ def main(argv=None) -> int:
         if a.command == "build":
             provider = None if a.no_model else brief_provider(config)
             out = build(conn, config, edition, provider=provider, export_dir=export_dir, revision=a.revision,
-                        archive_base=a.archive_base)
+                        archive_base=a.archive_base, final=True if a.final else None)
             s = out["snapshot"]
             print(json.dumps({"result": out["result"], "path": out["path"],
+                              **{k: out[k] for k in ("repaired", "evidence", "technical_failures") if k in out},
                               **({k: s[k] for k in ("snapshot_id", "status", "text_sha256", "stats")} if s else {})},
                              ensure_ascii=False))
-            return 0 if out["result"] in ("built", "reused") else 3
+            return {"built": 0, "reused": 0, "completed": 0, "built_degraded": 3, "retry_later": 75,
+                    "failed": 1, "skipped_lock": 3}[out["result"]]
         snap = snap_mod.current(export_dir, edition.edition_date)
         if snap is None:
             raise SystemExit(f"no frozen brief for {edition.edition_date}")

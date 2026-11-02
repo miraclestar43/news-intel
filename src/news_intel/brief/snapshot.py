@@ -97,8 +97,9 @@ def _atomic_write(path: Path, text: str) -> None:
         os.close(dfd)
 
 
-def freeze(export_dir: Path, snap: dict) -> Path:
-    """Write the snapshot once and point current.json at it. Refuses to overwrite any existing revision."""
+def write_frozen(export_dir: Path, snap: dict) -> Path:
+    """Step 1 of a commit: the snapshot file, once, read-only. Refuses to overwrite any existing revision. Consumers
+    do not see it until publish() points current.json at it."""
     d = edition_dir(export_dir, snap["edition_date"])
     d.mkdir(parents=True, exist_ok=True)
     snap["text_sha256"] = text_sha256(snap)
@@ -108,10 +109,46 @@ def freeze(export_dir: Path, snap: dict) -> Path:
         raise SnapshotError(f"{path} already exists; frozen snapshots are never rewritten")
     _atomic_write(path, json.dumps(snap, ensure_ascii=False, indent=1))
     os.chmod(path, 0o444)
-    _atomic_write(d / "current.json", json.dumps(
-        {"snapshot_id": snap["snapshot_id"], "file": path.name, "text_sha256": snap["text_sha256"],
-         "status": snap["status"]}, ensure_ascii=False))
     return path
+
+
+def publish(export_dir: Path, snap: dict) -> None:
+    """The commit point: current.json names the snapshot. Written last, after its renderings are complete."""
+    d = edition_dir(export_dir, snap["edition_date"])
+    _atomic_write(d / "current.json", json.dumps(
+        {"snapshot_id": snap["snapshot_id"], "file": f"{snap['snapshot_id']}.json", "text_sha256": snap["text_sha256"],
+         "status": snap["status"]}, ensure_ascii=False))
+
+
+def freeze(export_dir: Path, snap: dict) -> Path:
+    """write_frozen + publish (no renderings; tests and tools)."""
+    path = write_frozen(export_dir, snap)
+    publish(export_dir, snap)
+    return path
+
+
+def load_frozen(path: Path) -> dict:
+    snap = json.loads(path.read_text(encoding="utf-8"))
+    if snap.get("schema") != SCHEMA or text_sha256(snap) != snap.get("text_sha256"):
+        raise SnapshotError(f"{path} is not an intact {SCHEMA} snapshot")
+    return snap
+
+
+def unpublished(export_dir: Path, edition_date) -> dict | None:
+    """A snapshot frozen but never published (a run that stopped between write_frozen and publish): the newest such
+    revision, or None. Its text is final; only its renderings and pointer are missing."""
+    d = edition_dir(export_dir, edition_date)
+    if not d.exists() or (d / "current.json").exists():
+        return None
+    files = [f for f in d.glob("brief-zh-*-r*.json") if re.search(r"-r\d+\.json$", f.name)]
+    files.sort(key=lambda p: int(re.search(r"-r(\d+)\.json$", p.name).group(1)))
+    return load_frozen(files[-1]) if files else None
+
+
+def next_revision(export_dir: Path, edition_date) -> int:
+    d = edition_dir(export_dir, edition_date)
+    revs = [int(m.group(1)) for p in d.glob("brief-zh-*-r*.json") if (m := re.search(r"-r(\d+)\.json$", p.name))]
+    return max(revs, default=0) + 1
 
 
 def snapshot_id(edition_date, revision: int) -> str:
