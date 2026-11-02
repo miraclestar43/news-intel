@@ -380,3 +380,60 @@ def test_group_names_with_numerals_are_names_not_figures():
     assert numeric_claims("二十国集团外长会议在亚特兰大闭幕") == []
     assert numeric_claims("七国集团峰会") == []
     assert [c.value for c in numeric_claims("二十国参加会议")] == [20.0]  # a count of countries stays a figure
+
+
+# --- 2026-11-02 second review: three bypasses -------------------------------------------------------------------------
+
+def _claim_ok(out: str, quote: str) -> bool:
+    from news_intel.pipeline.editorial_validation import _supported, numeric_claims
+
+    pool = numeric_claims(quote, source=True)
+    return all(_supported(c, pool, quote) for c in numeric_claims(out))
+
+
+@pytest.mark.parametrize("out, quote", [
+    ("地震造成九千九百九十九人死亡。", "The quake injured 9,999 people."),          # class written before the figure
+    ("地震造成九千九百九十九人死亡。", "受伤人数为9999人。"),
+    ("袭击造成14人死亡。", "An attack on a station: 14, officials say."),          # unknown class: no death conclusion
+    ("一名男子被捕。", "Police said a car was found."),                           # an article elsewhere is no person
+    ("一位官员称。", "Officials said."),
+    ("千人参加集会。", "Hundreds rallied."),                                       # 千人 is a figure
+    ("损失千万元。", "Losses of 2 million yuan."),                                 # 千万元 is a figure
+    ("百人受伤。", "12 were injured."),
+])
+def test_the_three_second_review_bypasses_are_closed(out, quote):
+    assert not _claim_ok(out, quote)
+
+
+@pytest.mark.parametrize("out, quote", [
+    ("地震造成九千九百九十九人受伤。", "The quake injured 9,999 people."),
+    ("袭击造成至少14人死亡。", "Russian drone attack on Ukrainian train station kills at least 14, officials say"),
+    ("死亡人数升至214人。", "The death toll rose to 214."),
+    ("造成120人死亡。", "死亡人数达120人"),
+    ("一名中国女商人被指收集信息。", "a Chinese businesswoman had been gathering information"),
+    ("一名官员称。", "An official said on Saturday."),
+    ("千人参加集会。", "1,000 people rallied."),
+    ("损失千万元。", "损失1000万元"),
+    ("百人受伤。", "100 people were injured."),
+    ("营收9143亿元。", "营收 9143 亿元"),
+    ("一项方案。", "a plan"),
+])
+def test_the_correct_expressions_still_pass(out, quote):
+    assert _claim_ok(out, quote)
+
+
+@pytest.mark.parametrize("out, quote", [
+    ("此次大选投票率为近三十年来最高。", "the highest voter turnout in nearly three decades"),  # decades = 10 years
+    ("创上世纪70年代以来最差单日表现。", "its worst day since the 1970s"),                    # 70年代 = the 1970s
+    ("这是该国迄今最致命的一次埃博拉疫情。", "DR Congo's deadliest outbreak"),                  # 一次: the article
+    ("在一次罕见的临时停火期间。", "during rare Ukraine ceasefire"),
+])
+def test_replay_texts_refused_by_the_first_cut_of_the_fix_pass(out, quote):
+    assert _claim_ok(out, quote)
+
+
+def test_wrong_decades_and_decade_years_are_still_refused():
+    assert not _claim_ok("近四十年来最高。", "the highest in nearly three decades")
+    from news_intel.pipeline.editorial_validation import years_in
+
+    assert years_in("上世纪70年代以来") == {1970} and years_in("21世纪20年代") == {2020}

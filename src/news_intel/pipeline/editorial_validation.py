@@ -204,7 +204,6 @@ class NumberClaim:
     unit: str | None  # CNY/USD/... | pct | pp | times | bps | people | days/years/... | vague:<class> | None
     tolerance: float  # half a unit of the last written digit
     text: str
-    article: bool = False  # 一 + a measure word other than 人/名: the indefinite article, also "a"/"an" in a source
     what: str | None = None  # dead | injured | infected | missing | arrested | evacuated: the casualty word after it
 
 
@@ -218,6 +217,36 @@ _CASUALTY = [
     ("arrested", r"(被捕|被拘|逮捕|arrested|detained)"),
     ("evacuated", r"(疏散|撤离|转移|evacuated|displaced)"),
 ]
+
+
+# The same classes written BEFORE the figure: "killed 120", "injuring 9,999", "death toll rose to 14", "造成…死亡" is
+# after, "死亡人数达120", "遇难者增至14", "受伤人数为9999" before. Read in the words right before the figure.
+_CASUALTY_BEFORE = [
+    ("dead", r"(kill(s|ed|ing)?|death toll (rises|rose|climbs|climbed|reaches|reached|hits|hit|is|of|stands at|"
+             r"now)?\s*(to|at)?|deaths? (rose|rises|reached|reach|of|at|to)?|dead:?|死亡人数|遇难人数|遇难者|罹难者|"
+             r"死者|死亡|遇难|丧生|身亡)"),
+    ("injured", r"(injur(es|ed|ing)|wound(s|ed|ing)|受伤人数|伤者|受伤)"),
+    ("infected", r"(infect(s|ed|ing)|cases? (rose|rises|reached|of|at|to)?|感染人数|确诊病例|确诊|感染者|感染)"),
+    ("missing", r"(missing|失踪人数|失踪者|失踪)"),
+    ("arrested", r"(arrest(s|ed|ing)|detain(s|ed|ing)|被捕人数|逮捕|拘留)"),
+    ("evacuated", r"(evacuat(es|ed|ing)|displac(es|ed|ing)|疏散|撤离|转移)"),
+]
+_BEFORE_FILLER = (r"\s*(at least|more than|over|nearly|about|around|some|almost|up to|"
+                  r"已|已经|达到|达|为|升至|增至|超过|逾|"
+                  r"至少|约|近|共|累计)?\s*$")
+
+
+def _casualty_before(text: str, start: int) -> str | None:
+    window = text[max(0, start - 36) : start].lower()
+    for cls, pat in _CASUALTY_BEFORE:
+        if re.search(pat + r"\s*(人数)?" + _BEFORE_FILLER, window):
+            return cls
+    return None
+
+
+def _casualty(text: str, start: int, end: int) -> str | None:
+    """The casualty class bound to the figure at text[start:end]: the words right after it, else right before."""
+    return _casualty_after(text, end) or _casualty_before(text, start)
 
 
 def _casualty_after(text: str, pos: int) -> str | None:
@@ -268,8 +297,10 @@ def _unit_after(text: str, pos: int) -> tuple[float, str | None, int]:
         return mag, "bps", gap
     if s2.startswith("倍") or re.match(r"(times|-fold|fold)\b", s2, re.IGNORECASE):
         return mag, "times", gap
-    if s2.startswith(("人次", "人", "名", "people", "persons")):
+    if s2.startswith(("人次", "人", "名", "people", "persons")) or (s2.startswith("位") and not s2.startswith("位数")):
         return mag, "people", gap
+    if re.match(r"decades?\b", s2, re.IGNORECASE):
+        return mag * 10, "years", gap  # three decades = 30 years
     for words, cls in _DURATIONS:
         if s2.startswith(words[0]) or re.match(words[1], s2, re.IGNORECASE):
             return mag, cls, gap
@@ -303,6 +334,8 @@ def _is_date_part(text: str, start: int, end: int) -> bool:
         return True
     after = text[end : end + 3].lstrip()
     value = int(text[start:end]) if text[start:end].isdigit() else -1
+    if after.startswith("年代"):
+        return True  # 70年代 / 1970年代: a decade, checked by the year rule
     if after[:1] == "年":
         return False  # 4年, 30年: a duration
     if after[:1] == "月" and 1 <= value <= 12:
@@ -340,7 +373,7 @@ _CN_CLASSIFIERS = (
 _CN_NUM_RE = re.compile(r"(百分之)?([零〇一二两三四五六七八九十百千万亿]+(?:点[零〇一二三四五六七八九]+)?)(余|多)?")
 _CN_NOT_NUMBER = ("一起", "一直", "一定", "一样", "一般", "一致", "一切", "一同", "一度", "一再", "一边", "一旦",
                   "一些",
-                  "一批评", "一手", "一时", "万一", "千万", "一个月来", "十分", "百分百", "一方面", "两岸")
+                  "一批评", "一手", "一时", "万一", "一个月来", "十分", "百分百", "一方面", "两岸")
 _VAGUE = [  # (class, Chinese forms, English pattern)
     ("tens", ("数十", "几十"), r"\bdozens\b|\btens of\b(?! thousands)"),
     ("hundreds", ("数百", "几百", "上百"), r"\bhundreds\b"),
@@ -399,8 +432,8 @@ def _cn_claims(text: str, problems: list[str] | None) -> list[NumberClaim]:
         prev = text[max(0, m.start() - 1) : m.start()]
         if prev == "第" or any(text.startswith(w, start) for w in _CN_NOT_NUMBER):
             continue
-        if re.match(r"[\d.,]", prev) or token[0] in "百千万亿":
-            continue  # 9143亿元: the magnitude of an Arabic figure, read by number_claims
+        if re.match(r"[\d.,]", prev):
+            continue  # 9143亿元: the magnitude of an Arabic figure (千人 / 百人 / 千万元 alone are read)
         tail = text[end : end + 3]
         if tail.startswith("国集团"):
             continue  # 二十国集团 / 七国集团: a name (11-01 r3 refused '二十国集团' as the figure 20)
@@ -422,9 +455,13 @@ def _cn_claims(text: str, problems: list[str] | None) -> list[NumberClaim]:
         elif unit_word in ("%", "％"):
             unit = "pct"
         mag = 1.0 if token[-1] in _CN_BIG else mag  # 两万 already holds its magnitude
-        article = value == 1 and token == "一" and unit_word != "人"  # 一名/一位/一项 = a; 一人 is a head count
+        # 一人/一名/一位 is a head count of one and is checked (2026-11-02). 一 with any other measure word (一次罕见的
+        # 停火, 最致命的一次疫情, 一项方案) is the article, not a figure claim: requiring "a"/"an" in a headline-style
+        # quote only refused correct text (replays 10-31, 11-01).
+        if value == 1 and token == "一" and unit_word not in ("人", "名", "位"):
+            continue
         out.append(NumberClaim(value * mag, unit, 0.5 * mag if value == int(value) else 0.05 * mag, m.group(0),
-                               article=article, what=_casualty_after(text, end)))
+                               what=_casualty(text, m.start(), end)))
     return out
 
 
@@ -450,9 +487,22 @@ def _en_word_claims(text: str, *, skip_one: bool) -> list[NumberClaim]:
         if skip_one and w == "one" and not m.group(2):
             continue
         value = _EN_WORDS[w] + (_EN_WORDS[m.group(2).lower()] if m.group(2) else 0)
-        _mag, unit, _ = _unit_after(text, m.end())
-        out.append(NumberClaim(float(value), unit, 0.5, m.group(0), what=_casualty_after(text, m.end())))
+        mag, unit, _ = _unit_after(text, m.end())
+        out.append(NumberClaim(float(value) * mag, unit, 0.5 * mag, m.group(0),
+                               what=_casualty(text, m.start(), m.end())))
     return out
+
+
+_PERSON_NOUNS = (r"man|woman|person|official|businessman|businesswoman|worker|staff member|employee|soldier|child|boy|"
+                 r"girl|journalist|reporter|suspect|student|teacher|doctor|nurse|police officer|officer|diplomat|"
+                 r"minister|spokesperson|spokesman|spokeswoman|executive|resident|citizen|national|survivor|passenger|"
+                 r"pilot|activist|lawyer|judge|member|employee|engineer|researcher|scientist|politician|candidate")
+_ONE_PERSON_RE = re.compile(r"\b(a|an|one|single)\s+(?:[a-z\-]+\s+){0,2}?(" + _PERSON_NOUNS + r")s?\b", re.IGNORECASE)
+
+
+def _one_person_claims(text: str) -> list[NumberClaim]:
+    """In a quote: "a Chinese businesswoman", "an official", "one soldier" -- one person, bound to the noun."""
+    return [NumberClaim(1.0, "people", 0.5, m.group(0)) for m in _ONE_PERSON_RE.finditer(text)]
 
 
 def numeric_claims(text: str, problems: list[str] | None = None, *, source: bool = False) -> list[NumberClaim]:
@@ -462,7 +512,7 @@ def numeric_claims(text: str, problems: list[str] | None = None, *, source: bool
     `problems`."""
     text = unicodedata.normalize("NFKC", text or "")
     return (number_claims(text) + _cn_claims(text, problems) + _vague_claims(text)
-            + _en_word_claims(text, skip_one=not source))
+            + _en_word_claims(text, skip_one=not source) + (_one_person_claims(text) if source else []))
 
 
 def years_in(text: str) -> set[int]:
@@ -471,6 +521,9 @@ def years_in(text: str) -> set[int]:
     out = {int(m.group(0)) for m in re.finditer(r"(?<!\d)(19|20)\d{2}(?!\d)", text)
            if _year_context(text, m.start(), m.end())}
     out |= {int(m.group(1)) for m in re.finditer(r"\b((?:19|20)\d0)s\b", text)}
+    for m in re.finditer(r"(?<!\d)(\d0)年代", text):  # 70年代 / 上世纪70年代 = the 1970s; 20年代 after 21世纪 = 2020s
+        century = 2000 if "21世纪" in text[max(0, m.start() - 6) : m.start()] else 1900
+        out.add(century + int(m.group(1)))
     return out
 
 
@@ -496,7 +549,7 @@ def number_claims(text: str) -> list[NumberClaim]:
                 unit = unit or code
                 break
         step = 10 ** (-decimals) * mag
-        out.append(NumberClaim(base * mag, unit, step / 2, m.group(0), what=_casualty_after(text, end)))
+        out.append(NumberClaim(base * mag, unit, step / 2, m.group(0), what=_casualty(text, start, end)))
     return out
 
 
@@ -509,18 +562,14 @@ def _units_compatible(a: str | None, b: str | None) -> bool:
 def _supported(n: NumberClaim, pool: list[NumberClaim], quote_text: str = "") -> bool:
     """Same unit class, and the source value rounds to what the output wrote -- never more than the old 1% relative
     tolerance (a coarser rounding such as 3.4亿 -> "3亿" is refused: quote the source's figure). A vague quantity
-    (数千) needs the same vague class in the quotes (thousands / 数千); 一 as an article needs an article or a one."""
+    (数千) needs the same vague class in the quotes (thousands / 数千)."""
     if n.unit and n.unit.startswith("vague:"):
         return any(e.unit == n.unit for e in pool)
-    if n.article and re.search(r"\b(a|an|one|single)\b|一", quote_text, re.IGNORECASE):
-        return True
-    if n.value == 1 and n.unit == "people" and re.search(r"\b(one|single)\b|一", quote_text, re.IGNORECASE):
-        return True
     for e in pool:
         if e.unit and e.unit.startswith("vague:"):
             continue
-        if n.what and e.what and n.what != e.what:
-            continue  # the same figure, but the quote counts another kind of casualty
+        if n.what and e.what != n.what:
+            continue  # a stated casualty class needs the same class, known, on the quoted figure (2026-11-02)
         diff = abs(n.value - e.value)
         if (_units_compatible(n.unit, e.unit) and diff <= max(n.tolerance, e.tolerance) + 1e-9
                 and diff <= 0.01 * max(abs(e.value), 1e-9) + 1e-9):
