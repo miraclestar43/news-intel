@@ -20,7 +20,7 @@ within 5 minutes (docs/GIT_WORKFLOW.md). history-in-practice only shows news onc
 | D | Link and enable `pi-news-brief.timer` only. | A frozen brief every day at 20:05 Beijing (retry 20:50). Nothing is sent. |
 | E | Watch 1-2 editions: `python -m news_intel.jobs.brief show`. | none |
 | F | Merge the history-in-practice PR and set `NEWS_EXPORT_DIR` (section 2). | The 22:08 email ends with the digest and its archive link. The archive page is committed with the story. |
-| G | Optional, owner's choice: enable `pi-news-brief-telegram.timer` (21:00 Beijing) and decide on `pi-news-daily-zh.timer` (section 4). | The full brief reaches Telegram. |
+| G | Optional, owner's choice: install the `send-telegram.conf` drop-in (the send follows each successful build) and decide on `pi-news-daily-zh.timer` (section 4). | The full brief reaches Telegram right after the build, by 23:00 Beijing at the latest. |
 
 Each step can stop there. Steps D-G each need the previous one.
 
@@ -61,7 +61,8 @@ The database is about 106 MB, a short copy.
 **Rollback, news-intel:**
 - `git revert -m 1 <merge sha>` in `~/pi-news-intel`. Or, immediately: `git switch --detach f97b73c`, then fix `main` later.
 - Restore `.env` from the backup.
-- `systemctl --user disable --now pi-news-brief.timer pi-news-brief-telegram.timer`.
+- `systemctl --user disable --now pi-news-brief.timer`, and remove the `pi-news-brief.service.d/send-telegram.conf`
+  drop-in (then `daemon-reload`).
 - No migration to undo: the branch adds none.
 - The 9 new feeds' rows stay in the database. They are harmless and are pruned by the normal retention.
 
@@ -101,7 +102,13 @@ The database is about 106 MB, a short copy.
 - **Before relying on a day's brief,** check `journalctl --user -u pi-news-brief` and `<date>/current.json`.
 
 **Telegram.** Nothing new is sent until step G.
-- With step G, the chat gets the brief at 21:00 Beijing.
+- **With step G, the send follows the build, not a clock.** The drop-in `pi-news-brief.service.d/send-telegram.conf`
+  starts `pi-news-brief-telegram.service` on every successful build run (exit 0, or 3 for degraded).
+  - The 20:05 build sends at about 20:10.
+  - If 20:05 froze nothing, the 20:50 last attempt sends when it finishes, even after 21:00.
+  - The send is idempotent per edition, so the 20:50 "reused" run sends nothing new.
+  - It refuses after cutoff + 3 h (23:00 Beijing).
+- The earlier 21:00 send timer is removed: a 20:50 run that finished after it would have lost the whole edition.
 - `pi-news-daily-zh.timer` still sends the old zh daily at 07:00 Los Angeles, which is 23:00 Beijing now that US DST has ended. Recommendation: disable it once the brief is on Telegram. The two overlap and the old one is tech-only.
 
 **Newsletter (step F).** The 22:08 email:
@@ -123,8 +130,10 @@ ln -s ~/pi-news-intel/deploy/systemd/pi-news-brief.timer ~/.config/systemd/user/
 systemctl --user daemon-reload && systemctl --user enable --now pi-news-brief.timer
 systemctl --user list-timers | grep -E 'brief|daily|hip-send'
 # step G (owner's choice):
-ln -s ~/pi-news-intel/deploy/systemd/pi-news-brief-telegram.{service,timer} ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now pi-news-brief-telegram.timer
+ln -s ~/pi-news-intel/deploy/systemd/pi-news-brief-telegram.service ~/.config/systemd/user/
+mkdir -p ~/.config/systemd/user/pi-news-brief.service.d
+ln -s ~/pi-news-intel/deploy/systemd/pi-news-brief.service.d/send-telegram.conf ~/.config/systemd/user/pi-news-brief.service.d/
+systemctl --user daemon-reload     # BRIEF_CHAT_ID in .env first; nothing else to enable
 ```
 **Check after each step:**
 - `hermes-gateway.service` and the polymarket services are still `active`;

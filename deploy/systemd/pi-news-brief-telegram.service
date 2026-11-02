@@ -7,8 +7,9 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=%h/pi-news-intel
 EnvironmentFile=%h/pi-news-intel/.env
+# Started by pi-news-brief.service's OnSuccess (drop-in pi-news-brief.service.d/send-telegram.conf), no timer.
 # Sends the frozen snapshot's own rendering; idempotency key brief:zh_cn:<date>:<chat>, pre-marked before the send,
-# never retried once attempted. BRIEF_CHAT_ID is the single allowlisted chat (must also be in
+# never retried once attempted; nothing after cutoff + 3 h. BRIEF_CHAT_ID is the single allowlisted chat (must also be in
 # TELEGRAM_ALLOWED_CHAT_IDS).
 ExecStart=/bin/sh -c 'exec %h/pi-news-intel/.venv/bin/python -m news_intel.jobs.brief send-telegram --real --chat-id "$BRIEF_CHAT_ID"'
 TimeoutStartSec=120

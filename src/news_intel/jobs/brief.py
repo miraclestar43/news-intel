@@ -323,12 +323,22 @@ def revise_item(conn, config, edition, *, provider, export_dir: Path, item_id: s
     return {"result": "revised", "snapshot": snap, "path": str(path)}
 
 
+SEND_WINDOW = timedelta(hours=3)  # an edition is sent from its cutoff until 23:00 Beijing, never later
+
+
 def send_telegram(conn, config, snap: dict, *, chat_id: int, dry_run: bool = True,
-                  archive_base: str = brief_render.DEFAULT_ARCHIVE_BASE) -> dict:
+                  archive_base: str = brief_render.DEFAULT_ARCHIVE_BASE, now: datetime | None = None) -> dict:
+    """Started by the build's success (deploy/systemd/pi-news-brief.service.d/send-telegram.conf), not by a clock:
+    a 20:50 last attempt that ends after 21:00 still sends. Outside the window (cutoff .. cutoff + 3 h) nothing is
+    sent, so a rebuild the next morning never sends a stale edition."""
     from news_intel.delivery.telegram import TelegramSender, chat_id_hash, mark_attempting
 
     if snap.get("status") not in ("ready", "short"):
         return {"sent": False, "reason": f"snapshot status {snap.get('status')!r}: nothing to send"}
+    now = now or datetime.now(UTC)
+    cutoff = datetime.fromisoformat(snap["cutoff"])
+    if not cutoff <= now <= cutoff + SEND_WINDOW:
+        return {"sent": False, "reason": f"outside the send window {cutoff.isoformat()} + {SEND_WINDOW}: not sent"}
     key = f"brief:zh_cn:{snap['edition_date']}:{chat_id_hash(chat_id)}"
     text = brief_render.telegram_html(snap, archive_base)
     if not dry_run and not mark_attempting(conn, key, chat_id, "brief"):

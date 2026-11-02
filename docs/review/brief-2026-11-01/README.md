@@ -6,12 +6,13 @@ All automatic: selection, writing and checking by claude-opus-5-5 through the Cl
 |---|---|---|---|---|---|
 | r1 | `4290921` | 5 | 717 | (not recorded before 7b65bca) | `3dd4b5c5bf741f1d…` |
 | r2 | `7b65bca` | 5 | 685 | complete | `156215097713307a…` |
-| r3 (current) | `1dc708e` | 5 | 742 | complete | `83c2e2bc76e03d8c…` |
+| r3 | `1dc708e` | 5 | 742 | complete | `83c2e2bc76e03d8c…` |
+| r4 (current) | `1dc708e` + item revision `12ad330` | 5 | 718 | complete | `dc496f2335f5e2e9…` |
 
-## Current: brief-zh-2026-11-01-r3
+## Current: brief-zh-2026-11-01-r4
 
-- cutoff `2026-11-01T20:00:00+08:00`, window 2026-10-31T20:00:00+08:00 → 2026-11-01T20:00:00+08:00, generated `2026-11-02T12:18:07+08:00` (an evaluation re-run after the cutoff on the shadow database copied at the cutoff)
-- text_sha256 `83c2e2bc76e03d8c472c0a351ff0e8d88433e9512295075ce496f45384d01585`; selection `editor_model`; 13 CLI calls, 193.5 s
+- cutoff `2026-11-01T20:00:00+08:00`, window 2026-10-31T20:00:00+08:00 → 2026-11-01T20:00:00+08:00, generated `2026-11-02T13:15:14+08:00` (an evaluation re-run after the cutoff on the shadow database copied at the cutoff)
+- text_sha256 `dc496f2335f5e2e9f78c0eaa8400a7d78fa94c33d95c379136d1089d4d1114bc`; selection `editor_model`; 13 CLI calls, 193.5 s
 
 ### 1. 刚果（金）埃博拉疫情死亡超5,000人
 
@@ -60,26 +61,23 @@ Sources: [Al Jazeera — all news](https://www.aljazeera.com/news/2026/11/1/medi
 
 </details>
 
-### 3. 美国联邦调查局称朝鲜是币安63亿美元被盗案幕后黑手
+### 3. 美国联邦调查局称朝鲜是币安63亿美元被盗案元凶
 
-美国联邦调查局表示，朝鲜应对加密货币交易所币安遭黑客盗取63亿美元一事负责，并将其归咎于朝鲜黑客组织TraderTraitor；该组织此前也被该局指为约15亿美元Bybit被盗案的幕后黑手。全球最大加密货币交易所币安11月1日表示将恢复此前因黑客攻击而暂停的提款，并称已弥补被盗损失，据报道弥补比例为90%或95%。
+美国联邦调查局表示，朝鲜黑客组织TraderTraitor应对币安63亿美元加密货币被盗案负责；该机构此前也将约15亿美元的Bybit被盗案归咎于这一组织。全球最大加密货币交易所币安11月1日表示，将在因黑客攻击暂停提币后恢复提币。此案被称为全球规模最大的数字资产盗窃案。
 
-Sources: [BBC News — World](https://www.bbc.co.uk/news/articles/ckpdg3ql4169o?at_campaign=rss&at_medium=RSS) (2026-10-31T22:11:45+00:00) · [Al Jazeera — all news](https://www.aljazeera.com/news/2026/11/1/fbi-blames-north-korea-for-record-6-3bn-crypto-heist?traffic_source=rss) (2026-11-01T02:28:38+00:00) · [France 24 — English](https://www.france24.com/en/business/20261101-binance-says-resuming-withdrawals-after-major-hack) (2026-11-01T07:01:49+00:00)
+Sources: [Al Jazeera — all news](https://www.aljazeera.com/news/2026/11/1/fbi-blames-north-korea-for-record-6-3bn-crypto-heist?traffic_source=rss) (2026-11-01T02:28:38+00:00) · [France 24 — English](https://www.france24.com/en/business/20261101-binance-says-resuming-withdrawals-after-major-hack) (2026-11-01T07:01:49+00:00) · [Bloomberg](https://www.bloomberg.com/news/articles/2026-10-31/fbi-blames-north-korea-for-6-billion-binance-crypto-hack) (2026-11-01T03:10:01+00:00)
 
 <details><summary>Support quotes, name renderings and checks</summary>
 
-- **headline** [s0] “The Federal Bureau of Investigation (FBI) says North Korea was responsible for the hack.”
 - **headline** [s1] “FBI blames North Korea for record $6.3bn crypto heist from Binance”
-- **what** [s0] “The Federal Bureau of Investigation (FBI) says North Korea was responsible for the hack.”
+- **what** [s3] “The FBI attributes the $6B+ Binance hack to North Korea's TraderTraitor hacking group, which the agency also previously blamed for the ~$1.5B Bybit hack”
 - **what** [s1] “FBI blames North Korea for record $6.3bn crypto heist from Binance”
-- **what** [s3] “North Korea's TraderTraitor hacking group, which the agency also previously blamed for the ~$1.5B Bybit hack”
-- **what** [s2] “biggest cryptocurrency exchange, on Sunday said it would resume withdrawals after a suspension due to a major hack”
-- **what** [s2] “The exchange said it covered 95% of the $6.3 billion in tokens stolen from its platform”
-- **what** [s1] “Binance says it has covered 90 percent of losses”
+- **what** [s2] “Binance, the world’s biggest cryptocurrency exchange, on Sunday said it would resume withdrawals after a suspension due to a major hack”
+- **what** [s2] “in the world's largest digital heist”
 - **brief** [s1] “FBI blames North Korea for record $6.3bn crypto heist from Binance”
-- **brief** [s2] “on Sunday said it would resume withdrawals after a suspension due to a major hack”
-- rendering 美国联邦调查局 = “Federal Bureau of Investigation” [s0]
-- rendering 朝鲜 = “North Korea” [s0]
+- **brief** [s2] “on Sunday said it would resume withdrawals”
+- rendering 美国联邦调查局 = “FBI” [s1]
+- rendering 朝鲜 = “North Korea” [s1]
 - rendering 币安 = “Binance” [s1]
 - validator: pass; verifier: pass; rewritten after fact-check: False; attempts: ok
 
@@ -144,7 +142,7 @@ Sources: [South China Morning Post — China](https://www.scmp.com/news/china/di
 今日新闻速览（截至北京时间2026年11月1日 20:00）
 · 刚果（金）埃博拉疫情死亡超5,000人，政府数据显示感染者已超过10,000人。
 · 伊朗称已与卡塔尔商定方案，若美方满足条件，可在两天内重开霍尔木兹海峡。
-· 美国联邦调查局称朝鲜黑客盗取币安63亿美元，币安11月1日宣布将恢复提款。
+· 美国联邦调查局称朝鲜应对币安63亿美元被盗案负责，币安11月1日称将恢复提币。
 · 鲁比奥10月31日称四方安全对话并非反华联盟，其领导人峰会将于11月在菲律宾举行。
 · 二十国集团外长会在亚特兰大闭幕，未就关键议题达成共识，鲁比奥呼吁加强供应链。
 完整新闻与来源：https://starhub.vip/history/news/2026-11-01/
@@ -157,6 +155,27 @@ Previews: `archive-mobile.png` (the dated archive page), `email-end.png` (the en
 - r1: 刚果民主共和国埃博拉疫情致逾5000人死亡 / 伊朗称与卡塔尔拟定两天内重开霍尔木兹海峡方案 / 美国联邦调查局称朝鲜应对币安63亿美元被盗负责 / 鲁比奥称四方安全对话并非反华联盟 / 二十国集团外长会在亚特兰大闭幕 未就关键议题达成共识
 - r2: 刚果（金）埃博拉疫情超过5,000人死亡 / 伊朗称与卡塔尔达成两天内重开霍尔木兹海峡方案 / 美国联邦调查局称朝鲜黑客盗取币安63亿美元 / 鲁比奥称四方安全对话并非“反华”联盟 / 联合国要求调查其工作人员在胡塞武装羁押期间死亡
 - r3: 刚果（金）埃博拉疫情死亡超5,000人 / 伊朗称若美方满足条件可两天内重开霍尔木兹海峡 / 美国联邦调查局称朝鲜是币安63亿美元被盗案幕后黑手 / 鲁比奥称四方安全对话并非“反华”联盟 / G20外长会在亚特兰大闭幕，未就关键议题达成共识
+- r4: 刚果（金）埃博拉疫情死亡超5,000人 / 伊朗称若美方满足条件可两天内重开霍尔木兹海峡 / 美国联邦调查局称朝鲜是币安63亿美元被盗案元凶 / 鲁比奥称四方安全对话并非“反华”联盟 / G20外长会在亚特兰大闭幕，未就关键议题达成共识
+
+## r4: item i3 revised by the model (revision of brief-zh-2026-11-01-r3)
+
+Instruction:
+
+> The sources give two different figures for the share of losses Binance covered: 90% (BBC News, published 2026-10-31 22:11 UTC: "Binance covers 90% of losses"; Al Jazeera, published 2026-11-01 02:28 UTC: "Binance says it has covered 90 percent of losses") and 95% (France 24, published 2026-11-01 07:01 UTC: "The exchange said it covered 95%").
+> No source says that 95% updates or replaces 90%, so do not merge them ("90%或95%") and do not present either as settled or as an update of the other.
+> Attribute each figure to the outlet that reported it and when (for example: BBC与半岛电视台此前报道称币安已弥补90%的损失；法国24台11月1日报道，币安当天称已弥补95%), or leave the percentage out if it is not needed.
+> Keep the rest of the item as it is where it is correct and supported; check every sentence against the quotes again.
+
+- headline
+  - before: 美国联邦调查局称朝鲜是币安63亿美元被盗案幕后黑手
+  - after: 美国联邦调查局称朝鲜是币安63亿美元被盗案元凶
+- what
+  - before: 美国联邦调查局表示，朝鲜应对加密货币交易所币安遭黑客盗取63亿美元一事负责，并将其归咎于朝鲜黑客组织TraderTraitor；该组织此前也被该局指为约15亿美元Bybit被盗案的幕后黑手。全球最大加密货币交易所币安11月1日表示将恢复此前因黑客攻击而暂停的提款，并称已弥补被盗损失，据报道弥补比例为90%或95%。
+  - after: 美国联邦调查局表示，朝鲜黑客组织TraderTraitor应对币安63亿美元加密货币被盗案负责；该机构此前也将约15亿美元的Bybit被盗案归咎于这一组织。全球最大加密货币交易所币安11月1日表示，将在因黑客攻击暂停提币后恢复提币。此案被称为全球规模最大的数字资产盗窃案。
+- brief_line
+  - before: 美国联邦调查局称朝鲜黑客盗取币安63亿美元，币安11月1日宣布将恢复提款。
+  - after: 美国联邦调查局称朝鲜应对币安63亿美元被盗案负责，币安11月1日称将恢复提币。
+- checks: validator pass; verifier pass; attempts 1; the other items are byte-identical to r3.
 
 ## Not chosen by the editor (current revision)
 
@@ -172,21 +191,23 @@ Previews: `archive-mobile.png` (the dated archive page), `email-end.png` (the en
 
 ## Differences between revisions (reviewer notes, not part of any brief)
 
-All three are separate automatic runs at the same cutoff on the same data, frozen as they came out. Nothing was
-edited by hand.
+All four are automatic, frozen as they came out, and kept. Nothing was edited by hand.
 
 - **r1 (`4290921`)**
-  - Its items: Ebola · Iran-Qatar plan to reopen Hormuz · FBI on the Binance theft · Rubio on the Quad · G20 in
-    Atlanta.
-  - It was built before the number fixes. With today's validator its text still holds: no fabricated figure.
-- **r2 (`7b65bca`, the number checks and run outcomes)**
-  - **Selection:** the editor replaced the G20 item with the death of a UN staff member in Houthi custody. Selection
-    by the model can vary between runs.
-  - **New figure rules:** two first drafts were refused, for "一次" and "一名" read as figures, and the retries passed.
-  - **Defect:** item 4 says "下月在菲律宾举行的领导人峰会". The source is dated 10-31, so its "next month" means
-    November, but on 11-01 "下月" reads as December. The verifier did not catch it. That is why there is an r3.
+  - Items: Ebola · Iran-Qatar plan to reopen Hormuz · FBI on the Binance theft · Rubio on the Quad · G20 in Atlanta.
+- **r2 (`7b65bca`, number checks and run outcomes)**
+  - **Selection:** the editor swapped the G20 item for a UN staff member's death in Houthi custody. Selection by the
+    model varies between runs.
+  - **Defect:** item 4 wrote "下月在菲律宾…". The source is dated 10-31, so its "next month" means November, but on
+    11-01 "下月" reads as December. That is why there is an r3.
 - **r3 (`1dc708e`, relative time words resolved against the source's own date)**
-  - Item 4 now says "10月31日在记者会上……为11月在菲律宾举行的领导人峰会".
-  - The G20 item is back.
-  - A first draft was refused for "二十国集团" read as the figure 20. That is a false refusal, fixed afterwards in
-    `eff2e35`, which needs no new run because r3's text is unaffected.
+  - Item 4 now reads "10月31日……11月在菲律宾"; the G20 item is back.
+  - **Item 3's percentages:** it said "据报道弥补比例为90%或95%", merging two figures without their attribution.
+    - BBC (10-31 22:11 UTC) and Al Jazeera (11-01 02:28 UTC) reported 90%.
+    - France 24 (11-01 07:01 UTC) reported that Binance said 95%.
+    - No source says 95% updates 90%.
+- **r4 (item revision of r3, code `12ad330`)**
+  - The model revised item 3 only, with the instruction above, and went through the validator and the verifier
+    again; it passed on the first attempt.
+  - It chose to leave the percentages out, one of the two options the instruction allowed.
+  - Items 1, 2, 4 and 5 are byte-identical to r3.

@@ -23,6 +23,7 @@ from news_intel.models import EventEnrichment
 from tests.conftest import insert_source_row
 
 ED = edition_for(date(2026, 11, 1))  # cutoff 2026-11-01 20:00 +08:00 = 12:00 UTC
+IN_WINDOW = ED.cutoff_utc + timedelta(minutes=10)
 
 
 # --- schedule -----------------------------------------------------------------------------------------------------
@@ -269,14 +270,14 @@ def test_telegram_send_is_from_the_frozen_snapshot_and_never_retries_an_attempte
         return tgmod.SendResult(kw["idempotency_key"], False, ["1"], kw["dry_run"])
 
     monkeypatch.setattr(tgmod.TelegramSender, "send", fake_send)
-    dry = job.send_telegram(conn, config, snap, chat_id=555, dry_run=True)
+    dry = job.send_telegram(conn, config, snap, chat_id=555, dry_run=True, now=IN_WINDOW)
     assert dry["dry_run"] and dry["idempotency_key"].startswith("brief:zh_cn:2026-11-01:")
     assert sent[0]["text"] == R.telegram_html(snap)
-    real = job.send_telegram(conn, config, snap, chat_id=555, dry_run=False)
+    real = job.send_telegram(conn, config, snap, chat_id=555, dry_run=False, now=IN_WINDOW)
     assert real["sent"] is True
-    again = job.send_telegram(conn, config, snap, chat_id=555, dry_run=False)
+    again = job.send_telegram(conn, config, snap, chat_id=555, dry_run=False, now=IN_WINDOW)
     assert again["sent"] is False and "already attempted" in again["reason"]
-    assert job.send_telegram(conn, config, {**snap, "status": "empty"}, chat_id=555)["sent"] is False
+    assert job.send_telegram(conn, config, {**snap, "status": "empty"}, chat_id=555, now=IN_WINDOW)["sent"] is False
 
 
 def test_a_reserve_on_a_topic_already_in_the_brief_is_skipped(config, conn):
@@ -459,3 +460,21 @@ def test_a_revision_that_fails_its_checks_freezes_nothing(config, conn, tmp_path
     out = job.revise_item(conn, config, ED, provider=bad, export_dir=tmp_path / "brief", item_id="i1", feedback=["x"])
     assert out["result"] == "revision_refused" and Path(out["evidence"]).exists()
     assert S.current(tmp_path / "brief", "2026-11-01")["snapshot_id"] == "brief-zh-2026-11-01-r1"
+
+
+def test_telegram_send_window_cutoff_to_three_hours_after(config, conn, tmp_path, monkeypatch):
+    from news_intel.delivery import telegram as tgmod
+
+    _seed_three(conn)
+    cands, _ = build_pool(conn, config, ED)
+    snap = _build(config, conn, tmp_path, Fake(editor=_editor_all(cands)))["snapshot"]
+    config.secrets.telegram_allowed_chat_ids = "555"
+
+    async def fake_send(self, conn, **kw):
+        return tgmod.SendResult(kw["idempotency_key"], False, ["1"], kw["dry_run"])
+
+    monkeypatch.setattr(tgmod.TelegramSender, "send", fake_send)
+    late_build = ED.cutoff_utc + timedelta(minutes=80)  # a 20:50 last attempt that finished at 21:20 Beijing
+    assert job.send_telegram(conn, config, snap, chat_id=555, dry_run=False, now=late_build)["sent"] is True
+    stale = job.send_telegram(conn, config, snap, chat_id=556, dry_run=True, now=ED.cutoff_utc + timedelta(hours=4))
+    assert stale["sent"] is False and "outside the send window" in stale["reason"]

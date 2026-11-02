@@ -299,6 +299,23 @@ body.
 - With main `2db35f5`'s layout, the 胡适 email's HTML is 36.3 KB with the digest and 35.1 KB without it.
 - The `.eml` (text part and transfer encoding included) is 100.6 KB and 97.1 KB.
 
+## Second review round (2026-11-02)
+
+| Issue | Fix | Commit |
+|---|---|---|
+| A casualty class was read only after the figure, and an unknown class matched anything ("injured 9,999" supported "九千九百九十九人死亡"; "14, officials say" supported "14人死亡") | The class is read after or before the figure, and a stated class needs the same known class on the quoted figure | b64119c |
+| 一名/一位 was "proved" by any a/an/一 in the quotes | 一人/一名/一位 is a head count of one: it needs one person bound to a person noun ("a businesswoman", "an official", 一名, 1人) | b64119c |
+| 千人 / 百人 / 千万元 were skipped as magnitude-led | Read as figures; only a magnitude right after an Arabic figure (9143亿) is left to the Arabic reading | b64119c |
+| Binance item: "据报道弥补比例为90%或95%" | `revise-item`: the model revised that item only, with the sources' timing and attribution as the instruction, fully re-checked; it left the percentages out. r4 is frozen; r3 and the other items are unchanged | 12ad330 |
+| The 20:50 last attempt can end after a fixed 21:00 Telegram send | The send follows each successful build (OnSuccess drop-in, installed only at step G), is idempotent per edition, and refuses after cutoff + 3 h. The 21:00 timer is removed | this round |
+
+**Real-data regression.** All 29 items of the frozen briefs were re-checked with the new validator: the three replays,
+and 11-01 r1 to r3. Their evidence was rebuilt from the databases at each cutoff, and every package was identical to
+the frozen evidence. All 29 pass. The first cut of the fix had refused three correct texts, fixed in b64119c:
+- "近三十年来" for "three decades";
+- "70年代" for "the 1970s";
+- 一 with a non-person measure word (一次罕见的停火) read as a figure; it is the article.
+
 ## What a replay can and cannot recover
 
 **A replay is not a strict historical as-of reconstruction.** The database keeps no history of edits, so these
