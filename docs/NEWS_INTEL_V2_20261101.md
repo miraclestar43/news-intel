@@ -266,11 +266,38 @@ read-only.
 - **Operations:**
   - **One shared login.** `CLAUDE_CONFIG_DIR` is the history-in-practice login, which expires about 11-29. Its
     concurrent use with hip's nightly jobs was not stress-tested.
-  - **Email size.** The email with the digest is 95,969 B, below Gmail's 102 KB clip but close.
+  - **Email size:** the HTML body is 36.3 KB with the digest, far below Gmail's ~102 KB HTML clip. The earlier
+    comparison used the `.eml` size, which counts the text part and the transfer encoding.
   - **A clock-dependent test.** `tests/unit/test_cli_edition_wiring.py::test_production_weekly_reports_edition_on_late_catchup_skip`
     fails on a Sunday inside the weekly slot, on `main` too.
   - **The fallback floor.** For a zh story with only English sources it prints English text. The brief never shows
     the floor; the zh daily still can.
+
+## Review fixes (2026-11-02)
+
+**Source:** issues reproduced by ChatGPT on news-intel `bded4f4` and history-in-practice `a1eb527`.
+
+| Issue | Fix | Commit |
+|---|---|---|
+| "地震造成2026人死亡" passed: any 1900-2099 figure was skipped as a year | Years only in a year context (2026年, 2027财年, in/since/fiscal 2026, "Oct 31, 2026", the 1970s), and they must be quoted or be a source's own year. Elsewhere the figure is checked as a count. | 8eec56c |
+| "九千九百九十九人死亡" passed: Chinese numerals were never read | A Chinese numeral before a measure word or unit, or after 百分之, is a figure (两, 十余, 三成 = 30%, 百分之五, 三点五). An unreadable one (三四百人) is refused. Durations, vague quantities (数千 = thousands) and English number words are covered too. | 8eec56c |
+| A true figure of another claim in the same quote (9,999 injured written as deaths) | A casualty figure keeps its class (dead / injured / infected / missing / arrested / evacuated), in zh and en | 37e8bc3 |
+| A usage-limit failure froze an "empty" edition and returned success; the 20:50 retry reused it | Run outcomes: complete, no_qualifying_news, or technical. A technical failure freezes nothing before the last attempt: evidence goes to `attempts/`, exit 75, and the retry builds. The last attempt publishes the verified items as degraded (exit 3), or nothing (exit 1). | 7b65bca |
+| freeze() published before rendering, so a crash left an edition without an archive page forever | Commit order: the read-only snapshot, then the renderings (read back), then `current.json`. A later run completes or repairs from the frozen file; the text hash never changes. Fault-injection tested. | 7b65bca |
+| Relative time words (r2: "下月" from a 10-31 source) | Resolved against the source's own date, by both the writer and the verifier | 1dc708e |
+| "二十国集团" read as the figure 20 | A numeral before 国集团 is a group name | eff2e35 |
+
+**The latest brief now** (`docs/review/brief-2026-11-01/`):
+- r3 is current: `83c2e2bc76e03d8c472c0a351ff0e8d88433e9512295075ce496f45384d01585`, code `1dc708e`, complete,
+  5 items, 742 字, 13 calls, 194 s.
+- r1 and r2 are kept beside it.
+- The pack has the frozen JSON with the support quotes and checks, the Telegram text, the archive page, the digest,
+  two previews, and the differences between revisions.
+
+**Email size, corrected.** An earlier note compared the `.eml` size with Gmail's clip. The clip applies to the HTML
+body.
+- With main `2db35f5`'s layout, the 胡适 email's HTML is 36.3 KB with the digest and 35.1 KB without it.
+- The `.eml` (text part and transfer encoding included) is 100.6 KB and 97.1 KB.
 
 ## What a replay can and cannot recover
 

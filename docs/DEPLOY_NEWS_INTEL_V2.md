@@ -91,14 +91,23 @@ The database is about 106 MB, a short copy.
 **New job.** `pi-news-brief`:
 - reads the database and writes only its own `job_runs` row and lock;
 - writes `data/exports/brief/<date>/`, about 30 KB per day;
-- at about 25 Claude CLI calls per edition, it took 260-320 s in replays.
+- at 13-25 Claude CLI calls per edition, it took 150-400 s in replays.
+- **Exit codes** (the unit shows as failed on any non-zero code, which is intended):
+  - 0: built / reused / completed;
+  - 75: retry_later, a technical failure before the 20:50 last attempt. Nothing is frozen; the evidence goes to
+    `exports/brief/<date>/attempts/`.
+  - 3: built_degraded, the last attempt published fewer verified items;
+  - 1: failed, nothing published; the newsletter goes out without news.
+- **Before relying on a day's brief,** check `journalctl --user -u pi-news-brief` and `<date>/current.json`.
 
 **Telegram.** Nothing new is sent until step G.
 - With step G, the chat gets the brief at 21:00 Beijing.
 - `pi-news-daily-zh.timer` still sends the old zh daily at 07:00 Los Angeles, which is 23:00 Beijing now that US DST has ended. Recommendation: disable it once the brief is on Telegram. The two overlap and the old one is tech-only.
 
 **Newsletter (step F).** The 22:08 email:
-- ends with the digest, which comes from the frozen brief bound at the site step;
+- ends with the digest, which comes from the frozen brief bound once, durably, at the site step. The email step and
+  `hip send --real` only read that binding; no binding means no news, so a retry can never add news later;
+- binds only an archive page whose meta snapshot_id and text_sha256 equal the bound brief's;
 - adds `history/news/<date>/index.html` to the site commit, the page the digest links to;
 - goes out with the story only, with the reason in the publish report, when news is missing, stale, damaged or unqualified.
 
