@@ -372,3 +372,11 @@ def test_english_number_words_count_both_ways():
     assert [c.value for c in numeric_claims("within two days", source=True)] == [2.0]
     assert [c.value for c in numeric_claims("twenty-five people")] == [25.0]
     assert numeric_claims("one of the largest") == []  # the article, in written text
+
+
+def test_group_names_with_numerals_are_names_not_figures():
+    from news_intel.pipeline.editorial_validation import numeric_claims
+
+    assert numeric_claims("二十国集团外长会议在亚特兰大闭幕") == []
+    assert numeric_claims("七国集团峰会") == []
+    assert [c.value for c in numeric_claims("二十国参加会议")] == [20.0]  # a count of countries stays a figure

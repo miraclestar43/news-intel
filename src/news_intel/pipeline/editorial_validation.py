@@ -402,6 +402,8 @@ def _cn_claims(text: str, problems: list[str] | None) -> list[NumberClaim]:
         if re.match(r"[\d.,]", prev) or token[0] in "百千万亿":
             continue  # 9143亿元: the magnitude of an Arabic figure, read by number_claims
         tail = text[end : end + 3]
+        if tail.startswith("国集团"):
+            continue  # 二十国集团 / 七国集团: a name (11-01 r3 refused '二十国集团' as the figure 20)
         unit_word = next((c for c in _CN_CLASSIFIERS if tail.startswith(c)), None)
         if not (pct or unit_word):
             continue
