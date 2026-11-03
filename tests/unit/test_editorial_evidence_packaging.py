@@ -45,12 +45,12 @@ def test_validate_enrichment_accepts_a_bare_magnitude_number_from_source_text():
     fact_ids = [f.id for f in evidence.facts]
     e = EventEnrichment(
         event_id="E-1", category="US / China / World", english_headline="Alibaba share offering",
-        what_happened="Alibaba plans to offer 710,000,000 shares to fund AI investments.",
-        why_it_matters="The offering funds Alibaba's continued AI infrastructure investment.",
+        what_happened="Alibaba plans to offer 710,000,000 shares.",
         chinese_headline="阿里巴巴计划配股", chinese_what_happened="阿里巴巴计划发行7.1亿股股票。",
-        chinese_takeaway="此次配股旨在为阿里巴巴的AI投资提供资金支持。",
         significance_proposal=60, market_impact_proposal=50,
         supporting_source_ids=["s0"], cited_fact_ids=fact_ids, entities=["Alibaba"],
+        support={"headline": [{"source_id": "s0", "quote": "Alibaba plans a follow-on share offering"}],
+                 "what": [{"source_id": "s0", "quote": "Alibaba plans to offer 710M shares"}]},
     )
     result = validate_enrichment(e, evidence)
     assert result.ok, result.reasons
@@ -85,12 +85,15 @@ def test_validate_enrichment_accepts_english_bank_name_from_chinese_source():
     fact_ids = [f.id for f in evidence.facts]
     e = EventEnrichment(
         event_id="E-2", category="Markets & Economy", english_headline="SHEIN launches global offering",
-        what_happened="SHEIN has launched its global share offering.",
-        why_it_matters="Goldman Sachs, Morgan Stanley, and JPMorgan are joint sponsors of the offering.",
-        chinese_headline="希音启动全球发售", chinese_what_happened="希音正式开启全球发售。",
-        chinese_takeaway="高盛、摩根士丹利及摩根大通担任联席保荐人。",
+        what_happened="SHEIN has launched its global share offering, with Goldman Sachs, Morgan Stanley and JPMorgan "
+        "as joint sponsors.",
+        chinese_headline="希音启动全球发售",
+        chinese_what_happened="希音正式开启全球发售，高盛、摩根士丹利及摩根大通担任联席保荐人。",
         significance_proposal=55, market_impact_proposal=45,
         supporting_source_ids=["s0"], cited_fact_ids=fact_ids, entities=["希音", "Goldman Sachs"],
+        support={"headline": [{"source_id": "s0", "quote": "希音启动全球发售"}],
+                 "what": [{"source_id": "s0", "quote": "希音正式开启全球发售"},
+                          {"source_id": "s0", "quote": "高盛、摩根士丹利及摩根大通担任联席保荐人"}]},
     )
     result = validate_enrichment(e, evidence)
     assert result.ok, result.reasons

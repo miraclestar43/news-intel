@@ -159,8 +159,8 @@ def collect(dry_run: bool = typer.Option(True, help="Preview only; roll back all
     config, conn = _load()
     try:
         if dry_run:
-            with db.rollback_only(conn):
-                summary = run_collect(config, conn)
+            with db.private_copy(conn) as preview:
+                summary = run_collect(config, preview)
         else:
             summary = run_collect(config, conn)
     finally:
@@ -197,8 +197,8 @@ def digest_daily(
     config, conn = _load()
     try:
         if dry_run:
-            with db.rollback_only(conn):
-                summary = run_daily(config, conn, chat_id=chat_id, dry_run=True, edition_id=edition)
+            with db.private_copy(conn) as preview:
+                summary = run_daily(config, preview, chat_id=chat_id, dry_run=True, edition_id=edition)
         else:
             summary = run_daily(config, conn, chat_id=chat_id, dry_run=False, edition_id=edition)
     finally:
@@ -222,8 +222,8 @@ def digest_weekly(
     config, conn = _load()
     try:
         if dry_run:
-            with db.rollback_only(conn):
-                summary = run_weekly(config, conn, chat_id=chat_id, dry_run=True, edition_id=edition)
+            with db.private_copy(conn) as preview:
+                summary = run_weekly(config, preview, chat_id=chat_id, dry_run=True, edition_id=edition)
         else:
             summary = run_weekly(config, conn, chat_id=chat_id, dry_run=False, edition_id=edition)
     finally:
@@ -253,8 +253,8 @@ def digest_monthly(
     config, conn = _load()
     try:
         if dry_run:
-            with db.rollback_only(conn):
-                summary = run_monthly(config, conn, chat_id=chat_id, dry_run=True, edition_id=edition)
+            with db.private_copy(conn) as preview:
+                summary = run_monthly(config, preview, chat_id=chat_id, dry_run=True, edition_id=edition)
         else:
             summary = run_monthly(config, conn, chat_id=chat_id, dry_run=False, edition_id=edition)
     finally:
@@ -287,8 +287,8 @@ def alerts_check(
     config, conn = _load()
     try:
         if dry_run:
-            with db.rollback_only(conn):
-                results = run_alert_check(config, conn)
+            with db.private_copy(conn) as preview:
+                results = run_alert_check(config, preview)
         else:
             results = run_alert_check(config, conn)
     finally:
@@ -309,8 +309,8 @@ def alerts_release_held(
     config, conn = _load()
     try:
         if dry_run:
-            with db.rollback_only(conn):
-                result = release_held_alerts(config, conn)
+            with db.private_copy(conn) as preview:
+                result = release_held_alerts(config, preview)
         else:
             result = release_held_alerts(config, conn)
     finally:

@@ -39,3 +39,25 @@ def test_bbc_world_and_china_sources_present_and_enabled(config):
     assert by_id["bbc_world"].adapter == "rss"
     assert by_id["bbc_china"].enabled is True
     assert by_id["bbc_china"].adapter == "rss"
+
+
+def test_general_news_sources_added_2026_11_01(config):
+    """news-intel v2: both editions get general China/world feeds (live-verified 2026-11-01)."""
+    by_id = {s.id: s for s in config.sources.sources}
+    zh = {"chinanews_china", "chinanews_world", "bbc_zhongwen", "rfi_cn", "dw_chinese"}
+    en = {"guardian_world", "aljazeera_all", "france24_en", "scmp_china"}
+    for sid in zh | en:
+        assert by_id[sid].enabled and by_id[sid].adapter == "rss" and by_id[sid].tier == 1
+    assert all(by_id[s].editions == ["zh_cn"] for s in zh)
+    assert all(by_id[s].editions == ["en_global"] for s in en)
+
+
+def test_a_second_edition_on_one_source_is_rejected_not_ignored():
+    import pytest
+
+    from news_intel.settings import SourcesConfig
+
+    with pytest.raises(ValueError, match="exactly one edition"):
+        SourcesConfig.model_validate(
+            {"sources": [{"id": "x", "name": "x", "adapter": "rss", "tier": 1, "editions": ["en_global", "zh_cn"]}]}
+        )

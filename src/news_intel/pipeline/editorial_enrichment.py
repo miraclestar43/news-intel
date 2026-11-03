@@ -77,6 +77,10 @@ def build_bounded_provider(config):
     matching NullProvider's trigger condition, so enrich_story() falls
     straight to the source-grounded floor."""
     secrets = config.secrets
+    if secrets.llm_provider == "claude_cli":            # 2026-11-01: Claude Code CLI, subscription (llm/claude_cli.py)
+        from news_intel.llm.provider import _claude
+
+        return _claude(secrets, _HERMES_CLI_STORY_TIMEOUT_SECONDS)
     if secrets.llm_provider == "hermes_cli":
         if not secrets.hermes_bin:
             return None
@@ -119,6 +123,16 @@ class EditorialResult:
     fallback_reason: str | None = None
     latency_ms: float | None = None
     retry_count: int = 0
+    # 2026-11-01 (news-intel v2): the rest of a validated enrichment, for the brief and its frozen snapshot.
+    english_headline: str | None = None
+    chinese_headline: str | None = None
+    why_kind: str | None = None
+    chinese_brief_line: str | None = None
+    support: dict | None = None
+    name_renderings: list[dict] | None = None  # [{"zh", "source_name", "source_id"}]
+    sources: list[dict] | None = None  # the evidence sources offered (ids s0.. that support quotes refer to)
+    # one record per provider attempt: {"latency_ms", "ok", "reasons" | "error"}
+    attempts: list[dict] | None = None
 
 
 def _source_grounded_fallback(primary: dict, secondary: dict | None, reason: str) -> EditorialResult:
@@ -138,10 +152,16 @@ def _source_grounded_fallback(primary: dict, secondary: dict | None, reason: str
     )
 
 
+# A provider call is not started with less time than this left before the run deadline (2026-11-01: measured
+# claude-opus-5-5 CLI calls on real evidence packets took 9-30 s each).
+MIN_CALL_SECONDS = 20.0
+
+
 def enrich_story(
     primary: dict, secondary: dict | None, category: str, entities: list[str] | None,
     *, edition_id: str = "en_global", update_note: str | None = None, provider=None,
-    deadline: float | None = None,
+    deadline: float | None = None, related: list[dict] | None = None, reference_time=None,
+    feedback: list[str] | None = None,
 ) -> EditorialResult:
     """`provider` is injected (never constructed here from config) so
     callers control exactly what -- if anything -- this can reach; tests
@@ -158,28 +178,40 @@ def enrich_story(
         return _source_grounded_fallback(primary, secondary, "editorial run budget exhausted")
 
     evidence = build_event_input(
-        primary, secondary, category, entities, edition_id=edition_id, update_note=update_note
+        primary, secondary, category, entities, edition_id=edition_id, update_note=update_note, related=related,
+        reference_time=reference_time,
     )
 
     start = time.monotonic()
-    last_reasons: list[str] = []
+    # `feedback`: problems an independent check (the brief's verifier) found in an earlier accepted version; the
+    # first attempt then already carries them as its RETRY instruction.
+    last_reasons: list[str] = list(feedback or [])
     retry_count = 0
+    attempts: list[dict] = []
     for _attempt in range(2):  # one original attempt + one validation-error-guided retry
-        # A validation-guided retry costs another full provider timeout;
-        # skip it (keeping the already-collected rejection reasons) once
-        # the whole-run budget is gone, rather than overrunning the job.
-        if _attempt > 0 and deadline is not None and time.monotonic() >= deadline:
+        # A call is only started with enough of the run budget left to finish it (MIN_CALL_SECONDS); the provider's
+        # own timeout (and its JSON-repair retry) is shrunk to what remains, so the run deadline really bounds the
+        # job and a retry is skipped, with its reasons kept, rather than overrunning.
+        if deadline is not None and deadline - time.monotonic() < MIN_CALL_SECONDS:
+            if _attempt == 0:
+                return _source_grounded_fallback(primary, secondary, "editorial run budget exhausted")
             break
+        t0 = time.monotonic()
         try:
-            enrichment = _call_provider_bounded(provider, evidence, last_reasons)
+            enrichment = _call_provider_bounded(provider, evidence, last_reasons, deadline=deadline)
         except LLMUnavailableError as exc:
+            attempts.append({"latency_ms": round((time.monotonic() - t0) * 1000), "ok": False, "error": str(exc)[:300]})
             latency_ms = (time.monotonic() - start) * 1000
             result = _source_grounded_fallback(primary, secondary, f"provider unavailable: {exc}")
             result.latency_ms = latency_ms
             result.retry_count = retry_count
+            result.attempts = attempts
+            result.model_used = getattr(provider, "model", None)
             return result
 
         validation = validate_enrichment(enrichment, evidence)
+        attempts.append({"latency_ms": round((time.monotonic() - t0) * 1000), "ok": validation.ok,
+                         "reasons": validation.reasons[:20]})
         if validation.ok:
             latency_ms = (time.monotonic() - start) * 1000
             # canonical plain text (pipeline/text.py): the renderer escapes once
@@ -194,6 +226,14 @@ def enrich_story(
                 validated=True,
                 latency_ms=latency_ms,
                 retry_count=retry_count,
+                english_headline=canonical_text(enrichment.english_headline),
+                chinese_headline=canonical_text(enrichment.chinese_headline),
+                why_kind=enrichment.why_kind or None,
+                chinese_brief_line=canonical_text(enrichment.chinese_brief_line),
+                support={k: [q.model_dump() for q in v] for k, v in enrichment.support.items()},
+                name_renderings=[r.model_dump() for r in enrichment.name_renderings],
+                sources=evidence.sources,
+                attempts=attempts,
             )
         last_reasons = validation.reasons
         retry_count += 1
@@ -205,10 +245,13 @@ def enrich_story(
     result.model_used = getattr(provider, "model", None)
     result.latency_ms = latency_ms
     result.retry_count = retry_count
+    result.attempts = attempts
     return result
 
 
-def _call_provider_bounded(provider, evidence: EventInput, prior_errors: list[str]) -> EventEnrichment:
+def _call_provider_bounded(
+    provider, evidence: EventInput, prior_errors: list[str], *, deadline: float | None = None
+) -> EventEnrichment:
     """A single enrich_events() call for exactly one event -- bounded input
     (one event, its own sources only), a strict timeout enforced by the
     provider's own httpx.Client(timeout=...) (see OpenAICompatibleProvider),
@@ -216,15 +259,15 @@ def _call_provider_bounded(provider, evidence: EventInput, prior_errors: list[st
     self-correct within the SAME contract rather than being asked to
     guess differently."""
     if prior_errors:
-        # A validation-guided retry: mutate a copy of the sources list to
-        # append a final, clearly-delimited correction instruction as an
-        # extra source-less directive -- never edits article text itself.
-        evidence = evidence.model_copy(
-            update={
-                "candidate_title": evidence.candidate_title
-                + " [PRIOR ATTEMPT REJECTED: " + "; ".join(prior_errors)[:400] + "]"
-            }
-        )
+        # A validation-guided retry: the rejection reasons go in their own field, rendered by the prompt as an
+        # explicit RETRY instruction (llm/prompt_build.render_retry_block). Source text is never edited. (Until
+        # 2026-11-01 they were appended to candidate_title, which the prompt never rendered.)
+        evidence = evidence.model_copy(update={"retry_feedback": list(prior_errors)})
+    # Bound this call (and the provider's own JSON-repair retry) by the run deadline.
+    cap = getattr(provider, "timeout", None)
+    if deadline is not None and cap is not None:
+        provider.timeout = max(1.0, min(cap, deadline - time.monotonic()))
+        provider.call_deadline = deadline
     # 2026-08-25 repair: real live-model replay crash -- a real Hermes/MiMo
     # response was syntactically valid JSON (so the provider's own internal
     # invalid-JSON retry never triggered) but missing several required
@@ -240,6 +283,9 @@ def _call_provider_bounded(provider, evidence: EventInput, prior_errors: list[st
         results = provider.enrich_events([evidence])
     except (ValidationError, KeyError, TypeError) as exc:
         raise LLMUnavailableError(f"provider returned a malformed enrichment: {exc}") from exc
+    finally:
+        if deadline is not None and cap is not None:
+            provider.timeout = cap
     if not results:
         raise LLMUnavailableError("provider returned no enrichment")
     return results[0]

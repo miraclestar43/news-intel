@@ -28,27 +28,35 @@ def _primary(title="Starcloud raises $250 million for orbital data centers", exc
     }
 
 
+_SUPPORT = {
+    # 2026-11-01 contract: every written field group rests on verbatim quotes of an offered source
+    "headline": [{"source_id": "s0", "quote": "Starcloud, a startup developing satellites"},
+                 {"source_id": "s0", "quote": "raised $250 million"}],
+    "what": [{"source_id": "s0", "quote": "Starcloud, a startup developing satellites that can perform AI inference"},
+             {"source_id": "s0", "quote": "raised $250 million"}],
+}
+
+
 def _good_enrichment(evidence: EventInput) -> EventEnrichment:
     fact_ids = [f.id for f in evidence.facts]
     return EventEnrichment(
         event_id=evidence.event_id, category=evidence.category_candidates[0] if evidence.category_candidates else "",
         english_headline="Starcloud raises $250M for orbital AI inference.",
         what_happened="Starcloud raised $250 million to expand orbital AI data centers.",
-        why_it_matters=(
-            "The funding extends Starcloud's runway for orbital AI inference amid constrained launch capacity."
-        ),
+        # no source states a consequence, so there is no why line (2026-11-01: why is written only with evidence)
+        why_it_matters="",
         chinese_headline="Starcloud融资2.5亿美元",
         chinese_what_happened="Starcloud获得2.5亿美元融资，用于扩建轨道AI数据中心。",
-        chinese_takeaway="Starcloud获得2.5亿美元融资，用于轨道AI数据中心扩张。",
+        chinese_takeaway="",
         significance_proposal=70, market_impact_proposal=50,
         supporting_source_ids=[s["id"] for s in evidence.sources], cited_fact_ids=fact_ids,
-        entities=["Starcloud"],
+        entities=["Starcloud"], support=_SUPPORT,
     )
 
 
 def _bad_enrichment_unsupported_number(evidence: EventInput) -> EventEnrichment:
     e = _good_enrichment(evidence)
-    return e.model_copy(update={"why_it_matters": "NVIDIA acquired Starcloud for $9 billion in cash."})
+    return e.model_copy(update={"what_happened": "NVIDIA acquired Starcloud for $9 billion in cash."})
 
 
 def _bad_enrichment_unsupported_name(evidence: EventInput) -> EventEnrichment:
@@ -59,7 +67,7 @@ def _bad_enrichment_unsupported_name(evidence: EventInput) -> EventEnrichment:
 def _bad_enrichment_generic(evidence: EventInput) -> EventEnrichment:
     e = _good_enrichment(evidence)
     return e.model_copy(update={
-        "why_it_matters": "This development involving Starcloud ranks among today's most material developments.",
+        "what_happened": "This development involving Starcloud ranks among today's most material developments.",
     })
 
 
@@ -143,12 +151,16 @@ def test_validate_enrichment_rejects_banned_generic_language():
     assert any("banned generic phrase" in r for r in result.reasons)
 
 
-def test_validate_enrichment_rejects_empty_cited_facts():
+def test_validate_enrichment_rejects_a_field_without_support_quotes():
+    """2026-11-01: per-field verbatim quotes replace the bare 'cite at least one fact id' check."""
     evidence = build_event_input(_primary(), None, "AI & Semiconductors", ["Starcloud"], edition_id="en_global")
-    e = _good_enrichment(evidence).model_copy(update={"cited_fact_ids": []})
+    e = EventEnrichment(**{**_good_enrichment(evidence).model_dump(), "support": {"headline": _SUPPORT["headline"]}})
     result = validate_enrichment(e, evidence)
     assert not result.ok
-    assert any("cited_fact_ids is empty" in r for r in result.reasons)
+    assert any("support['what'] is empty" in r for r in result.reasons)
+    # an empty cited_fact_ids is no longer an error by itself
+    ok = validate_enrichment(_good_enrichment(evidence).model_copy(update={"cited_fact_ids": []}), evidence)
+    assert ok.ok, ok.reasons
 
 
 def test_validate_enrichment_rejects_fabricated_fact_reference():
@@ -191,10 +203,31 @@ def test_validate_enrichment_requires_hedge_when_uncertainty_flagged():
         significance_proposal=80, market_impact_proposal=60,
         supporting_source_ids=[s["id"] for s in evidence.sources], cited_fact_ids=[f.id for f in evidence.facts],
         entities=["Anthropic"],
+        support={g: [{"source_id": "s0", "quote": "the company could value it at $2 trillion"}]
+                 for g in ("headline", "what", "why")},
+        why_kind="reported",
     )
     result = validate_enrichment(e, evidence)
     assert not result.ok
     assert any("prospective" in r for r in result.reasons)
+
+
+def test_a_hedge_is_required_only_where_the_quoted_claim_is_unconfirmed():
+    """2026-11-01: a settled figure quoted from an article that ALSO speculates elsewhere needs no hedge."""
+    primary = _primary(
+        title="Microsoft Q1 revenue rises 19% to $92.3 billion",
+        excerpt="Microsoft reported revenue of $92.3 billion, up 19%. Analysts said demand could slow next year.",
+    )
+    evidence = build_event_input(primary, None, "AI & Semiconductors", ["Microsoft"], edition_id="en_global")
+    assert any(f.kind == "uncertainty" for f in evidence.facts)  # the article does speculate
+    settled = [{"source_id": "s0", "quote": "Microsoft reported revenue of $92.3 billion, up 19%"}]
+    e = EventEnrichment(
+        event_id="E-1", category="AI & Semiconductors", english_headline="Microsoft revenue rises 19% to $92.3 billion",
+        what_happened="Microsoft reported revenue of $92.3 billion, up 19%.", supporting_source_ids=["s0"],
+        support={"headline": settled, "what": settled},
+    )
+    r = validate_enrichment(e, evidence)
+    assert r.ok, r.reasons
 
 
 # --- editorial_enrichment orchestration -----------------------------------
@@ -231,8 +264,18 @@ def test_enrich_story_retries_once_with_validation_errors_then_succeeds():
     assert result.source == "llm_validated"
     assert result.retry_count == 1
     assert len(provider.calls) == 2
-    # the retry prompt carries the rejection reason forward
-    assert "PRIOR ATTEMPT REJECTED" in provider.calls[1].candidate_title
+    # 2026-11-01: the rejection reasons reach the model as an explicit RETRY instruction in the rendered prompt
+    # (they used to be appended to candidate_title, which the prompt never rendered); the sources are unchanged
+    from news_intel.llm.prompt_build import build_enrich_event_prompt
+
+    assert provider.calls[0].retry_feedback == []
+    assert any("banned generic phrase" in r for r in provider.calls[1].retry_feedback)
+    assert provider.calls[1].sources == provider.calls[0].sources
+    assert provider.calls[1].candidate_title == provider.calls[0].candidate_title
+    retry_prompt = build_enrich_event_prompt(provider.calls[1])
+    assert "RETRY: your previous answer" in retry_prompt and "banned generic phrase" in retry_prompt
+    assert "RETRY:" not in build_enrich_event_prompt(provider.calls[0])
+    assert [a["ok"] for a in result.attempts] == [False, True]
 
 
 def test_enrich_story_falls_back_after_repeated_invalid_output():

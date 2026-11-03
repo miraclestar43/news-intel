@@ -1,0 +1,1299 @@
+{
+ "schema": "news-intel/brief-v1",
+ "snapshot_id": "brief-zh-2026-11-01-r2",
+ "revision": 2,
+ "language": "zh",
+ "edition_date": "2026-11-01",
+ "timezone": "Asia/Shanghai",
+ "cutoff": "2026-11-01T20:00:00+08:00",
+ "window": {
+  "start": "2026-10-31T20:00:00+08:00",
+  "end": "2026-11-01T20:00:00+08:00",
+  "hours": 24
+ },
+ "generated_at": "2026-11-02T12:13:02+08:00",
+ "status": "ready",
+ "run_outcome": "complete",
+ "technical_failures": [],
+ "final_attempt": true,
+ "label": {
+  "zh": "截至北京时间11月1日20:00 · 过去24小时要闻"
+ },
+ "selection_mode": "automatic",
+ "items": [
+  {
+   "id": "i1",
+   "headline": "刚果（金）埃博拉疫情超过5,000人死亡",
+   "what": "刚果（金）正经历该国最致命的埃博拉疫情，死亡人数已超过5,000人。政府数据显示，已有超过10,000人感染这种罕见病毒。",
+   "why": "",
+   "why_kind": "",
+   "brief_line": "刚果（金）埃博拉疫情已致超过5,000人死亡，政府数据显示感染人数超过10,000人。",
+   "sources": [
+    {
+     "name": "BBC News — World",
+     "title": "More than 5,000 die from Ebola in DR Congo's deadliest outbreak",
+     "url": "https://www.bbc.co.uk/news/articles/cj5ynryyep2yo?at_campaign=rss&at_medium=RSS",
+     "published_at": "2026-10-31T15:16:20+00:00",
+     "language": "en"
+    }
+   ],
+   "support": {
+    "headline": [
+     {
+      "source_id": "s0",
+      "quote": "More than 5,000 die from Ebola in DR Congo's deadliest outbreak"
+     }
+    ],
+    "what": [
+     {
+      "source_id": "s0",
+      "quote": "More than 5,000 die from Ebola in DR Congo's deadliest outbreak"
+     },
+     {
+      "source_id": "s0",
+      "quote": "Government data shows that more than 10,000 people have contracted the rare virus."
+     }
+    ],
+    "brief": [
+     {
+      "source_id": "s0",
+      "quote": "More than 5,000 die from Ebola in DR Congo's deadliest outbreak"
+     },
+     {
+      "source_id": "s0",
+      "quote": "Government data shows that more than 10,000 people have contracted the rare virus."
+     }
+    ]
+   },
+   "name_renderings": [
+    {
+     "zh": "刚果（金）",
+     "source_name": "DR Congo",
+     "source_id": "s0"
+    }
+   ],
+   "evidence_sources": [
+    {
+     "id": "s0",
+     "publisher": "BBC News — World",
+     "title": "More than 5,000 die from Ebola in DR Congo's deadliest outbreak",
+     "url": "https://www.bbc.co.uk/news/articles/cj5ynryyep2yo?at_campaign=rss&at_medium=RSS",
+     "published_at": "2026-10-31T15:16:20+00:00",
+     "language": "en"
+    }
+   ],
+   "event_ids": [
+    "E-20261031-0225"
+   ],
+   "editions": [
+    "en_global"
+   ],
+   "bucket": "public_safety",
+   "selection_reason": "刚果（金）暴发史上最致命的埃博拉疫情，超5000人死亡、逾万人感染，是重大公共卫生事件。",
+   "topic": "刚果（金）埃博拉疫情",
+   "continues": null,
+   "reserve": false,
+   "previously": null,
+   "verification": {
+    "validator": "pass",
+    "verifier": "pass",
+    "rewritten_after_fact_check": false,
+    "first_fact_check_problems": [],
+    "model": "claude-opus-5-5 (Claude Code CLI 2.1.308)",
+    "attempts": [
+     {
+      "latency_ms": 16571,
+      "ok": false,
+      "reasons": [
+       "chinese_what_happened: the figure '一' (1) is not in this field's quoted source text with the same value, unit and precision -- quote it exactly as the source gives it, or leave it out",
+       "chinese_brief_line: the figure '一' (1) is not in this field's quoted source text with the same value, unit and precision -- quote it exactly as the source gives it, or leave it out"
+      ]
+     },
+     {
+      "latency_ms": 12288,
+      "ok": true,
+      "reasons": []
+     }
+    ],
+    "latency_ms": 28859
+   }
+  },
+  {
+   "id": "i2",
+   "headline": "伊朗称与卡塔尔达成两天内重开霍尔木兹海峡方案",
+   "what": "伊朗最高外交官表示，伊朗与卡塔尔已达成一项方案，若美国满足德黑兰提出的条件，可在两天内重新开放霍尔木兹海峡。美国总统特朗普称最新谈判“进展顺利”，调解方仍在推动美伊谈判。此前，伊朗最高领袖哈梅内伊周六警告美国和以色列勿再发动袭击，美国国务卿鲁比奥则表示特朗普尚未就新一轮打击作出决定。",
+   "why": "",
+   "why_kind": "",
+   "brief_line": "伊朗称与卡塔尔达成方案，若美方满足条件可在两天内重开霍尔木兹海峡，特朗普称谈判进展顺利。",
+   "sources": [
+    {
+     "name": "Al Jazeera — all news",
+     "title": "Mediators continue US-Iran negotiations amid war rhetoric: What we know",
+     "url": "https://www.aljazeera.com/news/2026/11/1/mediators-continue-us-iran-negotiations-amid-war-rhetoric-what-we-know?traffic_source=rss",
+     "published_at": "2026-11-01T11:14:27+00:00",
+     "language": "en"
+    },
+    {
+     "name": "France 24 — English",
+     "title": "Iran's Khamenei warns US and Israel against new attacks",
+     "url": "https://www.france24.com/en/middle-east/20261031-iran-s-khamenei-warns-us-and-israel-against-new-attacks",
+     "published_at": "2026-10-31T17:00:36+00:00",
+     "language": "en"
+    },
+    {
+     "name": "Al Jazeera — all news",
+     "title": "Iran war live: Tehran eyes 2-day Hormuz plan; Trump says talks ‘going fine’",
+     "url": "https://www.aljazeera.com/news/liveblog/2026/11/1/iran-war-live-araghchi-says-talks-under-way-on-2-day-plan-to-reopen-hormuz?traffic_source=rss",
+     "published_at": "2026-11-01T00:00:51+00:00",
+     "language": "en"
+    }
+   ],
+   "support": {
+    "headline": [
+     {
+      "source_id": "s2",
+      "quote": "Top diplomat says Iran and Qatar have reached a plan to reopen Hormuz in two days if the US meets Tehran's conditions."
+     }
+    ],
+    "what": [
+     {
+      "source_id": "s2",
+      "quote": "Top diplomat says Iran and Qatar have reached a plan to reopen Hormuz in two days if the US meets Tehran's conditions."
+     },
+     {
+      "source_id": "s0",
+      "quote": "Trump says latest talks 'going fine'"
+     },
+     {
+      "source_id": "s0",
+      "quote": "Mediators continue US-Iran negotiations"
+     },
+     {
+      "source_id": "s1",
+      "quote": "Iran's supreme leader warned the United States and Israel on Saturday against further strikes"
+     },
+     {
+      "source_id": "s1",
+      "quote": "Iran's Khamenei warns US and Israel against new attacks"
+     },
+     {
+      "source_id": "s1",
+      "quote": "US Secretary of State Marco Rubio said Trump had not yet made a decision on fresh strikes"
+     },
+     {
+      "source_id": "s1",
+      "quote": "US President Donald Trump"
+     }
+    ],
+    "brief": [
+     {
+      "source_id": "s2",
+      "quote": "Top diplomat says Iran and Qatar have reached a plan to reopen Hormuz in two days if the US meets Tehran's conditions."
+     },
+     {
+      "source_id": "s0",
+      "quote": "Trump says latest talks 'going fine'"
+     }
+    ]
+   },
+   "name_renderings": [
+    {
+     "zh": "卡塔尔",
+     "source_name": "Qatar",
+     "source_id": "s2"
+    },
+    {
+     "zh": "霍尔木兹海峡",
+     "source_name": "Hormuz",
+     "source_id": "s2"
+    },
+    {
+     "zh": "德黑兰",
+     "source_name": "Tehran",
+     "source_id": "s2"
+    },
+    {
+     "zh": "特朗普",
+     "source_name": "Donald Trump",
+     "source_id": "s1"
+    },
+    {
+     "zh": "哈梅内伊",
+     "source_name": "Khamenei",
+     "source_id": "s1"
+    },
+    {
+     "zh": "以色列",
+     "source_name": "Israel",
+     "source_id": "s1"
+    },
+    {
+     "zh": "鲁比奥",
+     "source_name": "Marco Rubio",
+     "source_id": "s1"
+    },
+    {
+     "zh": "伊朗",
+     "source_name": "Iran",
+     "source_id": "s2"
+    },
+    {
+     "zh": "美国",
+     "source_name": "United States",
+     "source_id": "s1"
+    }
+   ],
+   "evidence_sources": [
+    {
+     "id": "s0",
+     "publisher": "Al Jazeera — all news",
+     "title": "Mediators continue US-Iran negotiations amid war rhetoric: What we know",
+     "url": "https://www.aljazeera.com/news/2026/11/1/mediators-continue-us-iran-negotiations-amid-war-rhetoric-what-we-know?traffic_source=rss",
+     "published_at": "2026-11-01T11:14:27+00:00",
+     "language": "en"
+    },
+    {
+     "id": "s1",
+     "publisher": "France 24 — English",
+     "title": "Iran's Khamenei warns US and Israel against new attacks",
+     "url": "https://www.france24.com/en/middle-east/20261031-iran-s-khamenei-warns-us-and-israel-against-new-attacks",
+     "published_at": "2026-10-31T17:00:36+00:00",
+     "language": "en"
+    },
+    {
+     "id": "s2",
+     "publisher": "Al Jazeera — all news",
+     "title": "Iran war live: Tehran eyes 2-day Hormuz plan; Trump says talks ‘going fine’",
+     "url": "https://www.aljazeera.com/news/liveblog/2026/11/1/iran-war-live-araghchi-says-talks-under-way-on-2-day-plan-to-reopen-hormuz?traffic_source=rss",
+     "published_at": "2026-11-01T00:00:51+00:00",
+     "language": "en"
+    },
+    {
+     "id": "s3",
+     "publisher": "Al Jazeera — all news",
+     "title": "What we know about latest efforts to end US war on Iran",
+     "url": "https://www.aljazeera.com/video/newsfeed/2026/11/1/iran-wrap-iran-latest-developments-011126?traffic_source=rss",
+     "published_at": "2026-11-01T03:24:02+00:00",
+     "language": "en"
+    }
+   ],
+   "event_ids": [
+    "E-20261101-0595",
+    "E-20261101-0363",
+    "E-20261101-0349",
+    "E-20261101-0341"
+   ],
+   "editions": [
+    "en_global"
+   ],
+   "bucket": "world_politics_geopolitics",
+   "selection_reason": "哈梅内伊警告美以勿再发动袭击，同时伊朗称与卡塔尔拟定两天内重开霍尔木兹海峡的方案，事关地区战局与全球能源。",
+   "topic": "美伊战争与谈判",
+   "continues": null,
+   "reserve": false,
+   "previously": null,
+   "verification": {
+    "validator": "pass",
+    "verifier": "pass",
+    "rewritten_after_fact_check": false,
+    "first_fact_check_problems": [],
+    "model": "claude-opus-5-5 (Claude Code CLI 2.1.308)",
+    "attempts": [
+     {
+      "latency_ms": 20816,
+      "ok": true,
+      "reasons": []
+     }
+    ],
+    "latency_ms": 20816
+   }
+  },
+  {
+   "id": "i3",
+   "headline": "美国联邦调查局称朝鲜黑客盗取币安63亿美元",
+   "what": "美国联邦调查局表示，朝鲜应对币安遭黑客攻击事件负责，并将其归咎于朝鲜黑客组织TraderTraitor，该组织此前也被该局指为Bybit约15亿美元被盗案的元凶。全球最大加密货币交易所币安周日表示，将在因黑客攻击暂停提现后恢复提现。币安称已弥补其平台被盗的63亿美元代币中的95%，此案是全球规模最大的数字资产盗窃案；另有报道援引币安称弥补比例为90%。",
+   "why": "",
+   "why_kind": "",
+   "brief_line": "美国联邦调查局称朝鲜黑客盗取币安63亿美元代币，币安周日宣布恢复提现。",
+   "sources": [
+    {
+     "name": "BBC News — World",
+     "title": "Crypto firm Binance covers 90% of losses after $6.3bn hack",
+     "url": "https://www.bbc.co.uk/news/articles/ckpdg3ql4169o?at_campaign=rss&at_medium=RSS",
+     "published_at": "2026-10-31T22:11:45+00:00",
+     "language": "en"
+    },
+    {
+     "name": "Al Jazeera — all news",
+     "title": "FBI blames North Korea for record $6.3bn crypto heist from Binance",
+     "url": "https://www.aljazeera.com/news/2026/11/1/fbi-blames-north-korea-for-record-6-3bn-crypto-heist?traffic_source=rss",
+     "published_at": "2026-11-01T02:28:38+00:00",
+     "language": "en"
+    },
+    {
+     "name": "France 24 — English",
+     "title": "Binance resumes crypto withdrawals after major hack blamed on North Korea",
+     "url": "https://www.france24.com/en/business/20261101-binance-says-resuming-withdrawals-after-major-hack",
+     "published_at": "2026-11-01T07:01:49+00:00",
+     "language": "en"
+    }
+   ],
+   "support": {
+    "headline": [
+     {
+      "source_id": "s1",
+      "quote": "FBI blames North Korea for record $6.3bn crypto heist from Binance"
+     }
+    ],
+    "what": [
+     {
+      "source_id": "s0",
+      "quote": "The Federal Bureau of Investigation (FBI) says North Korea was responsible for the hack."
+     },
+     {
+      "source_id": "s3",
+      "quote": "The FBI attributes the $6B+ Binance hack to North Korea's TraderTraitor hacking group, which the agency also previously blamed for the ~$1.5B Bybit hack"
+     },
+     {
+      "source_id": "s2",
+      "quote": "Binance, the world’s biggest cryptocurrency exchange, on Sunday said it would resume withdrawals after a suspension due to a major hack"
+     },
+     {
+      "source_id": "s2",
+      "quote": "The exchange said it covered 95% of the $6.3 billion in tokens stolen from its platform in the world's largest digital heist."
+     },
+     {
+      "source_id": "s1",
+      "quote": "Crypto firm Binance says it has covered 90 percent of losses from the multibillion-dollar hack."
+     }
+    ],
+    "brief": [
+     {
+      "source_id": "s1",
+      "quote": "FBI blames North Korea for record $6.3bn crypto heist from Binance"
+     },
+     {
+      "source_id": "s2",
+      "quote": "on Sunday said it would resume withdrawals"
+     }
+    ]
+   },
+   "name_renderings": [
+    {
+     "zh": "美国联邦调查局",
+     "source_name": "Federal Bureau of Investigation (FBI)",
+     "source_id": "s0"
+    },
+    {
+     "zh": "朝鲜",
+     "source_name": "North Korea",
+     "source_id": "s0"
+    },
+    {
+     "zh": "币安",
+     "source_name": "Binance",
+     "source_id": "s2"
+    }
+   ],
+   "evidence_sources": [
+    {
+     "id": "s0",
+     "publisher": "BBC News — World",
+     "title": "Crypto firm Binance covers 90% of losses after $6.3bn hack",
+     "url": "https://www.bbc.co.uk/news/articles/ckpdg3ql4169o?at_campaign=rss&at_medium=RSS",
+     "published_at": "2026-10-31T22:11:45+00:00",
+     "language": "en"
+    },
+    {
+     "id": "s1",
+     "publisher": "Al Jazeera — all news",
+     "title": "FBI blames North Korea for record $6.3bn crypto heist from Binance",
+     "url": "https://www.aljazeera.com/news/2026/11/1/fbi-blames-north-korea-for-record-6-3bn-crypto-heist?traffic_source=rss",
+     "published_at": "2026-11-01T02:28:38+00:00",
+     "language": "en"
+    },
+    {
+     "id": "s2",
+     "publisher": "France 24 — English",
+     "title": "Binance resumes crypto withdrawals after major hack blamed on North Korea",
+     "url": "https://www.france24.com/en/business/20261101-binance-says-resuming-withdrawals-after-major-hack",
+     "published_at": "2026-11-01T07:01:49+00:00",
+     "language": "en"
+    },
+    {
+     "id": "s3",
+     "publisher": "Bloomberg",
+     "title": "The FBI attributes the $6B+ Binance hack to North Korea's TraderTraitor hacking group, which the agency also previously blamed for the ~$1.5B Bybit hack (Kevin Whitelaw/Bloomberg)",
+     "url": "https://www.bloomberg.com/news/articles/2026-10-31/fbi-blames-north-korea-for-6-billion-binance-crypto-hack",
+     "published_at": "2026-11-01T03:10:01+00:00",
+     "language": "en"
+    }
+   ],
+   "event_ids": [
+    "E-20261031-0235",
+    "E-20261101-0344",
+    "E-20261101-0502",
+    "E-20261101-0049"
+   ],
+   "editions": [
+    "en_global"
+   ],
+   "bucket": "world_politics_geopolitics",
+   "selection_reason": "有新进展：美国联邦调查局正式认定朝鲜为63亿美元黑客案幕后黑手，币安已弥补九成损失并恢复提币。",
+   "topic": "币安遭黑客攻击",
+   "continues": "TRM Labs称朝鲜黑客盗取币安约63.6亿美元",
+   "reserve": false,
+   "previously": null,
+   "verification": {
+    "validator": "pass",
+    "verifier": "pass",
+    "rewritten_after_fact_check": true,
+    "first_fact_check_problems": [
+     {
+      "field": "what",
+      "problem": "The sentence 「这是全球规模最大的数字资产盗窃案。」 directly follows the sentence about the ~1.5 billion dollar Bybit theft, so 「这」 reads as referring to the Bybit case. In s2, 'the world's largest digital heist' describes the 6.3 billion dollar theft from Binance's platform: 'The exchange said it covered 95% of the $6.3 billion in tokens stolen from its platform in the world's largest digital heist'.",
+      "fix": "Tie the description to the Binance case, e.g. move it into the first sentence: 「美国联邦调查局表示，加密货币交易所币安遭遇的63亿美元黑客攻击由朝鲜所为，这是全球规模最大的数字资产盗窃案。」 Then delete the standalone sentence after the Bybit sentence."
+     }
+    ],
+    "model": "claude-opus-5-5 (Claude Code CLI 2.1.308)",
+    "attempts": [
+     {
+      "latency_ms": 20093,
+      "ok": true,
+      "reasons": []
+     }
+    ],
+    "latency_ms": 20093
+   }
+  },
+  {
+   "id": "i4",
+   "headline": "鲁比奥称四方安全对话并非“反华”联盟",
+   "what": "美国国务卿鲁比奥周六在记者会上表示，四方安全对话“不是反华或反对任何人的联盟”。当天，四国外长为下月在菲律宾举行的领导人峰会敲定筹备工作，这将是两年来首次四方峰会。鲁比奥此番表态时，距美国总统特朗普预定在中国深圳会晤中国领导人习近平仅有数周。",
+   "why": "",
+   "why_kind": "",
+   "brief_line": "鲁比奥周六称四方安全对话并非反华联盟，四方下月将在菲律宾举行两年来首次峰会。",
+   "sources": [
+    {
+     "name": "South China Morning Post — China",
+     "title": "Quad not ‘anti-China’, says Rubio as first summit in two years set before Trump-Xi talks",
+     "url": "https://www.scmp.com/news/china/diplomacy/article/3372852/quad-diplomats-finalise-first-leaders-summit-two-years-trump-xi-meeting",
+     "published_at": "2026-10-31T16:17:17+00:00",
+     "language": "en"
+    }
+   ],
+   "support": {
+    "headline": [
+     {
+      "source_id": "s0",
+      "quote": "Quad not ‘anti-China’, says Rubio"
+     }
+    ],
+    "what": [
+     {
+      "source_id": "s0",
+      "quote": "US Secretary of State Marco Rubio said on Saturday that the Quadrilateral Security Dialogue"
+     },
+     {
+      "source_id": "s0",
+      "quote": "It is not an anti-China or anti-anybody coalition,” Rubio said at a press conference"
+     },
+     {
+      "source_id": "s0",
+      "quote": "as the grouping’s top diplomats finalised preparations for the leaders’ summit in the Philippines next month"
+     },
+     {
+      "source_id": "s0",
+      "quote": "first summit in two years"
+     },
+     {
+      "source_id": "s0",
+      "quote": "just weeks before US President Donald Trump is scheduled to meet Chinese leader Xi Jinping in Shenzhen, China"
+     }
+    ],
+    "brief": [
+     {
+      "source_id": "s0",
+      "quote": "US Secretary of State Marco Rubio said on Saturday that the Quadrilateral Security Dialogue, or the Quad, was not an “anti-China” coalition"
+     },
+     {
+      "source_id": "s0",
+      "quote": "leaders’ summit in the Philippines next month"
+     },
+     {
+      "source_id": "s0",
+      "quote": "first summit in two years"
+     }
+    ]
+   },
+   "name_renderings": [
+    {
+     "zh": "鲁比奥",
+     "source_name": "Marco Rubio",
+     "source_id": "s0"
+    },
+    {
+     "zh": "四方安全对话",
+     "source_name": "Quadrilateral Security Dialogue",
+     "source_id": "s0"
+    },
+    {
+     "zh": "菲律宾",
+     "source_name": "Philippines",
+     "source_id": "s0"
+    },
+    {
+     "zh": "特朗普",
+     "source_name": "Donald Trump",
+     "source_id": "s0"
+    },
+    {
+     "zh": "习近平",
+     "source_name": "Xi Jinping",
+     "source_id": "s0"
+    },
+    {
+     "zh": "深圳",
+     "source_name": "Shenzhen",
+     "source_id": "s0"
+    },
+    {
+     "zh": "中国",
+     "source_name": "China",
+     "source_id": "s0"
+    }
+   ],
+   "evidence_sources": [
+    {
+     "id": "s0",
+     "publisher": "South China Morning Post — China",
+     "title": "Quad not ‘anti-China’, says Rubio as first summit in two years set before Trump-Xi talks",
+     "url": "https://www.scmp.com/news/china/diplomacy/article/3372852/quad-diplomats-finalise-first-leaders-summit-two-years-trump-xi-meeting",
+     "published_at": "2026-10-31T16:17:17+00:00",
+     "language": "en"
+    }
+   ],
+   "event_ids": [
+    "E-20261101-0385"
+   ],
+   "editions": [
+    "en_global"
+   ],
+   "bucket": "us_china_policy_geopolitics",
+   "selection_reason": "鲁比奥称美日印澳“四方安全对话”并非反华联盟，两年来首次峰会定于特朗普与习近平会谈之前，与中国直接相关。",
+   "topic": "四方安全对话峰会",
+   "continues": null,
+   "reserve": false,
+   "previously": null,
+   "verification": {
+    "validator": "pass",
+    "verifier": "pass",
+    "rewritten_after_fact_check": false,
+    "first_fact_check_problems": [],
+    "model": "claude-opus-5-5 (Claude Code CLI 2.1.308)",
+    "attempts": [
+     {
+      "latency_ms": 17966,
+      "ok": true,
+      "reasons": []
+     }
+    ],
+    "latency_ms": 17966
+   }
+  },
+  {
+   "id": "i5",
+   "headline": "联合国要求调查其工作人员在胡塞武装羁押期间死亡",
+   "what": "联合国要求就其工作人员穆罕默德·沙米在也门胡塞武装羁押期间死亡一事展开调查。他自2024年6月起遭关押，当时他与许多其他联合国及非政府组织工作人员被指控为间谍。",
+   "why": "",
+   "why_kind": "",
+   "brief_line": "联合国要求调查其工作人员穆罕默德·沙米在也门胡塞武装羁押期间死亡一事。",
+   "sources": [
+    {
+     "name": "Al Jazeera — all news",
+     "title": "UN demands investigation after staffer’s death in Houthi custody in Yemen",
+     "url": "https://www.aljazeera.com/news/2026/11/1/un-demands-investigation-after-staffers-death-in-houthi-custody-in-yemen?traffic_source=rss",
+     "published_at": "2026-11-01T04:49:15+00:00",
+     "language": "en"
+    }
+   ],
+   "support": {
+    "headline": [
+     {
+      "source_id": "s0",
+      "quote": "UN demands investigation after staffer’s death in Houthi custody in Yemen"
+     }
+    ],
+    "what": [
+     {
+      "source_id": "s0",
+      "quote": "UN demands investigation after staffer’s death in Houthi custody in Yemen"
+     },
+     {
+      "source_id": "s0",
+      "quote": "Mohammad el-Shami had been held since June 2024, when he and many other UN and NGO workers were accused of being spies."
+     }
+    ],
+    "brief": [
+     {
+      "source_id": "s0",
+      "quote": "UN demands investigation after staffer’s death in Houthi custody in Yemen"
+     },
+     {
+      "source_id": "s0",
+      "quote": "Mohammad el-Shami had been held since June 2024"
+     }
+    ]
+   },
+   "name_renderings": [
+    {
+     "zh": "联合国",
+     "source_name": "UN",
+     "source_id": "s0"
+    },
+    {
+     "zh": "穆罕默德·沙米",
+     "source_name": "Mohammad el-Shami",
+     "source_id": "s0"
+    },
+    {
+     "zh": "也门",
+     "source_name": "Yemen",
+     "source_id": "s0"
+    },
+    {
+     "zh": "胡塞武装",
+     "source_name": "Houthi",
+     "source_id": "s0"
+    },
+    {
+     "zh": "非政府组织",
+     "source_name": "NGO",
+     "source_id": "s0"
+    }
+   ],
+   "evidence_sources": [
+    {
+     "id": "s0",
+     "publisher": "Al Jazeera — all news",
+     "title": "UN demands investigation after staffer’s death in Houthi custody in Yemen",
+     "url": "https://www.aljazeera.com/news/2026/11/1/un-demands-investigation-after-staffers-death-in-houthi-custody-in-yemen?traffic_source=rss",
+     "published_at": "2026-11-01T04:49:15+00:00",
+     "language": "en"
+    }
+   ],
+   "event_ids": [
+    "E-20261101-0337"
+   ],
+   "editions": [
+    "en_global"
+   ],
+   "bucket": "world_politics_geopolitics",
+   "selection_reason": "一名联合国职员在胡塞武装羁押期间死亡，联合国要求调查，凸显也门人道人员的安全危机。",
+   "topic": "联合国职员死于胡塞羁押",
+   "continues": null,
+   "reserve": false,
+   "previously": null,
+   "verification": {
+    "validator": "pass",
+    "verifier": "pass",
+    "rewritten_after_fact_check": false,
+    "first_fact_check_problems": [],
+    "model": "claude-opus-5-5 (Claude Code CLI 2.1.308)",
+    "attempts": [
+     {
+      "latency_ms": 14084,
+      "ok": false,
+      "reasons": [
+       "chinese_headline: the figure '一' (1 people) is not in this field's quoted source text with the same value, unit and precision -- quote it exactly as the source gives it, or leave it out",
+       "name rendering '半岛电视台' = 'Al Jazeera': that spelling is not in source 's0'",
+       "entity '半岛电视台' is not traceable to any offered source (or a reviewed alias)"
+      ]
+     },
+     {
+      "latency_ms": 17215,
+      "ok": true,
+      "reasons": []
+     }
+    ],
+    "latency_ms": 31299
+   }
+  }
+ ],
+ "stats": {
+  "items": 5,
+  "chars": 685,
+  "zh_chars": 591,
+  "reading_minutes": 2,
+  "telegram_chars": 2321,
+  "digest_chars": 229,
+  "digest_zh_chars": 184
+ },
+ "selection": {
+  "method": "editor_model",
+  "model": "claude-opus-5-5 (Claude Code CLI 2.1.308)",
+  "error": null,
+  "latency_ms": 21742,
+  "picks": [
+   {
+    "event_ids": [
+     "E-20261031-0225"
+    ],
+    "titles": [
+     "More than 5,000 die from Ebola in DR Congo's deadliest outbreak"
+    ],
+    "editions": [
+     "en_global"
+    ],
+    "topic": "刚果（金）埃博拉疫情",
+    "continues": null,
+    "reason": "刚果（金）暴发史上最致命的埃博拉疫情，超5000人死亡、逾万人感染，是重大公共卫生事件。"
+   },
+   {
+    "event_ids": [
+     "E-20261101-0595",
+     "E-20261101-0363",
+     "E-20261101-0349",
+     "E-20261101-0341"
+    ],
+    "titles": [
+     "Mediators continue US-Iran negotiations amid war rhetoric: What we know",
+     "Iran's Khamenei warns US and Israel against new attacks",
+     "Iran war live: Tehran eyes 2-day Hormuz plan; Trump says talks ‘going fine’",
+     "What we know about latest efforts to end US war on Iran"
+    ],
+    "editions": [
+     "en_global",
+     "en_global",
+     "en_global",
+     "en_global"
+    ],
+    "topic": "美伊战争与谈判",
+    "continues": null,
+    "reason": "哈梅内伊警告美以勿再发动袭击，同时伊朗称与卡塔尔拟定两天内重开霍尔木兹海峡的方案，事关地区战局与全球能源。"
+   },
+   {
+    "event_ids": [
+     "E-20261031-0235",
+     "E-20261101-0344",
+     "E-20261101-0502",
+     "E-20261101-0049"
+    ],
+    "titles": [
+     "Crypto firm Binance covers 90% of losses after $6.3bn hack",
+     "FBI blames North Korea for record $6.3bn crypto heist from Binance",
+     "Binance resumes crypto withdrawals after major hack blamed on North Korea",
+     "The FBI attributes the $6B+ Binance hack to North Korea's TraderTraitor hacking group, which the agency also previously blamed for the ~$1.5B Bybit hack (Kevin Whitelaw/Bloomberg)"
+    ],
+    "editions": [
+     "en_global",
+     "en_global",
+     "en_global",
+     "en_global"
+    ],
+    "topic": "币安遭黑客攻击",
+    "continues": "TRM Labs称朝鲜黑客盗取币安约63.6亿美元",
+    "reason": "有新进展：美国联邦调查局正式认定朝鲜为63亿美元黑客案幕后黑手，币安已弥补九成损失并恢复提币。"
+   },
+   {
+    "event_ids": [
+     "E-20261101-0385"
+    ],
+    "titles": [
+     "Quad not ‘anti-China’, says Rubio as first summit in two years set before Trump-Xi talks"
+    ],
+    "editions": [
+     "en_global"
+    ],
+    "topic": "四方安全对话峰会",
+    "continues": null,
+    "reason": "鲁比奥称美日印澳“四方安全对话”并非反华联盟，两年来首次峰会定于特朗普与习近平会谈之前，与中国直接相关。"
+   },
+   {
+    "event_ids": [
+     "E-20261101-0337"
+    ],
+    "titles": [
+     "UN demands investigation after staffer’s death in Houthi custody in Yemen"
+    ],
+    "editions": [
+     "en_global"
+    ],
+    "topic": "联合国职员死于胡塞羁押",
+    "continues": null,
+    "reason": "一名联合国职员在胡塞武装羁押期间死亡，联合国要求调查，凸显也门人道人员的安全危机。"
+   }
+  ],
+  "reserves": [
+   {
+    "event_ids": [
+     "E-20261101-0384"
+    ],
+    "titles": [
+     "G20 foreign ministers end Atlanta meeting without consensus on key issues"
+    ],
+    "editions": [
+     "en_global"
+    ],
+    "topic": "二十国集团外长会",
+    "continues": "俄部长出席引抗议 二十国集团取消全家福合影",
+    "reason": "二十国集团亚特兰大外长会在关键议题上未达成共识，美国推动削弱中国在关键矿产领域的主导地位。"
+   },
+   {
+    "event_ids": [
+     "E-20261101-0112"
+    ],
+    "titles": [
+     "中国海警位中国台湾岛以东海域依法开展常态化执法巡查"
+    ],
+    "editions": [
+     "zh_cn"
+    ],
+    "topic": "中国海警台岛以东巡查",
+    "continues": null,
+    "reason": "中国海警编队在台湾岛以东海域开展执法巡查，涉及台海安全。"
+   },
+   {
+    "event_ids": [
+     "E-20261101-0345",
+     "E-20261101-0536"
+    ],
+    "titles": [
+     "Thousands rally in Israel urging ‘Jewish-Arab’ coalition to oust Netanyahu",
+     "Israeli protesters urge Jewish-Arab coalition government"
+    ],
+    "editions": [
+     "en_global",
+     "en_global"
+    ],
+    "topic": "以色列组阁",
+    "continues": "以色列大选计票超九成，选举陷入僵局",
+    "reason": "数千人集会呼吁组建犹太人与阿拉伯人联合政府以取代内塔尼亚胡，反映选后组阁僵局。"
+   },
+   {
+    "event_ids": [
+     "E-20261101-0227"
+    ],
+    "titles": [
+     "马达加斯加捣毁13处电诈园区 148名中国人被引渡回国"
+    ],
+    "editions": [
+     "zh_cn"
+    ],
+    "topic": "海外电诈园区打击",
+    "continues": null,
+    "reason": "马达加斯加捣毁13处电诈园区，148名中国公民被引渡回国，显示电诈集团正向非洲转移。"
+   }
+  ],
+  "not_chosen": [
+   {
+    "id": "c5",
+    "title": "Residents from Russian-occupied Oleshky reunite with families after evacuation operation",
+    "reason": "阿廖什基撤离此前已报道，家人团聚无实质新进展。"
+   },
+   {
+    "id": "c7",
+    "title": "Protests under way in Germany and France as minister warns against use of Halloween masks – as it happened",
+    "reason": "德法抗议直播稿，缺乏明确的重大进展。"
+   },
+   {
+    "id": "c8",
+    "title": "Oleshky evacuees reunite with families after truce allows crossing back into Ukraine",
+    "reason": "阿廖什基撤离此前已报道，团聚报道无新进展。"
+   },
+   {
+    "id": "c11",
+    "title": "The week in pictures: Lula's victory, Israeli elections and Spain train crash",
+    "reason": "一周图片回顾，属专题而非新闻进展。"
+   },
+   {
+    "id": "c12",
+    "title": "The murder of Javits Frimpong, a bullied schoolboy in The Bronx",
+    "reason": "纽约地方凶杀案的特写报道，影响有限。"
+   }
+  ]
+ },
+ "rejected": [],
+ "funnel": {
+  "events_touched_in_window": 659,
+  "by_edition": {
+   "zh_cn": 264,
+   "en_global": 173
+  },
+  "dropped": {
+   "no source fetched by the cutoff": 2,
+   "no source published in the window": 208,
+   "noise": 12
+  },
+  "candidates": 437,
+  "shown_to_editor": 40,
+  "by_bucket": {
+   "public_safety": 2,
+   "world_politics_geopolitics": 23,
+   "us_china_policy_geopolitics": 17,
+   "markets_macro_corporate": 30,
+   "ai_semiconductor_export_controls": 58,
+   "unclassified": 296,
+   "routine_politics_general": 11
+  },
+  "demoted": 16,
+  "by_source": {
+   "bbc_world": 17,
+   "aljazeera_all": 50,
+   "france24_en": 19,
+   "guardian_world": 25,
+   "scmp_china": 12,
+   "techmeme": 14,
+   "ithome": 159,
+   "chinanews_world": 31,
+   "dw_chinese": 6,
+   "chinanews_china": 43,
+   "rfi_cn": 18,
+   "hn_top": 35,
+   "gov_cn_policy_zh": 1,
+   "qbitai": 4,
+   "bbc_zhongwen": 4,
+   "gov_cn_policy": 1
+  }
+ },
+ "prior_headlines": [
+  {
+   "edition_date": "2026-10-31",
+   "headline": "罕见停火期间数百人撤离俄占阿廖什基"
+  },
+  {
+   "edition_date": "2026-10-31",
+   "headline": "俄部长出席引抗议 二十国集团取消全家福合影"
+  },
+  {
+   "edition_date": "2026-10-31",
+   "headline": "中国否认针对英伟达首席执行官的间谍行动指控"
+  },
+  {
+   "edition_date": "2026-10-31",
+   "headline": "英特尔股价收跌28.58%，创1970年代以来最差单日"
+  },
+  {
+   "edition_date": "2026-10-31",
+   "headline": "消息称OpenAI最新融资目标缩水100亿美元"
+  },
+  {
+   "edition_date": "2026-10-30",
+   "headline": "TRM Labs称朝鲜黑客盗取币安约63.6亿美元"
+  },
+  {
+   "edition_date": "2026-10-30",
+   "headline": "DeepSeek第二轮融资据报达1055亿元"
+  },
+  {
+   "edition_date": "2026-10-30",
+   "headline": "谷歌母公司字母表公司盘初跌超13%创历史最大单日跌幅"
+  },
+  {
+   "edition_date": "2026-10-30",
+   "headline": "芬兰警方就谷歌数据中心工地涉嫌违规展开刑事调查"
+  },
+  {
+   "edition_date": "2026-10-29",
+   "headline": "西班牙高速列车相撞事故致至少68人死亡"
+  },
+  {
+   "edition_date": "2026-10-29",
+   "headline": "以色列大选计票超九成，选举陷入僵局"
+  },
+  {
+   "edition_date": "2026-10-29",
+   "headline": "埃塞俄比亚购入俄罗斯战斗机及防空系统"
+  },
+  {
+   "edition_date": "2026-10-29",
+   "headline": "微软下调2026年资本开支预期至1700亿美元"
+  },
+  {
+   "edition_date": "2026-10-29",
+   "headline": "商务部：今年以旧换新带动销售超2万亿元"
+  }
+ ],
+ "models": {
+  "writer": "claude-opus-5-5 (Claude Code CLI 2.1.308)",
+  "editor": "claude-opus-5-5 (Claude Code CLI 2.1.308)",
+  "verifier": "claude-opus-5-5 (Claude Code CLI 2.1.308)",
+  "writer_short": "claude-opus-5-5"
+ },
+ "provenance": {
+  "code_commit": "7b65bcaf4d2ca7e649c0bfd58768e248fa6219a2",
+  "code_dirty": false,
+  "prompts_sha256": {
+   "select_brief.md": "fb8d56d25bcd694c",
+   "enrich_event.md": "4085789ab0f9bb56",
+   "verify_brief.md": "6094a20c84e657e5"
+  },
+  "sources_sha256": "793eefd54bef2c62",
+  "entity_aliases_sha256": "f590e0f6735fe435"
+ },
+ "run": {
+  "provider_calls": [
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 21302,
+    "duration_api_ms": 21238,
+    "input_tokens": 2,
+    "output_tokens": 2178,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 16009,
+    "duration_api_ms": 15933,
+    "input_tokens": 2,
+    "output_tokens": 1654,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 11846,
+    "duration_api_ms": 11778,
+    "input_tokens": 2,
+    "output_tokens": 1285,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 3736,
+    "duration_api_ms": 3667,
+    "input_tokens": 2,
+    "output_tokens": 301,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 20354,
+    "duration_api_ms": 20289,
+    "input_tokens": 2,
+    "output_tokens": 2572,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 6332,
+    "duration_api_ms": 6270,
+    "input_tokens": 2,
+    "output_tokens": 577,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 22450,
+    "duration_api_ms": 22383,
+    "input_tokens": 2,
+    "output_tokens": 2593,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 12376,
+    "duration_api_ms": 12304,
+    "input_tokens": 2,
+    "output_tokens": 1310,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 19620,
+    "duration_api_ms": 19557,
+    "input_tokens": 2,
+    "output_tokens": 2346,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 8176,
+    "duration_api_ms": 8112,
+    "input_tokens": 2,
+    "output_tokens": 815,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 17540,
+    "duration_api_ms": 17477,
+    "input_tokens": 2,
+    "output_tokens": 2129,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 4361,
+    "duration_api_ms": 4295,
+    "input_tokens": 2,
+    "output_tokens": 286,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 13621,
+    "duration_api_ms": 13556,
+    "input_tokens": 2,
+    "output_tokens": 1562,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 16774,
+    "duration_api_ms": 16710,
+    "input_tokens": 2,
+    "output_tokens": 1872,
+    "is_error": false,
+    "exit": 0
+   },
+   {
+    "model": "claude-opus-5-5",
+    "cli_version": "2.1.308",
+    "api_key_source": "none",
+    "models_used": [
+     "claude-opus-5-5"
+    ],
+    "num_turns": 1,
+    "duration_ms": 2964,
+    "duration_api_ms": 2902,
+    "input_tokens": 2,
+    "output_tokens": 188,
+    "is_error": false,
+    "exit": 0
+   }
+  ],
+  "verifier_calls": [
+   {
+    "item": "i1",
+    "verdict": "pass",
+    "latency_ms": 4233
+   },
+   {
+    "item": "i2",
+    "verdict": "pass",
+    "latency_ms": 6771
+   },
+   {
+    "item": "i3",
+    "verdict": "fail",
+    "latency_ms": 12826
+   },
+   {
+    "item": "i3",
+    "verdict": "pass",
+    "latency_ms": 8621
+   },
+   {
+    "item": "i4",
+    "verdict": "pass",
+    "latency_ms": 4805
+   },
+   {
+    "item": "i5",
+    "verdict": "pass",
+    "latency_ms": 3410
+   }
+  ],
+  "wall_seconds": 207.8,
+  "budget_seconds": 1200.0
+ },
+ "text_sha256": "156215097713307a861f0d34be578569d46667931944ce9f410c27164ab34da3",
+ "frozen_at": "2026-11-02T04:13:02+00:00"
+}

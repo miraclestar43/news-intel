@@ -1,0 +1,20 @@
+[Unit]
+Description=pi-news-intel: build and freeze the automatic Chinese daily brief (Beijing edition, cutoff 20:00)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/pi-news-intel
+# LLM_PROVIDER=claude_cli and CLAUDE_* come from .env (the Claude Code CLI on its subscription login). The build
+# never sends anything: it freezes data/exports/brief/<date>/ for Telegram (pi-news-brief-telegram.service) and
+# the newsletter (history-in-practice NEWS_EXPORT_DIR). A run reuses a published edition (re-checking its renderings),
+# completes a frozen-but-unpublished one, or builds. Exit codes: 0 built/reused/completed (incl. a real short or
+# empty day); 75 retry_later (technical failure before the last attempt: nothing frozen, evidence in attempts/);
+# 3 built_degraded (last attempt published fewer verified items because of technical failures); 1 failed.
+EnvironmentFile=%h/pi-news-intel/.env
+ExecStart=%h/pi-news-intel/.venv/bin/python -m news_intel.jobs.brief build
+# The editorial run budget is jobs/brief.BUDGET_SECONDS (1200 s; measured replays took 260-320 s for 5 items).
+# This leaves 600 s on top for selection, freezing and teardown -- tests/unit/test_brief_deploy.py pins it.
+TimeoutStartSec=1800
+Nice=10

@@ -34,6 +34,7 @@ _CATEGORY_LABELS_ZH = {
     "World": "国际时政",
     "US / China / World": "中美与国际",
     "Technology": "科技",
+    "Public Safety": "公共安全",
 }
 
 

@@ -41,6 +41,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 ALLOWED_CATEGORIES = frozenset({
     "AI & Semiconductors", "Markets & Economy", "Politics", "World", "US / China / World", "Technology",
+    "Public Safety",
 })
 TECHNOLOGY_FAMILY = frozenset({"AI & Semiconductors", "Technology"})
 NON_TECHNOLOGY_CATEGORIES = ALLOWED_CATEGORIES - TECHNOLOGY_FAMILY

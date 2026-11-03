@@ -58,6 +58,71 @@ _ROUTINE_POLITICS_TERMS = ["congress", "senate", "campaign", "rally", "poll numb
 
 UNCLASSIFIED_BUCKET = "unclassified"
 
+# 2026-10-31 (history-in-practice news audit, replay of the 24 h to 2026-10-31 16:00 PT): "More than 5,000 die from
+# Ebola in DR Congo's deadliest outbreak" (BBC) was Unclassified -- the world-politics gate needs a country from its
+# vocabulary and DR Congo is not in it -- and so scored 38.8 under a 129-yuan charger listing at 61.3. A public-
+# safety event (epidemic, disaster, mass-casualty attack or accident) is consequential wherever it happens, so this
+# bucket needs no country term: BOTH a public-safety event term AND a scale signal (a death toll of at least
+# _PUBLIC_SAFETY_MIN_DEATHS, or explicit scale wording such as "deadliest"/"thousands"/数千). Behind
+# policy.features.public_safety_bucket (default off); checked after every existing bucket, so it only rescues
+# stories that were Unclassified or routine politics.
+PUBLIC_SAFETY_BUCKET = "public_safety"
+_PUBLIC_SAFETY_TERMS = (
+    "outbreak", "epidemic", "pandemic", "ebola", "cholera", "mpox", "measles", "dengue", "earthquake", "tsunami",
+    "hurricane", "typhoon", "cyclone", "flood", "landslide", "wildfire", "volcan", "famine", "explosion",
+    "mass shooting", "massacre", "stampede", "plane crash", "train crash", "building collapse", "killed", " dead",
+    "deaths", " die ", " died",
+    "疫情", "埃博拉", "霍乱", "地震", "海啸", "台风", "飓风", "洪水", "洪灾", "滑坡", "泥石流", "山火", "火灾", "爆炸",
+    "枪击", "踩踏", "坠毁", "遇难", "死亡", "丧生", "罹难",
+)
+_PUBLIC_SAFETY_MIN_DEATHS = 10
+_PUBLIC_SAFETY_SCALE_WORDS = (
+    "deadliest", "thousands", "hundreds", "death toll", "state of emergency", "mass casualt",
+    "最严重", "最致命", "数千", "数百", "上千", "上万", "紧急状态",
+)
+# Replay 2026-10-31: a video-game story that reused footage of the Itaewon crowd crush matched (踩踏 + a past death
+# toll). A title framed as media/entertainment/commemoration is about that coverage, not a current public-safety event.
+_PUBLIC_SAFETY_MEDIA_TITLE = (
+    "game", "film", "movie", "series", "documentary", "trailer", "anniversary", "remember", "memorial", "album",
+    "游戏", "电影", "影片", "剧", "纪录片", "预告", "周年", "纪念", "素材", "动视",
+)
+# 2026-11-01 (news-intel v2): the common phrasings, not only "N people killed": "kills at least N", "N people were
+# killed", "killing N", "death toll rises to N", "造成N人死亡", "致N死".
+_DEATH_COUNT_EN = [
+    re.compile(r"(\d[\d,]*)\s+(?:people\s+|persons\s+|civilians\s+|soldiers\s+|children\s+)?"
+               r"(?:have\s+|had\s+|were\s+|are\s+|have been\s+|had been\s+)?(?:die|died|dead|killed|deaths)"),
+    re.compile(r"\b(?:kill(?:s|ed|ing)?|leaving|left)\s+(?:at least\s+|more than\s+|over\s+|nearly\s+|about\s+|"
+               r"some\s+|almost\s+)?(\d[\d,]*)"),
+    re.compile(r"death toll\s+(?:rises|rose|climbs|climbed|reaches|reached|hits|hit|is|of|stands at)\s+"
+               r"(?:to\s+|at\s+)?(?:at least\s+|more than\s+|over\s+)?(\d[\d,]*)"),
+]
+_DEATH_COUNT_ZH = [
+    re.compile(r"(\d[\d,]*)\s*(?:多|余)?\s*(?:人|名)\s*(?:死亡|遇难|丧生|罹难)"),
+    re.compile(r"(?:造成|导致|致)\s*(?:至少|超过|逾)?\s*(\d[\d,]*)\s*(?:多|余)?\s*(?:人|名)?\s*(?:死亡|遇难|丧生|罹难|死)"),
+]
+
+
+def death_count(text: str) -> int:
+    """Largest stated death toll in the text (0 if none); used for the public-safety scale bonus."""
+    lowered = text.lower()
+    counts = [int(m.group(1).replace(",", ""))
+              for rxs, src in ((_DEATH_COUNT_EN, lowered), (_DEATH_COUNT_ZH, text)) for rx in rxs
+              for m in rx.finditer(src)]
+    return max(counts, default=0)
+
+
+def _public_safety_bucket(text: str, lowered: str, title: str | None = None) -> tuple[str, list[str]] | None:
+    t = (title or "")
+    if any((w in t.lower() if w.isascii() else w in t) for w in _PUBLIC_SAFETY_MEDIA_TITLE):
+        return None
+    terms = [t for t in _PUBLIC_SAFETY_TERMS if (t in lowered if t.isascii() else t in text)]
+    if not terms:
+        return None
+    scale = [w for w in _PUBLIC_SAFETY_SCALE_WORDS if (w in lowered if w.isascii() else w in text)]
+    if not (scale or death_count(text) >= _PUBLIC_SAFETY_MIN_DEATHS):
+        return None
+    return PUBLIC_SAFETY_BUCKET, terms[:4] + scale[:2]
+
 
 @dataclass
 class RelevanceMatch:
@@ -319,7 +384,8 @@ def _coverage_tags(text: str, lowered: str, topics: TopicsConfig, primary_bucket
 
 
 def classify_relevance(
-    text: str, topics: TopicsConfig, multipliers: dict[str, float], *, title: str | None = None
+    text: str, topics: TopicsConfig, multipliers: dict[str, float], *, title: str | None = None,
+    public_safety: bool = False,
 ) -> RelevanceMatch:
     lowered = text.lower()
 
@@ -398,6 +464,13 @@ def classify_relevance(
         bucket, matched = world_match
         tags = _coverage_tags(text, lowered, topics, bucket)
         return RelevanceMatch(bucket, multipliers.get(bucket, 1.0), matched, [], tags)
+
+    if public_safety:                                   # policy.features.public_safety_bucket (default off)
+        ps_match = _public_safety_bucket(text, lowered, title)
+        if ps_match is not None:
+            bucket, matched = ps_match
+            tags = _coverage_tags(text, lowered, topics, bucket)
+            return RelevanceMatch(bucket, multipliers.get(bucket, 1.0), matched, [], tags)
 
     for term in _ROUTINE_POLITICS_TERMS:
         if term in lowered:

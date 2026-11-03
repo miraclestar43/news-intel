@@ -48,6 +48,12 @@ class Secrets(BaseSettings):
     hermes_bin: str | None = Field(default=None, alias="HERMES_BIN")
     hermes_timeout_seconds: float | None = Field(default=None, alias="HERMES_TIMEOUT_SECONDS")
     hermes_model_label: str | None = Field(default=None, alias="HERMES_MODEL_LABEL")
+    # 2026-11-01: LLM_PROVIDER=claude_cli -- the official Claude Code CLI on its claude.ai subscription login
+    # (llm/claude_cli.py). Paths and a model name only; the login lives in CLAUDE_CONFIG_DIR and is never read here.
+    claude_bin: str | None = Field(default=None, alias="CLAUDE_BIN")
+    claude_config_dir: str | None = Field(default=None, alias="CLAUDE_CONFIG_DIR")
+    claude_model: str | None = Field(default=None, alias="CLAUDE_MODEL")
+    claude_timeout_seconds: float | None = Field(default=None, alias="CLAUDE_TIMEOUT_SECONDS")
     sec_user_agent: str = Field(
         default="PiNewsIntel contact@example.com", alias="SEC_USER_AGENT"
     )
@@ -165,6 +171,13 @@ class TimeSemanticsPolicy(BaseModel):
     archive_only_when_undated: bool = True
 
 
+class FeatureFlags(BaseModel):
+    """Selection/ranking changes ship behind a flag that defaults to off (docs/GIT_WORKFLOW.md rule 5). Enabling one
+    is its own explicit commit in config/policy.yaml (a `features:` block)."""
+
+    public_safety_bucket: bool = False
+
+
 class PolicyConfig(BaseModel):
     timezone: str = "America/Los_Angeles"
     collection_interval_minutes: int = 5
@@ -179,6 +192,7 @@ class PolicyConfig(BaseModel):
     storage: StoragePolicy
     fetch: FetchPolicy
     time_semantics: TimeSemanticsPolicy = Field(default_factory=TimeSemanticsPolicy)
+    features: FeatureFlags = Field(default_factory=FeatureFlags)
 
     @field_validator("timezone")
     @classmethod
@@ -223,6 +237,13 @@ class SourcesConfig(BaseModel):
         dupes = {i for i in ids if ids.count(i) > 1}
         if dupes:
             raise ValueError(f"duplicate source ids: {dupes}")
+        # 2026-11-01: collect.py ingests a source's items into exactly ONE edition (raw_items is UNIQUE(source_id,
+        # external_id), so a second edition's copy could never be stored). A second entry here used to be accepted and
+        # silently ignored. Cross-edition use of the same evidence happens downstream instead (brief/selection.py
+        # merges both editions' events), so the same feed is never fetched twice.
+        multi = [s.id for s in v if len(s.editions) != 1]
+        if multi:
+            raise ValueError(f"sources must list exactly one edition (collect ingests into one): {multi}")
         return v
 
 

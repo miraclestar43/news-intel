@@ -394,3 +394,107 @@ sources:
     poll_interval_seconds: 900
     category_hints: [china, ai, discovery]
     editions: [zh_cn]
+
+  # ---- 2026-11-01: general China/world news (news-intel v2, the 3-minute Chinese brief) ----
+  # Both editions had no general news pool (zh_cn: IT之家/量子位 only; en_global: BBC World as the only world feed), so a
+  # 5,000-death epidemic could never outrank a charger listing. Each feed below was fetched live on 2026-11-01 ~06:50 UTC
+  # through this project's own RssAdapter, and its robots.txt was checked with urllib.robotparser for our User-Agent and
+  # the exact feed path (record: docs/NEWS_INTEL_V2_20261101.md, "Sources"). Rejected in the same probe: people.com.cn
+  # RSS (newest item ~1.4 years old), zaobao.com.sg RSS (404), cn.nytimes.com (no item in 50 h), Nikkei Asia (no dates),
+  # AP (no public feed host), chinanews scroll-news (30 items cover only ~1 h).
+
+  - id: chinanews_china
+    name: "中国新闻网 · 国内"
+    adapter: rss
+    tier: 1
+    enabled: true
+    # Live 2026-11-01: 30 dated items spanning ~19 h, median excerpt ~100 chars (dateline + lede). China News Service is a
+    # state news agency: reliable for what officials announced, not an independent check on them.
+    url: "https://www.chinanews.com.cn/rss/china.xml"
+    poll_interval_seconds: 900
+    category_hints: [china, policy, world]
+    editions: [zh_cn]
+
+  - id: chinanews_world
+    name: "中国新闻网 · 国际"
+    adapter: rss
+    tier: 1
+    enabled: true
+    # Live 2026-11-01: 30 dated items spanning ~24 h, median excerpt ~80 chars; often relays foreign wires (美联社/路透).
+    url: "https://www.chinanews.com.cn/rss/world.xml"
+    poll_interval_seconds: 900
+    category_hints: [world, geopolitics]
+    editions: [zh_cn]
+
+  - id: bbc_zhongwen
+    name: "BBC 中文"
+    adapter: rss
+    tier: 1
+    enabled: true
+    # Live 2026-11-01: 42 dated items, 5 in the last 24 h (feed text is in traditional characters despite the /simp/ path).
+    url: "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml"
+    poll_interval_seconds: 1800
+    category_hints: [china, world, geopolitics]
+    editions: [zh_cn]
+
+  - id: rfi_cn
+    name: "法广 RFI 中文"
+    adapter: rss
+    tier: 1
+    enabled: true
+    # Live 2026-11-01: 30 dated items spanning ~30 h, 19 in the last 24 h, simplified Chinese.
+    url: "https://www.rfi.fr/cn/rss"
+    poll_interval_seconds: 1800
+    category_hints: [world, china, geopolitics]
+    editions: [zh_cn]
+
+  - id: dw_chinese
+    name: "德国之声中文"
+    adapter: rss
+    tier: 1
+    enabled: true
+    # Live 2026-11-01: 62 dated items, 5 in the last 24 h (weekend), simplified Chinese.
+    url: "https://rss.dw.com/rdf/rss-chi-all"
+    poll_interval_seconds: 1800
+    category_hints: [world, china, economy]
+    editions: [zh_cn]
+
+  - id: guardian_world
+    name: "The Guardian — World"
+    adapter: rss
+    tier: 1
+    enabled: true
+    # Live 2026-11-01: 45 dated items, 18 in the last 24 h, excerpts ~600 chars.
+    url: "https://www.theguardian.com/world/rss"
+    poll_interval_seconds: 900
+    category_hints: [world, geopolitics]
+
+  - id: aljazeera_all
+    name: "Al Jazeera — all news"
+    adapter: rss
+    tier: 1
+    enabled: true
+    # Live 2026-11-01: 25 dated items, all in the last 24 h; includes sport, left to the shared noise/materiality gates.
+    url: "https://www.aljazeera.com/xml/rss/all.xml"
+    poll_interval_seconds: 900
+    category_hints: [world, geopolitics]
+
+  - id: france24_en
+    name: "France 24 — English"
+    adapter: rss
+    tier: 1
+    enabled: true
+    # Live 2026-11-01: 24 dated items, 22 in the last 24 h, excerpts ~360 chars.
+    url: "https://www.france24.com/en/rss"
+    poll_interval_seconds: 900
+    category_hints: [world, geopolitics]
+
+  - id: scmp_china
+    name: "South China Morning Post — China"
+    adapter: rss
+    tier: 1
+    enabled: true
+    # Live 2026-11-01: 50 dated items, 12 in the last 24 h, excerpts ~500 chars.
+    url: "https://www.scmp.com/rss/4/feed"
+    poll_interval_seconds: 900
+    category_hints: [china, world, geopolitics]
