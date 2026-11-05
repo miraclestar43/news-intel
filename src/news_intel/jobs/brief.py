@@ -341,11 +341,12 @@ def send_telegram(conn, config, snap: dict, *, chat_id: int, dry_run: bool = Tru
         return {"sent": False, "reason": f"outside the send window {cutoff.isoformat()} + {SEND_WINDOW}: not sent"}
     key = f"brief:zh_cn:{snap['edition_date']}:{chat_id_hash(chat_id)}"
     text = brief_render.telegram_html(snap, archive_base)
-    if not dry_run and not mark_attempting(conn, key, chat_id, "brief"):
+    if not dry_run and not mark_attempting(conn, key, chat_id, "brief", edition_id="zh_cn"):
         return {"sent": False, "reason": f"{key} was already attempted -- not retrying", "idempotency_key": key}
     sender = TelegramSender(config.secrets.telegram_bot_token, config.secrets.allowed_chat_id_list)
     res = asyncio.run(sender.send(conn, chat_id=chat_id, text=text, kind="brief", idempotency_key=key,
-                                  max_chars=brief_render.TELEGRAM_LIMIT, dry_run=dry_run, parse_mode="HTML"))
+                                  max_chars=brief_render.TELEGRAM_LIMIT, dry_run=dry_run, parse_mode="HTML",
+                                  edition_id="zh_cn"))
     return {"sent": not res.dry_run, "dry_run": res.dry_run, "idempotency_key": key,
             "snapshot_id": snap["snapshot_id"], "text_sha256": snap["text_sha256"]}
 

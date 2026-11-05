@@ -77,6 +77,32 @@ def _collector_health(conn: sqlite3.Connection, start: datetime, end: datetime) 
     return len(rows), fetched
 
 
+def _daily_key_prefix(edition_id: str, pt_date: date) -> str:
+    """`daily:<date>:` (en_global) or `daily:<edition>:<date>:` -- derived from
+    the sender's own key builder so the two formats can never drift."""
+    from news_intel.jobs.daily import _daily_idempotency_key
+
+    key = _daily_idempotency_key(edition_id, pt_date.isoformat(), "x")
+    return key[: -len("x")]
+
+
+def _edition_delivered(conn: sqlite3.Connection, edition_id: str, pt_date: date) -> bool:
+    """Was THIS edition's daily for THIS date actually sent?
+
+    Decided by the idempotency key, which always carried the edition and the
+    edition's local date. `deliveries.edition_id` cannot be trusted for rows
+    written before 2026-11-04: it defaulted to 'en_global' for every edition,
+    and the old check here counted ANY sent row in the day window, so a zh_cn
+    send could mark a missing en_global daily as delivered (and vice versa).
+    substr() rather than LIKE: the '_' in 'zh_cn' is a LIKE wildcard."""
+    prefix = _daily_key_prefix(edition_id, pt_date)
+    return conn.execute(
+        "SELECT 1 FROM deliveries WHERE kind='daily' AND status='sent' "
+        "AND substr(idempotency_key, 1, ?) = ? LIMIT 1",
+        (len(prefix), prefix),
+    ).fetchone() is not None
+
+
 def edition_day_health(
     conn: sqlite3.Connection,
     *,
@@ -122,11 +148,7 @@ def edition_day_health(
         "SELECT COUNT(*) AS n FROM digest_events WHERE digest_id = ?", (row["id"],)
     ).fetchone()["n"]
 
-    delivered = conn.execute(
-        "SELECT COUNT(*) AS n FROM deliveries WHERE status='sent' AND created_at >= ? AND created_at < ?",
-        (day_start.astimezone(ZoneInfo("UTC")).isoformat(),
-         day_end.astimezone(ZoneInfo("UTC")).isoformat()),
-    ).fetchone()["n"] > 0
+    delivered = _edition_delivered(conn, edition_id, pt_date)
 
     if events == 0:
         return EditionDayHealth(

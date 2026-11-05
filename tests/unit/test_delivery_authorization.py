@@ -79,8 +79,9 @@ def send_spy(monkeypatch):
     calls: list[dict] = []
 
     async def _fake_send(self, conn, *, chat_id, text, kind, idempotency_key, max_chars, dry_run=True,
-                          parse_mode=None):
-        calls.append({"chat_id": chat_id, "kind": kind, "idempotency_key": idempotency_key, "dry_run": dry_run})
+                          parse_mode=None, edition_id=None):
+        calls.append({"chat_id": chat_id, "kind": kind, "idempotency_key": idempotency_key, "dry_run": dry_run,
+                      "edition_id": edition_id})
         from news_intel.delivery.telegram import SendResult
         return SendResult(idempotency_key=idempotency_key, already_sent=False, message_ids=["fake-1"], dry_run=True)
 

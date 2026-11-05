@@ -583,7 +583,7 @@ def run_daily(
             # network call, so a send that raises still leaves a row behind
             # -- this Pacific date/destination is then never retried, even
             # by a later invocation. See delivery.telegram.mark_attempting.
-            if not dry_run and not mark_attempting(conn, idempotency_key, chat_id, "daily"):
+            if not dry_run and not mark_attempting(conn, idempotency_key, chat_id, "daily", edition_id=edition_id):
                 reason = f"Pacific date {date_iso} has already been attempted for this destination -- not retrying"
                 job_runs.finish(conn, run_id, "failed", {"fail_closed_reason": reason})
                 return DailySummary(
@@ -602,6 +602,7 @@ def run_daily(
                         idempotency_key=idempotency_key,
                         max_chars=config.policy.digests.telegram_hard_limit_chars,
                         dry_run=dry_run,
+                        edition_id=edition_id,
                         # 2026-09-22 incident: this was `"HTML" if fallback_used
                         # else None`, so every brief with a validated LLM story
                         # (en since Sep 1, zh from Sep 21) went out with no
