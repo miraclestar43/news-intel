@@ -319,6 +319,7 @@ def run_monthly(
                             sender.send(
                                 conn, chat_id=chat_id, text=part, kind="monthly", idempotency_key=part_key,
                                 max_chars=config.policy.digests.telegram_hard_limit_chars, dry_run=dry_run,
+                                edition_id=edition_id,
                             )
                         )
                     except ChatNotAllowedError:

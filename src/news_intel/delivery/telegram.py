@@ -37,7 +37,22 @@ def _get_delivery(conn: sqlite3.Connection, idempotency_key: str) -> sqlite3.Row
     ).fetchone()
 
 
-def mark_attempting(conn: sqlite3.Connection, idempotency_key: str, chat_id: int, kind: str) -> bool:
+def _insert_delivery(conn: sqlite3.Connection, values: dict[str, object], edition_id: str | None) -> None:
+    """One INSERT for both writers. `edition_id` is written explicitly when the
+    caller knows it; omitted, the column's migration-012 DEFAULT ('en_global')
+    applies, which is exactly how every row was labeled before 2026-11-04 --
+    so the zh_cn daily was silently recorded as en_global (the idempotency
+    key itself always carried the edition; see jobs.daily._daily_idempotency_key)."""
+    if edition_id is not None:
+        values = {**values, "edition_id": edition_id}
+    cols = ", ".join(values)
+    marks = ", ".join("?" for _ in values)
+    conn.execute(f"INSERT INTO deliveries ({cols}) VALUES ({marks})", tuple(values.values()))  # noqa: S608 -- fixed column names
+
+
+def mark_attempting(
+    conn: sqlite3.Connection, idempotency_key: str, chat_id: int, kind: str, *, edition_id: str | None = None
+) -> bool:
     """Durably pre-marks an idempotency key as attempted *before* any network
     call, so a send that raises (rather than returning a normal failure)
     still leaves a row behind -- without this, TelegramSender.send() only
@@ -52,11 +67,11 @@ def mark_attempting(conn: sqlite3.Connection, idempotency_key: str, chat_id: int
     if _get_delivery(conn, idempotency_key) is not None:
         return False
     now = datetime.now(UTC).isoformat()
-    conn.execute(
-        "INSERT INTO deliveries (idempotency_key, chat_id_hash, kind, telegram_message_id, "
-        "attempts, status, created_at, updated_at) VALUES (?, ?, ?, NULL, 0, 'attempting', ?, ?)",
-        (idempotency_key, chat_id_hash(chat_id), kind, now, now),
-    )
+    _insert_delivery(conn, {
+        "idempotency_key": idempotency_key, "chat_id_hash": chat_id_hash(chat_id), "kind": kind,
+        "telegram_message_id": None, "attempts": 0, "status": "attempting",
+        "created_at": now, "updated_at": now,
+    }, edition_id)
     return True
 
 
@@ -67,22 +82,26 @@ def _record_delivery(
     kind: str,
     status: str,
     message_ids: list[str],
+    *,
+    edition_id: str | None = None,
 ) -> None:
     existing = _get_delivery(conn, idempotency_key)
     now = datetime.now(UTC).isoformat()
     joined = ",".join(message_ids)
     if existing:
+        # The row's edition was fixed when it was first written
+        # (mark_attempting); a status update never relabels it.
         conn.execute(
             "UPDATE deliveries SET status = ?, telegram_message_id = ?, "
             "attempts = attempts + 1, updated_at = ? WHERE idempotency_key = ?",
             (status, joined, now, idempotency_key),
         )
     else:
-        conn.execute(
-            "INSERT INTO deliveries (idempotency_key, chat_id_hash, kind, telegram_message_id, "
-            "attempts, status, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?)",
-            (idempotency_key, chat_hash, kind, joined, status, now, now),
-        )
+        _insert_delivery(conn, {
+            "idempotency_key": idempotency_key, "chat_id_hash": chat_hash, "kind": kind,
+            "telegram_message_id": joined, "attempts": 1, "status": status,
+            "created_at": now, "updated_at": now,
+        }, edition_id)
 
 
 class ChatNotAllowedError(Exception):
@@ -127,6 +146,7 @@ class TelegramSender:
         max_chars: int,
         dry_run: bool = True,
         parse_mode: str | None = None,
+        edition_id: str | None = None,
     ) -> SendResult:
         if chat_id not in self.allowed_chat_ids:
             raise ChatNotAllowedError(f"chat_id {chat_id} is not in the configured allowlist")
@@ -155,7 +175,8 @@ class TelegramSender:
 
         if dry_run or not self.bot_token:
             placeholder_ids = [f"dry-{i}" for i in range(len(chunks))]
-            _record_delivery(conn, idempotency_key, chat_id_hash(chat_id), kind, "dry_run", placeholder_ids)
+            _record_delivery(conn, idempotency_key, chat_id_hash(chat_id), kind, "dry_run", placeholder_ids,
+                             edition_id=edition_id)
             return SendResult(idempotency_key, False, placeholder_ids, True)
 
         from telegram import Bot  # imported lazily: not needed for dry-run/tests
@@ -165,5 +186,6 @@ class TelegramSender:
         for chunk in chunks:
             msg = await bot.send_message(chat_id=chat_id, text=chunk, parse_mode=parse_mode)
             message_ids.append(str(msg.message_id))
-        _record_delivery(conn, idempotency_key, chat_id_hash(chat_id), kind, "sent", message_ids)
+        _record_delivery(conn, idempotency_key, chat_id_hash(chat_id), kind, "sent", message_ids,
+                         edition_id=edition_id)
         return SendResult(idempotency_key, False, message_ids, False)
